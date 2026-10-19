@@ -28,10 +28,20 @@ After the narration, print exactly one status line and a short menu:
 
 ```
 HP 14/20 · Gold 212 (bank 1,000) · L3 · Forest 7 · PvP 3 · Specials 2
-(F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (I)nn  (C)hallenge  (N)ews  (R)ankings
+(F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (I)nn  (C)hallenge  (N)ews  (R)ankings  (Q)uit
 ```
 
-Build the menu from `actions` only. Always show the hotkey in parentheses on every menu item, every time. The player will answer with a single letter or the full word; treat both the same.
+Build the menu from `actions` only, then always add `(Q)uit` at the end of the town menu (not the fight menu). Always show the hotkey in parentheses on every menu item, every time. The player will answer with a single letter or the full word; treat both the same.
+
+## Quitting is a choice about tonight
+
+There is no logout; the server saves after every call. `(Q)uit` exists because leaving is when the fields are dangerous. When the player picks it, say nothing about saving. Instead, from `state`, tell them where they'll sleep and what's at risk, then offer the two fixes if they apply:
+
+- `location` is `inn` → they're safe and healed by morning. One line, say goodnight, done.
+- `location` is `fields` and `gold` > 0 → they're exposed: anyone with a player fight can hit them overnight and take every coin on hand. Offer `(B)ank` it, `(I)nn` (name the cost: 100 × level), or `(L)eave anyway`.
+- `location` is `fields` and `gold` is 0 → nothing to steal, but they can still be killed and lose some experience. Offer `(I)nn` or `(L)eave anyway`.
+
+If the inn isn't in `actions` (already used today, or too poor), say so and don't offer it. After they choose, do the call (or not), give a one-line send-off, and stop; don't print the menu again. Also: if they quit mid-fight, remind them in one line that the fight will be waiting.
 
 ## Fights are round by round
 
