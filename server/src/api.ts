@@ -48,16 +48,17 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     // A quiet call (the session-start news line) reads only; it must not consume mail or robbery reports.
     if (!opts.quiet) {
       await drainMailbox(ctx);
-      await deliverMessages(ctx);
+      await noticeMail(ctx);
     }
     await fn(ctx);
     await c.query("update players set last_seen = now() where id = $1", [ctx.p.id]);
     const enc = await c.query("select 1 from encounters where player_id = $1", [ctx.p.id]);
     const inEnc = enc.rowCount! > 0;
     const bagUsed = await Bag.used(c, ctx.p.id);
+    const unreadMail = await unreadCount(ctx);
     return {
       events: ctx.events,
-      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed),
+      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail),
       actions: legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive),
       ...(ctx.hint ? { hint: ctx.hint } : {}),
     };
@@ -70,21 +71,29 @@ async function drainMailbox(ctx: Ctx) {
 }
 
 /** pg returns bigint columns as strings; the game wants numbers. */
-/** Unread mail rides along on every game action, up to 10 at a time, oldest first. */
-async function deliverMessages(ctx: Ctx) {
-  const r = await ctx.c.query<{ id: string; from_name: string; body: string; created_at: string }>(
-    `update messages m set read_at = now()
-     from players p
-     where m.id in (select id from messages where to_player = $1 and read_at is null order by id limit 10)
-       and p.id = m.from_player
-     returning m.id, p.name as from_name, m.body, m.created_at`, [ctx.p.id]);
-  for (const row of r.rows.sort((a, b) => Number(a.id) - Number(b.id))) {
-    ctx.events.push({ kind: "message", from: row.from_name, body: row.body, sent_at: row.created_at });
-  }
+/**
+ * Mail never opens itself. If anything new has arrived since the player was last told,
+ * say so once ("a letter is waiting"); reading is an explicit (M)ail.
+ */
+async function noticeMail(ctx: Ctx) {
+  const r = await ctx.c.query<{ max_id: string | null; senders: string[] | null; fresh: string }>(
+    `select max(m.id)::text as max_id, array_agg(distinct f.name) as senders, count(*)::text as fresh
+     from messages m join players f on f.id = m.from_player
+     where m.to_player = $1 and m.read_at is null and m.id > $2`, [ctx.p.id, ctx.p.mail_notified_upto]);
+  const row = r.rows[0];
+  if (!row.max_id) return;
+  const unread = await unreadCount(ctx);
+  ctx.events.push({ kind: "mail_waiting", new: Number(row.fresh), unread, from: row.senders ?? [] });
+  await savePlayer(ctx, { mail_notified_upto: Number(row.max_id) });
+}
+
+async function unreadCount(ctx: Ctx): Promise<number> {
+  const r = await ctx.c.query<{ n: string }>("select count(*)::text as n from messages where to_player = $1 and read_at is null", [ctx.p.id]);
+  return Number(r.rows[0].n);
 }
 
 function numify(p: Player): Player {
-  return { ...p, gold: Number(p.gold), bank: Number(p.bank), exp: Number(p.exp) };
+  return { ...p, gold: Number(p.gold), bank: Number(p.bank), exp: Number(p.exp), mail_notified_upto: Number(p.mail_notified_upto ?? 0) };
 }
 
 async function savePlayer(ctx: Ctx, patch: Partial<Player>) {
@@ -577,17 +586,27 @@ api.post("/mail", async (c) => {
   }));
 });
 
-/** Recent mail, both directions. Anything unread was already delivered by the envelope above. */
+/** Open the mailbag: unread letters first (now marked read), then the last 20 both ways. */
 api.get("/mail", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  const unread = await ctx.c.query<{ id: string; from_name: string; body: string; created_at: string }>(
+    `update messages m set read_at = now()
+     from players p
+     where m.to_player = $1 and m.read_at is null and p.id = m.from_player
+     returning m.id, p.name as from_name, m.body, m.created_at`, [ctx.p.id]);
   const r = await ctx.c.query<{ dir: string; other: string; body: string; created_at: string }>(
     `select case when m.to_player = $1 then 'in' else 'out' end as dir,
             case when m.to_player = $1 then f.name else t.name end as other,
             m.body, m.created_at
      from messages m join players f on f.id = m.from_player join players t on t.id = m.to_player
-     where m.to_player = $1 or m.from_player = $1
-     order by m.id desc limit 20`, [ctx.p.id]);
+     where (m.to_player = $1 or m.from_player = $1) and not (m.id = any($2::bigint[]))
+     order by m.id desc limit 20`, [ctx.p.id, unread.rows.map((x) => x.id)]);
   const muted = await ctx.c.query<{ name: string }>("select p.name from mutes m join players p on p.id = m.muted_id where m.player_id = $1 order by p.name", [ctx.p.id]);
-  ctx.events.push({ kind: "mail_history", messages: r.rows.reverse(), muted: muted.rows.map((x) => x.name) });
+  ctx.events.push({
+    kind: "mail_inbox",
+    unread: unread.rows.sort((a, b) => Number(a.id) - Number(b.id)).map((x) => ({ from: x.from_name, body: x.body, sent_at: x.created_at })),
+    history: r.rows.reverse(),
+    muted: muted.rows.map((x) => x.name),
+  });
 })));
 
 api.post("/mute", async (c) => {
