@@ -98,7 +98,7 @@ async function requireNoEncounter(ctx: Ctx) {
 
 api.post("/register", async (c) => {
   const body = z.object({
-    name: z.string().trim().min(2).max(20).regex(/^[A-Za-z0-9_]+( [A-Za-z0-9_]+)*$/, "letters, digits, underscores, single spaces"),
+    name: z.string().trim().min(2).max(20).regex(/^[A-Za-z0-9_.'-]+( [A-Za-z0-9_.'-]+)*$/, "letters, digits, apostrophes, periods, hyphens, single spaces"),
     class: z.enum(["warrior", "thief", "mage"]),
     invite: z.string().optional(),
   }).parse(await c.req.json());
