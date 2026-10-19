@@ -21503,18 +21503,28 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 var CONFIG_DIR = process.env.LORD_CONFIG_DIR ?? join(homedir(), ".config", "lord");
 var CONFIG_FILE = join(CONFIG_DIR, "config.json");
+var DEFAULT_API_URL = "https://lord-ebon.vercel.app";
 async function loadConfig() {
-  const fallback = { api_url: process.env.LORD_API_URL ?? "https://lord-ebon.vercel.app" };
+  let stored = {};
   try {
-    const raw = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
-    return { ...fallback, ...raw, api_url: process.env.LORD_API_URL ?? raw.api_url ?? fallback.api_url };
+    stored = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
   } catch {
-    return fallback;
   }
+  return {
+    api_url: process.env.LORD_API_URL ?? stored.api_url ?? DEFAULT_API_URL,
+    api_key: stored.api_key,
+    name: stored.name
+  };
 }
 async function saveConfig(cfg) {
+  let stored = {};
+  try {
+    stored = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
+  } catch {
+  }
+  const next = { ...stored, api_key: cfg.api_key, name: cfg.name };
   await mkdir(CONFIG_DIR, { recursive: true, mode: 448 });
-  await writeFile(CONFIG_FILE, JSON.stringify(cfg, null, 2), { mode: 384 });
+  await writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 384 });
 }
 
 // src/index.ts
