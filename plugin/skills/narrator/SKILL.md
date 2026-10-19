@@ -31,11 +31,18 @@ HP 14/20 · Gold 212 (bank 1,000) · L3 · Forest 7 · PvP 3 · Specials 2
 (F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (I)nn  (C)hallenge  (N)ews  (R)ankings
 ```
 
-Build the menu from `actions` only. Single-letter hotkeys are a courtesy; accept full words too.
+Build the menu from `actions` only. Always show the hotkey in parentheses on every menu item, every time. The player will answer with a single letter or the full word; treat both the same.
 
 ## Fights are round by round
 
-`forest` starts an encounter. Each `fight` call is one exchange. Narrate the round, show HP for both sides from the events, then ask: attack, special, or run. Don't call `fight` repeatedly on your own; the player chooses every round. If the player says "attack until it dies," you may loop `fight attack` but stop and ask if HP drops under a quarter.
+`forest` starts an encounter. Each `fight` call is one exchange. Narrate the round, then print the fight line and the fight menu in exactly this shape:
+
+```
+Small Thief  HP 4/7  ·  Eric  HP 17/20
+(A)ttack  (S)pecial  (R)un
+```
+
+`A`, `S`, `R` (or the full words) map to `fight attack`, `fight special`, `fight run`. Don't call `fight` repeatedly on your own; the player chooses every round. If the player says "attack until it dies," you may loop `fight attack` but stop and ask if HP drops under a quarter.
 
 `challenge` resolves the whole PvP fight at once because the defender is offline. Narrate `pvp_log` as a short montage — three or four beats — then the result.
 
