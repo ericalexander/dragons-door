@@ -1,5 +1,5 @@
-import { serve } from "@hono/node-server";
+// Vercel's Hono preset imports this file and expects the app as the default export.
+// Local development uses src/dev.ts, which wraps it in a Node server.
 import { app } from "./app.js";
-
-const port = Number(process.env.PORT ?? 8787);
-serve({ fetch: app.fetch, port }, () => console.log(`Dragonmoor listening on :${port}`));
+export { app };
+export default app;
