@@ -5,13 +5,17 @@
  * same Hono routes a human's plugin would (api.request), so bots obey every rule:
  * ten fights, the same dice, they die, they lose their gold.
  *
- * Triggered once a day by Vercel Cron shortly after the realm reset.
+ * Each townsperson's day is split into sessions at set Eastern times, shifted by a
+ * random-but-stable amount each day. Vercel Cron wakes the runner every 15 minutes;
+ * it plays whatever sessions are due and records them so nothing runs twice.
  */
 import { Hono } from "hono";
 import { timingSafeEqual } from "node:crypto";
 import { api } from "./api.js";
 import { pool } from "./db.js";
 import { roll } from "./combat.js";
+import { createHash } from "node:crypto";
+import { realmDay, realmSettings } from "./day.js";
 import type { Envelope, Event } from "./game.js";
 
 export const bots = new Hono();
@@ -106,34 +110,43 @@ async function tidyBag(b: Bot) {
   for (const it of left) await b.post("/sell", { id: it.id });
 }
 
-// ---------- personalities ----------
+// ---------- session building blocks ----------
 
-async function playBanker(b: Bot) {
-  // Grinds carefully, banks everything, always sleeps at the inn. The one to catch.
-  let r: Envelope | null = null;
-  for (let i = 0; i < 10; i++) {
-    r = await forestFight(b, { runBelow: 0.3 });
-    if (!r || !r.state.alive || r.state.forest_fights === 0) break;
-    await healIfNeeded(b, r, 0.5);
+interface FightStyle { runBelow?: number; useSpecial?: boolean; healBelow: number }
+const STYLE: Record<Personality, FightStyle> = {
+  banker: { runBelow: 0.3, healBelow: 0.5 },
+  drunk: { useSpecial: true, healBelow: 0.35 },
+  raider: { runBelow: 0.25, healBelow: 0.6 },
+  gossip: { runBelow: 0.5, healBelow: 0.5 },
+};
+
+async function fights(b: Bot, n: number) {
+  const st = STYLE[b.personality];
+  let done = 0;
+  for (let i = 0; i < n; i++) {
+    const r = await forestFight(b, st);
+    if (!r) break;
+    if (r.events.some((e) => e.kind === "no_fights_left")) break;
+    done++;
+    if (!r.state.alive) { b.log.push("died in the forest"); return; }
+    await healIfNeeded(b, r, st.healBelow);
     await trainIfReady(b, r);
   }
+  b.log.push(`${done} forest fight${done === 1 ? "" : "s"}`);
+}
+
+async function bedInn(b: Bot) {
   await tidyBag(b);
   await b.post("/inn");
   await b.post("/bank", { op: "deposit", amount: "all" });
+  b.log.push("bed at the inn");
 }
 
-async function playDrunk(b: Bot, day: string) {
-  // Fights hard, drinks harder, never banks, sleeps in the fields. A gold piñata.
-  let r: Envelope | null = null;
-  for (let i = 0; i < 10; i++) {
-    r = await forestFight(b, { useSpecial: true });
-    if (!r || !r.state.alive || r.state.forest_fights === 0) break;
-    await healIfNeeded(b, r, 0.35);
-    await trainIfReady(b, r);
-  }
+async function drunkNight(b: Bot) {
+  // Never banks, never pays for a bed. Asleep in the fields with whatever he won.
   await tidyBag(b);
   await b.post("/flirt");
-  if (roll(99) < 50) {
+  if (roll(99) < 60) {
     const lines = [
       "Anyone seen my boots? Woke up in the fields again.",
       "The mosquitoes out there are getting ideas above their station.",
@@ -144,49 +157,28 @@ async function playDrunk(b: Bot, day: string) {
     ];
     await b.post("/tavern", { body: lines[roll(lines.length - 1)] });
   }
-  void day;
+  b.log.push("drinking, then the fields");
 }
 
-async function playRaider(b: Bot) {
-  // Grinds, then robs whoever is sleeping in the fields with the most gold. One kill a day at most.
-  let r: Envelope | null = null;
-  for (let i = 0; i < 10; i++) {
-    r = await forestFight(b, { runBelow: 0.25 });
-    if (!r || !r.state.alive || r.state.forest_fights === 0) break;
-    await healIfNeeded(b, r, 0.6);
-    await trainIfReady(b, r);
-  }
-  await tidyBag(b);
-  if (r && r.state.alive) {
-    await b.post("/healer", { hp: "all" });
-    const me = await b.get("/status");
-    if (!isErr(me)) {
-      const lvl = me.state.level;
-      const target = await pool.query<{ name: string }>(
-        `select name from players
-         where alive and location = 'fields' and gold > 0 and name <> $1
-           and abs(level - $2) <= 3
-         order by gold desc, level desc limit 1`,
-        [b.name, lvl],
-      );
-      if (target.rowCount) {
-        const c = await b.post("/challenge", { name: target.rows[0].name });
-        if (!isErr(c)) b.log.push(`challenged ${target.rows[0].name}: ${kinds(c).filter((k) => k.startsWith("pvp_") && k !== "pvp_log").join(",")}`);
-      }
-    }
-  }
-  await b.post("/inn");
-  await b.post("/bank", { op: "deposit", amount: "all" });
+async function raid(b: Bot) {
+  // Late at night: rob whoever went to bed in the fields with the most gold. One attempt.
+  const me = await b.get("/status");
+  if (isErr(me) || !me.state.alive) { b.log.push("no raid (dead)"); return; }
+  await b.post("/healer", { hp: "all" });
+  const target = await pool.query<{ name: string }>(
+    `select name from players
+     where alive and location = 'fields' and gold > 0 and name <> $1
+       and abs(level - $2) <= 3 and created_at < now() - interval '24 hours'
+     order by gold desc, level desc limit 1`,
+    [b.name, me.state.level],
+  );
+  if (!target.rowCount) { b.log.push("raid: nobody worth robbing"); return; }
+  const c = await b.post("/challenge", { name: target.rows[0].name });
+  b.log.push(`raid on ${target.rows[0].name}: ${isErr(c) ? c.error : kinds(c).filter((k) => k.startsWith("pvp_") && k !== "pvp_log").join(",") || kinds(c).join(",")}`);
 }
 
-async function playGossip(b: Bot) {
-  // Fights a little, talks a lot. Reads yesterday's news and leaves a line about it.
-  for (let i = 0; i < 3; i++) {
-    const r = await forestFight(b, { runBelow: 0.5 });
-    if (!r || !r.state.alive) break;
-    await healIfNeeded(b, r, 0.5);
-    await trainIfReady(b, r);
-  }
+async function gossip(b: Bot) {
+  // Reads yesterday's paper and leaves a line about it.
   const news = await b.get("/news?day=yesterday");
   let line = "Quiet night. Too quiet. Somebody go poke the forest.";
   if (!isErr(news)) {
@@ -195,6 +187,7 @@ async function playGossip(b: Bot) {
     const kills = items.filter((e) => e.what === "pvp_kill");
     const deaths = items.filter((e) => e.what === "forest_death");
     const levels = items.filter((e) => e.what === "level_up");
+    const loot = items.filter((e) => e.what === "loot");
     const pick = <T,>(a: T[]) => a[roll(a.length - 1)];
     if (kills.length) {
       const k = pick(kills);
@@ -208,16 +201,73 @@ async function playGossip(b: Bot) {
         `A ${d.detail.monster} got ${d.actor}. The ${d.detail.monster}. I've shooed worse off my porch.`,
         `Pour one out for ${d.actor}. Then pour one for the ${d.detail.monster}, it earned it.`,
       ]);
+    } else if (loot.length) {
+      const l = pick(loot);
+      line = `${l.actor} is walking around with a ${l.detail.item} off a dead ${l.detail.monster} like they forged it themselves.`;
     } else if (levels.length) {
       const l = pick(levels);
       line = `${l.actor} made level ${l.detail.level}. Don't let it go to your head, I remember when you fought a mosquito.`;
     }
   }
-  await tidyBag(b);
   await b.post("/tavern", { body: line.slice(0, 280) });
-  await b.post("/flirt");
-  await b.post("/inn");
-  await b.post("/bank", { op: "deposit", amount: "all" });
+  b.log.push("posted in the tavern");
+}
+
+// ---------- the townsfolk's day (Eastern time) ----------
+
+type Step = (b: Bot) => Promise<void>;
+interface Session { at: string; steps: Step[] }
+const f = (n: number): Step => (b) => fights(b, n);
+const flirt: Step = async (b) => { await b.post("/flirt"); };
+
+const SCHEDULE: Record<Personality, Session[]> = {
+  banker: [ // Hilde: steady all day, banks and beds down at dinner
+    { at: "07:00", steps: [f(4)] },
+    { at: "12:00", steps: [f(3)] },
+    { at: "18:00", steps: [f(3), bedInn] },
+  ],
+  gossip: [ // Old Tam: paper first, a little fighting, early to bed
+    { at: "08:00", steps: [gossip] },
+    { at: "14:00", steps: [f(3)] },
+    { at: "21:00", steps: [flirt, bedInn] },
+  ],
+  drunk: [ // Grimwald: late riser, fights hard, ends up in the fields
+    { at: "11:00", steps: [f(5)] },
+    { at: "15:00", steps: [f(5)] },
+    { at: "20:00", steps: [drunkNight] },
+  ],
+  raider: [ // Vesper: fights by day, robs the fields late at night
+    { at: "10:00", steps: [f(5)] },
+    { at: "14:00", steps: [f(5)] },
+    { at: "23:00", steps: [raid, bedInn] },
+  ],
+};
+
+const JITTER_MIN = 30;
+const TZ = "America/New_York";
+
+/** Stable per-day shift in minutes, in [-JITTER_MIN, +JITTER_MIN], so a rerun picks the same time. */
+function jitter(day: string, name: string, i: number): number {
+  const h = createHash("sha256").update(`${day}|${name}|${i}`).digest();
+  return (h.readUInt16BE(0) % (2 * JITTER_MIN + 1)) - JITTER_MIN;
+}
+
+/** Offset of TZ from UTC at instant t, in ms. */
+function tzOffset(t: number): number {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(t)).map((p) => [p.type, p.value]));
+  const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  return asUtc - t;
+}
+
+/** The instant a session happens on a given realm day: `at` Eastern on that calendar date, plus jitter. */
+export function sessionTime(day: string, at: string, name: string, i: number): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  const [hh, mm] = at.split(":").map(Number);
+  const guess = Date.UTC(y, m - 1, d, hh, mm);
+  const utc = guess - tzOffset(guess);
+  return new Date(utc + jitter(day, name, i) * 60_000);
 }
 
 // ---------- seeding and running ----------
@@ -243,42 +293,43 @@ async function ensureRoster(): Promise<{ player_id: string; name: string; person
   return existing.rows;
 }
 
-export async function runBots(): Promise<{ day: string; results: Record<string, string[]> }> {
+export async function runBots(now = new Date()): Promise<{ day: string; now: string; results: Record<string, string[]> }> {
   const roster = await ensureRoster();
+  const c = await pool.connect();
+  let day: string;
+  try { day = realmDay((await realmSettings(c)).resetHourUtc, now); } finally { c.release(); }
   const results: Record<string, string[]> = {};
-  let day = "";
   for (const row of roster) {
+    const st = await pool.query<{ sessions: { day?: string; done?: number[] } }>("select sessions from bots where player_id = $1", [row.player_id]);
+    const rec = st.rows[0]?.sessions ?? {};
+    const done = new Set(rec.day === day ? rec.done ?? [] : []);
+    const plan = SCHEDULE[row.personality];
+    const due = plan.map((s, i) => ({ s, i, at: sessionTime(day, s.at, row.name, i) })).filter((x) => !done.has(x.i) && x.at <= now);
+    if (!due.length) continue;
     const b = new Bot(row.name, row.personality, row.api_key);
-    const s = await b.get("/status");
-    if (isErr(s)) { results[row.name] = [`status failed: ${s.error}`]; continue; }
-    const today = (s.events.find((e) => e.kind === "new_day") as { day?: string } | undefined)?.day;
-    const already = await pool.query("select 1 from bots where player_id = $1 and last_run_day = current_date", [row.player_id]);
-    if (already.rowCount && !today) { results[row.name] = ["already ran today"]; continue; }
-    if (!s.state.alive) { results[row.name] = ["dead today"]; continue; }
-    try {
-      switch (row.personality) {
-        case "banker": await playBanker(b); break;
-        case "drunk": await playDrunk(b, today ?? ""); break;
-        case "raider": await playRaider(b); break;
-        case "gossip": await playGossip(b); break;
+    for (const { s, i, at } of due) {
+      b.log.push(`session ${i + 1} (${at.toISOString().slice(11, 16)}Z)`);
+      try {
+        const status = await b.get("/status");
+        if (isErr(status)) { b.log.push(`status failed: ${status.error}`); }
+        else if (!status.state.alive) { b.log.push("dead until the reset"); }
+        else for (const step of s.steps) await step(b);
+      } catch (e) {
+        b.log.push(`error: ${(e as Error).message}`);
       }
-      const end = await b.get("/status");
-      if (!isErr(end)) {
-        day = day || today || "";
-        b.log.push(`L${end.state.level} hp ${end.state.hp}/${end.state.max_hp} gold ${end.state.gold} bank ${end.state.bank} ${end.state.location} alive=${end.state.alive}`);
-      }
-    } catch (e) {
-      b.log.push(`error: ${(e as Error).message}`);
+      done.add(i);
+      await pool.query("update bots set sessions = $2, last_run_day = $3 where player_id = $1", [row.player_id, JSON.stringify({ day, done: [...done].sort() }), day]);
     }
-    await pool.query("update bots set last_run_day = current_date where player_id = $1", [row.player_id]);
     results[row.name] = b.log;
   }
-  return { day, results };
+  return { day, now: now.toISOString(), results };
 }
 
 // Vercel Cron sends GET with "Authorization: Bearer $CRON_SECRET". Manual runs can POST the same header.
 bots.on(["GET", "POST"], "/bots/run", async (c) => {
   if (!authorized(c.req.header("authorization"))) return c.json({ error: "forbidden" }, 403);
-  const out = await runBots();
+  // A fake clock is for local testing only.
+  const fake = process.env.LORD_ALLOW_FAKE_CLOCK ? c.req.query("now") : undefined;
+  const out = await runBots(fake ? new Date(fake) : new Date());
   return c.json(out);
 });
