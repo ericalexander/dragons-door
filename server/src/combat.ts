@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { GAME, effective, type Event, type Monster, type Player } from "./game.js";
+import { GAME, armor, effective, weapon, type Event, type Monster, type Player } from "./game.js";
 
 /** rand in [0, n], inclusive. Server RNG only; never trust the client. */
 export function roll(n: number): number {
@@ -70,7 +70,7 @@ export function pickMonster(level: number): Monster {
   const m = pool[roll(pool.length - 1)];
   // jitter so two fights are never identical
   const hp = Math.round(m.hp * (0.9 + roll(20) / 100));
-  return { name: m.name, hp, max_hp: hp, str: m.str, def: m.def, gold: m.gold, exp: m.exp };
+  return { name: m.name, level: m.level, hp, max_hp: hp, str: m.str, def: m.def, gold: m.gold, exp: m.exp };
 }
 
 /**
@@ -85,4 +85,33 @@ export function resolveFull(att: Fighter, def: Fighter, maxRounds = 50): { log: 
     if (att.hp <= 0) return { log, winner: "defender" };
   }
   return { log, winner: "draw" };
+}
+
+export interface Drop {
+  kind: "weapon" | "armor";
+  item: string;
+  tier: number;
+  /** true if it beat what the player had and they're now wearing/wielding it */
+  equipped: boolean;
+  /** gold from selling whichever piece was left over (the old one, or the drop itself) */
+  gold: number;
+  replaced?: string;
+}
+
+/**
+ * Rare drop after a forest kill. A piece of gear one tier above the monster's level.
+ * If it's an upgrade the player equips it and the old piece is sold; otherwise the drop is sold.
+ * Pure: decides the outcome, the caller applies it.
+ */
+export function rollDrop(monsterLevel: number, p: Player): Drop | null {
+  const cfg = GAME.drops;
+  if (roll(9999) >= Math.round(cfg.chance * 10000)) return null;
+  const kind: Drop["kind"] = roll(1) === 0 ? "weapon" : "armor";
+  const tier = Math.min(12, Math.max(1, monsterLevel + cfg.tierAbove));
+  const found = kind === "weapon" ? weapon(tier) : armor(tier);
+  const current = kind === "weapon" ? weapon(p.weapon_id) : armor(p.armor_id);
+  if (found.id > current.id) {
+    return { kind, item: found.name, tier, equipped: true, gold: Math.floor(current.cost * cfg.sellFraction), replaced: current.id > 0 ? current.name : undefined };
+  }
+  return { kind, item: found.name, tier, equipped: false, gold: Math.floor(found.cost * cfg.sellFraction) };
 }

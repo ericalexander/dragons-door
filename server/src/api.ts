@@ -7,7 +7,7 @@ import {
   GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
-import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, specialMultiplier } from "./combat.js";
+import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
 
@@ -169,6 +169,10 @@ api.get("/news", async (c) => {
   }));
 });
 
+function aOrAn(item: string): string {
+  return item.endsWith("'s Sword") || item.endsWith("'s Armor") || item.endsWith("'s Mail") || item.endsWith("'s Weapon") ? item : (/^[AEIOU]/i.test(item) ? "an " : "a ") + item;
+}
+
 function newsLine(n: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }): string {
   switch (n.kind) {
     case "join": return `${n.actor} has entered the realm.`;
@@ -179,6 +183,7 @@ function newsLine(n: { kind: string; actor: string | null; target: string | null
     case "dragon": return `${n.actor} slew the Red Dragon!`;
     case "dragon_death": return `${n.actor} was eaten by the Red Dragon.`;
     case "married": return `${n.actor} married Violet.`;
+    case "loot": return `${n.actor} pried ${aOrAn(String(n.detail.item))} off a dead ${n.detail.monster}.`;
     default: return `${n.actor ?? "Someone"} did something (${n.kind}).`;
   }
 }
@@ -272,6 +277,17 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     const next = expForLevel(ctx.p.level + 1);
     await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp });
     ctx.events.push({ kind: "monster_slain", monster: m.name, gold: m.gold, exp: m.exp });
+    const drop = rollDrop(m.level ?? ctx.p.level, ctx.p);
+    if (drop) {
+      await savePlayer(ctx, {
+        gold: ctx.p.gold + drop.gold,
+        ...(drop.equipped ? (drop.kind === "weapon" ? { weapon_id: drop.tier } : { armor_id: drop.tier }) : {}),
+      });
+      const { kind: slot, ...rest } = drop;
+      ctx.events.push({ kind: "loot", slot, monster: m.name, ...rest });
+      if (drop.equipped) await post(ctx, "loot", ctx.p.name, null, { item: drop.item, monster: m.name });
+      ctx.hint = "A rare drop. Give it a beat: what it looks like, how it feels in the hand. Say whether they equipped it or sold it, using only what the loot event says.";
+    }
     if (next !== null && ctx.p.exp >= next) ctx.events.push({ kind: "level_ready", level: ctx.p.level + 1 });
   } else if (kind === "master") {
     const lvl = ctx.p.level + 1;

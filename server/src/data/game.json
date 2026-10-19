@@ -95,63 +95,63 @@
       "level": 3,
       "name": "Aragorn",
       "hp": 50,
-      "str": 13,
+      "str": 14,
       "def": 7
     },
     {
       "level": 4,
       "name": "Olodrin",
       "hp": 80,
-      "str": 20,
+      "str": 21,
       "def": 10
     },
     {
       "level": 5,
       "name": "Sandtiger",
       "hp": 120,
-      "str": 28,
+      "str": 29,
       "def": 14
     },
     {
       "level": 6,
       "name": "Sparhawk",
       "hp": 170,
-      "str": 38,
+      "str": 40,
       "def": 18
     },
     {
       "level": 7,
       "name": "Atsuko Sensei",
       "hp": 240,
-      "str": 52,
+      "str": 55,
       "def": 23
     },
     {
       "level": 8,
       "name": "Aladdin",
       "hp": 320,
-      "str": 70,
+      "str": 74,
       "def": 28
     },
     {
       "level": 9,
       "name": "Prince Caspian",
       "hp": 420,
-      "str": 91,
+      "str": 96,
       "def": 34
     },
     {
       "level": 10,
       "name": "Gandalf",
       "hp": 550,
-      "str": 119,
+      "str": 125,
       "def": 40
     },
     {
       "level": 11,
       "name": "Turgon",
       "hp": 700,
-      "str": 154,
+      "str": 162,
       "def": 47
     }
   ],
@@ -383,7 +383,7 @@
       "level": 3,
       "name": "Giant Spider",
       "hp": 40,
-      "str": 13,
+      "str": 14,
       "def": 5,
       "gold": 400,
       "exp": 150
@@ -392,7 +392,7 @@
       "level": 3,
       "name": "Enraged Ogre",
       "hp": 50,
-      "str": 14,
+      "str": 15,
       "def": 6,
       "gold": 500,
       "exp": 180
@@ -401,7 +401,7 @@
       "level": 3,
       "name": "Goblin Chieftain",
       "hp": 45,
-      "str": 15,
+      "str": 16,
       "def": 7,
       "gold": 560,
       "exp": 190
@@ -410,7 +410,7 @@
       "level": 4,
       "name": "Fire Imp",
       "hp": 70,
-      "str": 21,
+      "str": 22,
       "def": 9,
       "gold": 1000,
       "exp": 400
@@ -419,7 +419,7 @@
       "level": 4,
       "name": "Troll",
       "hp": 90,
-      "str": 22,
+      "str": 23,
       "def": 11,
       "gold": 1200,
       "exp": 480
@@ -428,7 +428,7 @@
       "level": 5,
       "name": "Werewolf",
       "hp": 120,
-      "str": 31,
+      "str": 33,
       "def": 14,
       "gold": 2400,
       "exp": 1200
@@ -437,7 +437,7 @@
       "level": 5,
       "name": "Shadow Knight",
       "hp": 140,
-      "str": 35,
+      "str": 37,
       "def": 16,
       "gold": 3000,
       "exp": 1400
@@ -446,7 +446,7 @@
       "level": 6,
       "name": "Wyvern",
       "hp": 180,
-      "str": 46,
+      "str": 48,
       "def": 19,
       "gold": 6000,
       "exp": 3000
@@ -455,7 +455,7 @@
       "level": 6,
       "name": "Stone Golem",
       "hp": 220,
-      "str": 42,
+      "str": 44,
       "def": 24,
       "gold": 6400,
       "exp": 3400
@@ -464,7 +464,7 @@
       "level": 7,
       "name": "Vampire",
       "hp": 260,
-      "str": 59,
+      "str": 62,
       "def": 24,
       "gold": 12000,
       "exp": 8000
@@ -473,7 +473,7 @@
       "level": 7,
       "name": "Chimera",
       "hp": 300,
-      "str": 63,
+      "str": 66,
       "def": 26,
       "gold": 14000,
       "exp": 9000
@@ -482,7 +482,7 @@
       "level": 8,
       "name": "Lich",
       "hp": 360,
-      "str": 77,
+      "str": 81,
       "def": 30,
       "gold": 24000,
       "exp": 18000
@@ -491,7 +491,7 @@
       "level": 8,
       "name": "Frost Giant",
       "hp": 420,
-      "str": 80,
+      "str": 84,
       "def": 33,
       "gold": 28000,
       "exp": 20000
@@ -500,7 +500,7 @@
       "level": 9,
       "name": "Hydra",
       "hp": 500,
-      "str": 98,
+      "str": 103,
       "def": 36,
       "gold": 50000,
       "exp": 50000
@@ -509,7 +509,7 @@
       "level": 9,
       "name": "Demon Lord",
       "hp": 560,
-      "str": 105,
+      "str": 110,
       "def": 38,
       "gold": 56000,
       "exp": 56000
@@ -518,7 +518,7 @@
       "level": 10,
       "name": "Ancient Wyrm",
       "hp": 650,
-      "str": 112,
+      "str": 118,
       "def": 42,
       "gold": 100000,
       "exp": 120000
@@ -527,7 +527,7 @@
       "level": 10,
       "name": "Titan",
       "hp": 720,
-      "str": 119,
+      "str": 125,
       "def": 45,
       "gold": 110000,
       "exp": 130000
@@ -536,7 +536,7 @@
       "level": 11,
       "name": "Elder Lich",
       "hp": 850,
-      "str": 133,
+      "str": 140,
       "def": 50,
       "gold": 240000,
       "exp": 360000
@@ -545,7 +545,7 @@
       "level": 11,
       "name": "Balrog",
       "hp": 950,
-      "str": 140,
+      "str": 147,
       "def": 54,
       "gold": 280000,
       "exp": 400000
@@ -554,7 +554,7 @@
       "level": 12,
       "name": "Death Knight",
       "hp": 1100,
-      "str": 161,
+      "str": 169,
       "def": 60,
       "gold": 600000,
       "exp": 1000000
@@ -563,7 +563,7 @@
       "level": 12,
       "name": "Shadow Dragon",
       "hp": 1300,
-      "str": 175,
+      "str": 184,
       "def": 65,
       "gold": 700000,
       "exp": 1200000
@@ -585,5 +585,10 @@
     "str": 0.5,
     "def": 0.5
   },
-  "tavernPostsPerDay": 5
+  "tavernPostsPerDay": 5,
+  "drops": {
+    "chance": 0.03,
+    "tierAbove": 1,
+    "sellFraction": 0.25
+  }
 }

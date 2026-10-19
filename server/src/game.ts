@@ -39,6 +39,7 @@ export interface Turns {
 
 export interface Monster {
   name: string;
+  level?: number;
   hp: number;
   max_hp: number;
   str: number;

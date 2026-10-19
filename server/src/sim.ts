@@ -5,7 +5,7 @@
  * Uses the real combat functions and data. Run: npx tsx src/sim.ts [class] [trials]
  */
 import { GAME, armor, weapon, expForLevel, master, levelGains, type Player, type Monster } from "./game.js";
-import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, specialMultiplier } from "./combat.js";
+import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, rollDrop, specialMultiplier } from "./combat.js";
 
 
 // ---- tuning knobs (env) so the curve can be searched without editing data ----
@@ -19,12 +19,14 @@ const K = {
   pdef: Number(process.env.PDEF ?? 1),    // player def-per-level multiplier
   ghp: process.env.GHP, gstr: process.env.GSTR, gdef: process.env.GDEF, // growth overrides
 };
+if (process.env.DROP !== undefined) GAME.drops.chance = Number(process.env.DROP);
 if (process.env.DHP) GAME.dragon.hp = Number(process.env.DHP); if (process.env.DSTR) GAME.dragon.str = Number(process.env.DSTR); if (process.env.DDEF) GAME.dragon.def = Number(process.env.DDEF);
 if (K.ghp) GAME.growth.hp = Number(K.ghp); if (K.gstr) GAME.growth.str = Number(K.gstr); if (K.gdef) GAME.growth.def = Number(K.gdef);
 for (const m of GAME.monsters) { m.str = Math.round(m.str * K.mstr); m.hp = Math.round(m.hp * K.mhp); m.gold = Math.round(m.gold * K.mgold); m.exp = Math.round(m.exp * K.mexp); }
 for (const m of GAME.masters) { m.str = Math.round(m.str * K.mstr); m.hp = Math.round(m.hp * K.mhp); }
 for (const c of Object.values(GAME.classes)) { c.strPerLevel = Math.round(c.strPerLevel * K.pstr); c.hpPerLevel = Math.round(c.hpPerLevel * K.phpk); c.defPerLevel = Math.round(c.defPerLevel * K.pdef); }
 
+const DROPS = { n: 0, equipped: 0 };
 const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, number> = {}; const DEATH_L: Record<number, number> = {};
 type Cls = "warrior" | "thief" | "mage";
 
@@ -115,7 +117,15 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       if (roll(99) < 10) { p.gold += roll(10 * p.level) + 5; continue; }
       const m = pickMonster(p.level);
       const res = fight(p, m, specials, 0.5);
-      if (res === "won") { p.gold += m.gold; p.exp += m.exp; }
+      if (res === "won") {
+        p.gold += m.gold; p.exp += m.exp;
+        const drop = rollDrop(m.level ?? p.level, p);
+        if (drop) {
+          DROPS.n++; if (drop.equipped) DROPS.equipped++;
+          p.gold += drop.gold;
+          if (drop.equipped) { if (drop.kind === "weapon") p.weapon_id = drop.tier; else p.armor_id = drop.tier; }
+        }
+      }
       if (res === "died") { DEATH_L[p.level] = (DEATH_L[p.level] ?? 0) + 1; deaths++; p.alive = false; p.gold = 0; p.exp -= Math.floor(p.exp * 0.1); break; }
       // heal if under 80%
       if (p.hp / p.max_hp < 0.8) {
@@ -151,3 +161,5 @@ if (process.env.BREAKDOWN) {
   console.log("  avg day reached:", rows.join("  "));
   console.log("  deaths by level:", Object.keys(DEATH_L).map(Number).sort((a, b) => a - b).map((l) => `L${l}:${(DEATH_L[l] / trials).toFixed(1)}`).join("  "));
 }
+
+console.log(`  drops per run: ${(DROPS.n / trials).toFixed(1)} (${(DROPS.equipped / trials).toFixed(1)} equipped)`);

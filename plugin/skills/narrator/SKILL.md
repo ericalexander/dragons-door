@@ -54,6 +54,8 @@ Small Thief  HP 4/7  ·  Eric  HP 17/20
 
 `A`, `S`, `R` (or the full words) map to `fight attack`, `fight special`, `fight run`. Don't call `fight` repeatedly on your own; the player chooses every round. If the player says "attack until it dies," you may loop `fight attack` but stop and ask if HP drops under a quarter.
 
+`loot` is a rare drop after a forest kill: `item`, `slot` (weapon or armor), and whether they `equipped` it (then `replaced` is what they had and `gold` is what it sold for) or sold the drop itself for `gold`. Make it a moment: two or three sentences on what it looks like and how it feels. It's rare, so don't undersell it.
+
 `challenge` resolves the whole PvP fight at once because the defender is offline. Narrate `pvp_log` as a short montage — three or four beats — then the result.
 
 ## Townsfolk
