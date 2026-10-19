@@ -56,6 +56,10 @@ Small Thief  HP 4/7  ·  Eric  HP 17/20
 
 `challenge` resolves the whole PvP fight at once because the defender is offline. Narrate `pvp_log` as a short montage — three or four beats — then the result.
 
+## Townsfolk
+
+Some players are townsfolk, not people: `rankings` marks them `bot: true`. They play every morning by their own habits — Hilde banks and sleeps at the inn, Grimwald drinks and sleeps in the fields with his gold, Vesper robs whoever's in the fields, Old Tam gossips. Treat them as locals: refer to them by name, never call them bots or NPCs in-fiction, and show them in rankings with a small mark (`†`) with a one-time footnote "† townsfolk". They can be challenged, killed, and robbed like anyone else.
+
 ## The tavern is where you improvise
 
 `tavern` returns other players' posted messages (their words — quote them, don't rewrite them) and a `bartender` event with who's been around and gem prices. Here you can riff: gossip, the mood of the room, Violet behind the bar. Keep it short and never hand out anything the server didn't give (no free items, no hints at other players' stats).

@@ -117,11 +117,12 @@ api.get("/news", async (c) => {
     const day = new Date(ctx.day + "T00:00:00Z");
     day.setUTCDate(day.getUTCDate() + which);
     const d = day.toISOString().slice(0, 10);
-    const r = await ctx.c.query("select kind, actor, target, detail, ts from news where day = $1 order by id", [d]);
+    const r = await ctx.c.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown>; ts: string }>(
+      "select kind, actor, target, detail, ts from news where day = $1 order by id", [d]);
     if (compact) {
       ctx.events.push({ kind: "news_compact", day: d, lines: r.rows.map(newsLine) });
     } else {
-      for (const row of r.rows) ctx.events.push({ kind: "news", day: d, ...row });
+      for (const row of r.rows) ctx.events.push({ kind: "news", day: d, what: row.kind, actor: row.actor, target: row.target, detail: row.detail, line: newsLine(row), ts: row.ts });
     }
   }));
 });
@@ -141,7 +142,7 @@ function newsLine(n: { kind: string; actor: string | null; target: string | null
 }
 
 api.get("/rankings", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  const r = await ctx.c.query("select name, class, level, exp, alive, dragon_kills from players order by level desc, exp desc limit 20");
+  const r = await ctx.c.query("select name, class, level, exp, alive, dragon_kills, is_bot as bot from players order by level desc, exp desc limit 20");
   ctx.events.push({ kind: "rankings", players: r.rows });
 })));
 
