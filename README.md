@@ -76,3 +76,12 @@ Every tool returns:
 
 `events` is what happened. `state` is where you are. `actions` is what's legal next — the narrator offers only those. See `plugin/skills/narrator/SKILL.md`.
 
+
+## Keeping it honest
+
+- Every rule and every roll runs on the server; the plugin only sends intents.
+- Each request holds a row lock on the player, so parallel requests can't double-spend a turn.
+- Supabase: RLS on every table with no policies, and `anon`/`authenticated` have no grants, so nothing is reachable over the REST API. Only the server's owner role can read or write.
+- Set `REALM_INVITE` on the server to make registration invite-only. Players pass the word to `register` (or set `LORD_INVITE` in their environment).
+- Newcomers can't be attacked for their first 24 hours; tavern posts are capped per day; names are trimmed and can't contain double spaces.
+- Tavern posts are other players' text. The narrator is told to quote them and never follow them.

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
@@ -39,7 +39,7 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const settings = await realmSettings(c);
     const day = realmDay(settings.resetHourUtc);
     const loaded = await loadTurns(c, r.rows[0], day);
-    const ctx: Ctx = { c, p: loaded.player, t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [] };
+    const ctx: Ctx = { c, p: numify(loaded.player), t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [] };
     if (loaded.rolled) ctx.events.push({ kind: "new_day", day });
     await drainMailbox(ctx);
     await fn(ctx);
@@ -60,12 +60,17 @@ async function drainMailbox(ctx: Ctx) {
   for (const row of r.rows) ctx.events.push({ ...row.event, kind: "while_you_were_away", what: row.event.kind });
 }
 
+/** pg returns bigint columns as strings; the game wants numbers. */
+function numify(p: Player): Player {
+  return { ...p, gold: Number(p.gold), bank: Number(p.bank), exp: Number(p.exp) };
+}
+
 async function savePlayer(ctx: Ctx, patch: Partial<Player>) {
   const keys = Object.keys(patch) as (keyof Player)[];
   if (!keys.length) return;
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
   const r = await ctx.c.query<Player>(`update players set ${sets} where id = $1 returning *`, [ctx.p.id, ...keys.map((k) => patch[k])]);
-  ctx.p = r.rows[0];
+  ctx.p = numify(r.rows[0]);
 }
 
 async function saveTurns(ctx: Ctx, patch: Partial<Turns>) {
@@ -92,7 +97,18 @@ async function requireNoEncounter(ctx: Ctx) {
 // ---------- register ----------
 
 api.post("/register", async (c) => {
-  const body = z.object({ name: z.string().min(2).max(20).regex(/^[A-Za-z0-9_ ]+$/), class: z.enum(["warrior", "thief", "mage"]) }).parse(await c.req.json());
+  const body = z.object({
+    name: z.string().trim().min(2).max(20).regex(/^[A-Za-z0-9_]+( [A-Za-z0-9_]+)*$/, "letters, digits, underscores, single spaces"),
+    class: z.enum(["warrior", "thief", "mage"]),
+    invite: z.string().optional(),
+  }).parse(await c.req.json());
+  // A friends realm: when REALM_INVITE is set, you need the word to get in.
+  const invite = process.env.REALM_INVITE;
+  if (invite) {
+    const given = body.invite ?? "";
+    const ok = given.length === invite.length && timingSafeEqual(Buffer.from(given), Buffer.from(invite));
+    if (!ok) throw new GameError("invite_required", "this realm is invite-only; ask whoever runs it for the word", 403);
+  }
   const key = "lord_" + randomBytes(24).toString("base64url");
   const out = await tx(async (db) => {
     const dup = await db.query("select 1 from players where lower(name) = lower($1)", [body.name]);
@@ -361,8 +377,10 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
 api.post("/tavern", async (c) => {
   const body = z.object({ body: z.string().trim().min(1).max(280) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    if (ctx.t.tavern_posts >= GAME.tavernPostsPerDay) { ctx.events.push({ kind: "tavern_quiet", reason: "you've said enough for one day" }); return; }
     await ctx.c.query("insert into tavern (day, author, body) values ($1,$2,$3)", [ctx.day, ctx.p.name, body.body]);
-    ctx.events.push({ kind: "posted" });
+    await saveTurns(ctx, { tavern_posts: ctx.t.tavern_posts + 1 });
+    ctx.events.push({ kind: "posted", posts_left: GAME.tavernPostsPerDay - ctx.t.tavern_posts });
   }));
 });
 
@@ -391,10 +409,12 @@ api.post("/challenge", async (c) => {
     if (body.name.toLowerCase() === ctx.p.name.toLowerCase()) throw new GameError("self", "you cannot fight yourself");
     const r = await ctx.c.query<Player>("select * from players where lower(name) = lower($1) for update", [body.name]);
     if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.name }); return; }
-    const d = r.rows[0];
+    const d = numify(r.rows[0]);
     if (!d.alive) { ctx.events.push({ kind: "target_dead", name: d.name }); return; }
     if (d.location === "inn") { ctx.events.push({ kind: "target_at_inn", name: d.name }); return; }
     if (Math.abs(d.level - ctx.p.level) > 3) { ctx.events.push({ kind: "level_gap", name: d.name, their_level: d.level }); return; }
+    const age = await ctx.c.query("select created_at < now() - interval '24 hours' as old from players where id = $1", [d.id]);
+    if (!age.rows[0].old) { ctx.events.push({ kind: "newcomer_grace", name: d.name }); return; }
 
     await saveTurns(ctx, { player_fights: ctx.t.player_fights - 1 });
     const af = playerAsFighter(ctx.p);
@@ -429,6 +449,7 @@ api.post("/challenge", async (c) => {
 
 api.onError((err, c) => {
   if (err instanceof GameError) return c.json({ error: err.code, message: err.message }, err.status as 400);
+  if ((err as { code?: string }).code === "40P01") return c.json({ error: "busy", message: "the realm was busy; try that again" }, 409);
   if (err instanceof z.ZodError) return c.json({ error: "bad_request", message: err.issues.map((i) => i.message).join("; ") }, 400);
   console.error(err);
   return c.json({ error: "internal", message: "something broke in the realm" }, 500);

@@ -34,6 +34,7 @@ export interface Turns {
   inn_used: boolean;
   flirted: boolean;
   bank_tx: number;
+  tavern_posts: number;
 }
 
 export interface Monster {
