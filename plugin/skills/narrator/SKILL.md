@@ -27,9 +27,11 @@ Never state a number that isn't in `events` or `state`. Never invent loot, hit p
 After the narration, print exactly one status line and a short menu:
 
 ```
-HP 14/20 · Gold 212 (bank 1,000) · L3 · Forest 7 · PvP 3 · Specials 2
-(F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (I)nn  (C)hallenge  (N)ews  (R)ankings  (Q)uit
+HP 14/20 · Gold 212 (bank 1,000) · L3 · Forest 7 · PvP 3 · Specials 2 · Satchel 8/20
+(F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (G)ear  (I)nn  (C)hallenge  (N)ews  (R)ankings  (Q)uit
 ```
+
+The `bag` action shows as `(G)ear`.
 
 Build the menu from `actions` only, then always add `(Q)uit` at the end of the town menu (not the fight menu). Always show the hotkey in parentheses on every menu item, every time. The player will answer with a single letter or the full word; treat both the same.
 
@@ -54,7 +56,11 @@ Small Thief  HP 4/7  ·  Eric  HP 17/20
 
 `A`, `S`, `R` (or the full words) map to `fight attack`, `fight special`, `fight run`. Don't call `fight` repeatedly on your own; the player chooses every round. If the player says "attack until it dies," you may loop `fight attack` but stop and ask if HP drops under a quarter.
 
-`loot` is a rare drop after a forest kill: `item`, `slot` (weapon or armor), and whether they `equipped` it (then `replaced` is what they had and `gold` is what it sold for) or sold the drop itself for `gold`. Make it a moment: two or three sentences on what it looks like and how it feels. It's rare, so don't undersell it.
+`loot` is a rare drop after a forest kill. Make it a moment: two or three sentences on what it looks like and how it feels. If `stored` is true it went into the bag; say so, and if `upgrade` is true suggest equipping it. If `stored` is false the bag was full and it's lying on the ground: offer `(E)quip it`, or make room and `(T)ake` it, or leave it. Say plainly that it's gone if they walk back into the forest.
+
+`bag` shows what they're carrying. Print it as a short list, one line per item with its id, stats, weight and sale price, then the weight line (`Satchel 12/20`). Mark upgrades with `*`. From there they can equip, sell, or drop by id. Equipped gear doesn't count toward the weight. Bigger bags (Pack, Saddlebags) are in the shop under `bag`.
+
+When they die (`player_died`, `pvp_loss`, or a `while_you_were_away` kill) and `item_lost` is set, that piece fell out of their bag. Mention it in one line.
 
 `challenge` resolves the whole PvP fight at once because the defender is offline. Narrate `pvp_log` as a short montage — three or four beats — then the result.
 

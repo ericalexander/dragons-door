@@ -61,13 +61,29 @@ server.tool("healer", "Pay the healer to restore hit points. Cost scales with le
   { hp: z.union([z.literal("all"), z.number().int().positive()]).default("all") },
   async ({ hp }) => text(await call("POST", "/v1/healer", { hp })));
 
-server.tool("shop", "See the weapon or armor catalog.",
-  { kind: z.enum(["weapon", "armor"]) },
+server.tool("shop", "See the weapon, armor, or bag catalog.",
+  { kind: z.enum(["weapon", "armor", "bag"]) },
   async ({ kind }) => text(await call("GET", `/v1/shop?kind=${kind}`)));
 
-server.tool("buy", "Buy a weapon or armor by id. Your current one is traded in at half price.",
-  { kind: z.enum(["weapon", "armor"]), id: z.number().int() },
+server.tool("buy", "Buy a weapon or armor by id (your current one is traded in at half price), or a bigger bag.",
+  { kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int() },
   async ({ kind, id }) => text(await call("POST", "/v1/buy", { kind, id })));
+
+server.tool("bag", "Look in your bag: what you're carrying, its weight, what each piece sells for, and anything lying on the ground.", {}, async () => text(await call("GET", "/v1/bag")));
+
+server.tool("equip", "Equip a piece from your bag by its id, or the drop lying on the ground (ground: true). What you had goes into the bag.",
+  { id: z.number().int().optional(), ground: z.boolean().optional() },
+  async ({ id, ground }) => text(await call("POST", "/v1/equip", ground ? { ground: true } : { id })));
+
+server.tool("take", "Pick up the drop lying on the ground and put it in your bag, if there's room.", {}, async () => text(await call("POST", "/v1/take")));
+
+server.tool("sell", "Sell a piece from your bag by its id, for half its shop price.",
+  { id: z.number().int() },
+  async ({ id }) => text(await call("POST", "/v1/sell", { id })));
+
+server.tool("drop", "Throw away a piece from your bag by its id.",
+  { id: z.number().int() },
+  async ({ id }) => text(await call("POST", "/v1/drop", { id })));
 
 server.tool("bank", "Deposit or withdraw gold. Gold on hand is lost when you die; banked gold is safe. Limited transactions per day.",
   { op: z.enum(["deposit", "withdraw"]), amount: z.union([z.literal("all"), z.number().int().positive()]) },

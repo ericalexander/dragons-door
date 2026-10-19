@@ -7,6 +7,7 @@ import {
   GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
+import * as Bag from "./bag.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
@@ -40,15 +41,19 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const day = realmDay(settings.resetHourUtc);
     const loaded = await loadTurns(c, r.rows[0], day);
     const ctx: Ctx = { c, p: numify(loaded.player), t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [] };
-    if (loaded.rolled) ctx.events.push({ kind: "new_day", day });
+    if (loaded.rolled) {
+      ctx.events.push({ kind: "new_day", day });
+      if (ctx.p.ground) await savePlayer(ctx, { ground: null });
+    }
     await drainMailbox(ctx);
     await fn(ctx);
     await c.query("update players set last_seen = now() where id = $1", [ctx.p.id]);
     const enc = await c.query("select 1 from encounters where player_id = $1", [ctx.p.id]);
     const inEnc = enc.rowCount! > 0;
+    const bagUsed = await Bag.used(c, ctx.p.id);
     return {
       events: ctx.events,
-      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive),
+      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed),
       actions: legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive),
       ...(ctx.hint ? { hint: ctx.hint } : {}),
     };
@@ -69,7 +74,7 @@ async function savePlayer(ctx: Ctx, patch: Partial<Player>) {
   const keys = Object.keys(patch) as (keyof Player)[];
   if (!keys.length) return;
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
-  const r = await ctx.c.query<Player>(`update players set ${sets} where id = $1 returning *`, [ctx.p.id, ...keys.map((k) => patch[k])]);
+  const r = await ctx.c.query<Player>(`update players set ${sets} where id = $1 returning *`, [ctx.p.id, ...keys.map((k) => (k === "ground" && patch[k] !== null ? JSON.stringify(patch[k]) : patch[k]))]);
   ctx.p = numify(r.rows[0]);
 }
 
@@ -170,7 +175,8 @@ api.get("/news", async (c) => {
 });
 
 function aOrAn(item: string): string {
-  return item.endsWith("'s Sword") || item.endsWith("'s Armor") || item.endsWith("'s Mail") || item.endsWith("'s Weapon") ? item : (/^[AEIOU]/i.test(item) ? "an " : "a ") + item;
+  if (/'s /.test(item) || /(Armor|Mail|Protection)$/.test(item)) return item; // possessives and armor read without an article
+  return (/^[AEIOU]/i.test(item) ? "an " : "a ") + item;
 }
 
 function newsLine(n: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }): string {
@@ -194,8 +200,10 @@ api.get("/rankings", async (c) => c.json(await withPlayer(c.req.header("authoriz
 })));
 
 api.get("/shop", async (c) => {
-  const kind = c.req.query("kind") === "armor" ? "armor" : "weapon";
+  const q = c.req.query("kind");
+  const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", owned: ctx.p.bag_id, items: GAME.bags }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
     ctx.events.push({ kind: "catalog", shop: kind, owned, items });
@@ -208,6 +216,10 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
   requireAlive(ctx);
   await requireNoEncounter(ctx);
   if (ctx.t.forest_fights <= 0) { ctx.events.push({ kind: "no_fights_left" }); return; }
+  if (ctx.p.ground) {
+    ctx.events.push({ kind: "left_behind", item: Bag.item(ctx.p.ground.slot, ctx.p.ground.item_id).name });
+    await savePlayer(ctx, { ground: null });
+  }
   await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
   if (roll(99) < 10) {
     // found something instead of a fight
@@ -277,16 +289,22 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     const next = expForLevel(ctx.p.level + 1);
     await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp });
     ctx.events.push({ kind: "monster_slain", monster: m.name, gold: m.gold, exp: m.exp });
-    const drop = rollDrop(m.level ?? ctx.p.level, ctx.p);
+    const drop = rollDrop(m.level ?? ctx.p.level);
     if (drop) {
-      await savePlayer(ctx, {
-        gold: ctx.p.gold + drop.gold,
-        ...(drop.equipped ? (drop.kind === "weapon" ? { weapon_id: drop.tier } : { armor_id: drop.tier }) : {}),
-      });
-      const { kind: slot, ...rest } = drop;
-      ctx.events.push({ kind: "loot", slot, monster: m.name, ...rest });
-      if (drop.equipped) await post(ctx, "loot", ctx.p.name, null, { item: drop.item, monster: m.name });
-      ctx.hint = "A rare drop. Give it a beat: what it looks like, how it feels in the hand. Say whether they equipped it or sold it, using only what the loot event says.";
+      const w = Bag.item(drop.kind, drop.tier).weight;
+      const usedNow = await Bag.used(ctx.c, ctx.p.id);
+      const cap = Bag.bag(ctx.p.bag_id).capacity;
+      const current = Bag.item(drop.kind, drop.kind === "weapon" ? ctx.p.weapon_id : ctx.p.armor_id);
+      const upgrade = drop.tier > current.id;
+      if (usedNow + w <= cap) {
+        await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, drop.kind, drop.tier]);
+        ctx.events.push({ kind: "loot", monster: m.name, item: drop.item, slot: drop.kind, weight: w, stored: true, upgrade, bag_used: usedNow + w, bag_capacity: cap });
+      } else {
+        await savePlayer(ctx, { ground: { slot: drop.kind, item_id: drop.tier } });
+        ctx.events.push({ kind: "loot", monster: m.name, item: drop.item, slot: drop.kind, weight: w, stored: false, upgrade, bag_used: usedNow, bag_capacity: cap });
+      }
+      await post(ctx, "loot", ctx.p.name, null, { item: drop.item, monster: m.name });
+      ctx.hint = "A rare drop. Give it a beat: what it looks like, how it feels. If stored is false the bag is full and it's lying on the ground: offer (E)quip it now, or make room (sell or drop something) and (T)ake it, or leave it. It's gone if they walk back into the forest.";
     }
     if (next !== null && ctx.p.exp >= next) ctx.events.push({ kind: "level_ready", level: ctx.p.level + 1 });
   } else if (kind === "master") {
@@ -314,10 +332,11 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
 async function die(ctx: Ctx, kind: string, m: Monster) {
   const lost = ctx.p.gold;
   const expLoss = Math.floor(ctx.p.exp * 0.1);
-  await savePlayer(ctx, { alive: false, hp: 0, gold: 0, exp: ctx.p.exp - expLoss });
+  await savePlayer(ctx, { alive: false, hp: 0, gold: 0, exp: ctx.p.exp - expLoss, ground: null });
+  const itemLost = await Bag.loseRandom(ctx.c, ctx.p.id);
   if (kind === "dragon") await post(ctx, "dragon_death", ctx.p.name, null, {});
   else await post(ctx, "forest_death", ctx.p.name, null, { monster: m.name });
-  ctx.events.push({ kind: "player_died", killer: m.name, gold_lost: lost, exp_lost: expLoss });
+  ctx.events.push({ kind: "player_died", killer: m.name, gold_lost: lost, exp_lost: expLoss, item_lost: itemLost });
 }
 
 // ---------- train / dragon ----------
@@ -365,9 +384,18 @@ api.post("/healer", async (c) => {
 });
 
 api.post("/buy", async (c) => {
-  const body = z.object({ kind: z.enum(["weapon", "armor"]), id: z.number().int() }).parse(await c.req.json());
+  const body = z.object({ kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    if (body.kind === "bag") {
+      const nb = Bag.bag(body.id);
+      if (nb.id !== body.id) throw new GameError("no_such_item", "no such bag");
+      if (nb.id <= ctx.p.bag_id) { ctx.events.push({ kind: "already_have_bigger", bag: Bag.bag(ctx.p.bag_id).name }); return; }
+      if (ctx.p.gold < nb.cost) { ctx.events.push({ kind: "too_poor", cost: nb.cost, gold: ctx.p.gold }); return; }
+      await savePlayer(ctx, { gold: ctx.p.gold - nb.cost, bag_id: nb.id });
+      ctx.events.push({ kind: "bought", shop: "bag", item: nb.name, cost: nb.cost, capacity: nb.capacity });
+      return;
+    }
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
@@ -440,6 +468,79 @@ api.post("/flirt", async (c) => c.json(await withPlayer(c.req.header("authorizat
   ctx.events.push({ kind: "flirt", outcome, charm_delta: delta, charm: ctx.p.charm });
 })));
 
+// ---------- bag ----------
+
+api.get("/bag", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  ctx.events.push({ kind: "bag", ...(await Bag.describe(ctx.c, ctx.p)) });
+})));
+
+async function ownRow(ctx: Ctx, id: number): Promise<Bag.Carried> {
+  const items = await Bag.contents(ctx.c, ctx.p.id);
+  const row = items.find((x) => x.id === id);
+  if (!row) throw new GameError("not_in_bag", "that isn't in your bag");
+  return row;
+}
+
+/** Equip from the bag (by id) or straight off the ground. Whatever you had goes into the bag. */
+api.post("/equip", async (c) => {
+  const body = z.union([z.object({ id: z.number().int() }), z.object({ ground: z.literal(true) })]).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    let slot: Bag.Slot; let itemId: number; let rowId: number | null = null;
+    if ("ground" in body) {
+      if (!ctx.p.ground) { ctx.events.push({ kind: "nothing_on_ground" }); return; }
+      slot = ctx.p.ground.slot; itemId = ctx.p.ground.item_id;
+    } else {
+      const row = await ownRow(ctx, body.id); slot = row.slot; itemId = row.item_id; rowId = row.id;
+    }
+    const oldId = slot === "weapon" ? ctx.p.weapon_id : ctx.p.armor_id;
+    const usedNow = await Bag.used(ctx.c, ctx.p.id);
+    const after = usedNow - (rowId !== null ? Bag.item(slot, itemId).weight : 0) + (oldId > 0 ? Bag.item(slot, oldId).weight : 0);
+    const cap = Bag.bag(ctx.p.bag_id).capacity;
+    if (after > cap) { ctx.events.push({ kind: "bag_full", need: after - cap, holding: Bag.item(slot, oldId).name }); return; }
+    if (rowId !== null) await ctx.c.query("delete from inventory where id = $1", [rowId]);
+    if (oldId > 0) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, slot, oldId]);
+    await savePlayer(ctx, { ...(slot === "weapon" ? { weapon_id: itemId } : { armor_id: itemId }), ...("ground" in body ? { ground: null } : {}) });
+    ctx.events.push({ kind: "equipped", slot, item: Bag.item(slot, itemId).name, stowed: oldId > 0 ? Bag.item(slot, oldId).name : null });
+  }));
+});
+
+api.post("/take", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAlive(ctx);
+  if (!ctx.p.ground) { ctx.events.push({ kind: "nothing_on_ground" }); return; }
+  const g = ctx.p.ground;
+  const w = Bag.item(g.slot, g.item_id).weight;
+  const usedNow = await Bag.used(ctx.c, ctx.p.id);
+  const cap = Bag.bag(ctx.p.bag_id).capacity;
+  if (usedNow + w > cap) { ctx.events.push({ kind: "bag_full", need: usedNow + w - cap }); return; }
+  await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, g.slot, g.item_id]);
+  await savePlayer(ctx, { ground: null });
+  ctx.events.push({ kind: "taken", item: Bag.item(g.slot, g.item_id).name, bag_used: usedNow + w, bag_capacity: cap });
+})));
+
+api.post("/sell", async (c) => {
+  const body = z.object({ id: z.number().int() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    const row = await ownRow(ctx, body.id);
+    const gold = Bag.sellPrice(row.slot, row.item_id);
+    await ctx.c.query("delete from inventory where id = $1", [row.id]);
+    await savePlayer(ctx, { gold: ctx.p.gold + gold });
+    ctx.events.push({ kind: "sold", item: Bag.item(row.slot, row.item_id).name, gold });
+  }));
+});
+
+api.post("/drop", async (c) => {
+  const body = z.object({ id: z.number().int() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    const row = await ownRow(ctx, body.id);
+    await ctx.c.query("delete from inventory where id = $1", [row.id]);
+    ctx.events.push({ kind: "dropped", item: Bag.item(row.slot, row.item_id).name });
+  }));
+});
+
 // ---------- pvp ----------
 
 api.post("/challenge", async (c) => {
@@ -468,17 +569,19 @@ api.post("/challenge", async (c) => {
       const gold = d.gold;
       const exp = Math.floor(expForLevel(d.level + 1) ?? 1000) / 20 | 0;
       await savePlayer(ctx, { hp: af.hp, gold: ctx.p.gold + gold, exp: ctx.p.exp + exp });
-      await ctx.c.query("update players set alive = false, hp = 0, gold = 0 where id = $1", [d.id]);
-      await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "killed_by_player", by: ctx.p.name, gold_lost: gold }]);
+      await ctx.c.query("update players set alive = false, hp = 0, gold = 0, ground = null where id = $1", [d.id]);
+      const theirLost = await Bag.loseRandom(ctx.c, d.id);
+      await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "killed_by_player", by: ctx.p.name, gold_lost: gold, item_lost: theirLost }]);
       await post(ctx, "pvp_kill", ctx.p.name, d.name, { gold });
       ctx.events.push({ kind: "pvp_win", opponent: d.name, gold, exp });
     } else if (res.winner === "defender") {
       const lost = ctx.p.gold;
-      await savePlayer(ctx, { hp: 0, alive: false, gold: 0 });
+      await savePlayer(ctx, { hp: 0, alive: false, gold: 0, ground: null });
+      const myLost = await Bag.loseRandom(ctx.c, ctx.p.id);
       await ctx.c.query("update players set hp = $2, gold = gold + $3 where id = $1", [d.id, df.hp, lost]);
       await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "defended", against: ctx.p.name, gold_won: lost }]);
       await post(ctx, "pvp_survived", ctx.p.name, d.name, {});
-      ctx.events.push({ kind: "pvp_loss", opponent: d.name, gold_lost: lost });
+      ctx.events.push({ kind: "pvp_loss", opponent: d.name, gold_lost: lost, item_lost: myLost });
     } else {
       await savePlayer(ctx, { hp: af.hp });
       await ctx.c.query("update players set hp = $2 where id = $1", [d.id, df.hp]);

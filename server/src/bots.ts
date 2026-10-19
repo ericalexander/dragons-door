@@ -92,6 +92,20 @@ async function healIfNeeded(b: Bot, r: Envelope | null, below: number) {
   if (r.state.hp / r.state.max_hp < below) await b.post("/healer", { hp: "all" });
 }
 
+/** Townsfolk aren't sentimental: wear anything better, sell the rest, grab what's on the ground if it's better. */
+async function tidyBag(b: Bot) {
+  const r = await b.get("/bag");
+  if (isErr(r)) return;
+  const bagEv = r.events.find((e) => e.kind === "bag") as unknown as { items: { id: number; upgrade: boolean }[]; ground: unknown } | undefined;
+  if (!bagEv) return;
+  if (bagEv.ground) { const e = await b.post("/equip", { ground: true }); if (isErr(e) || !kinds(e).includes("equipped")) await b.post("/take"); }
+  for (const it of bagEv.items) if (it.upgrade) await b.post("/equip", { id: it.id });
+  const again = await b.get("/bag");
+  if (isErr(again)) return;
+  const left = (again.events.find((e) => e.kind === "bag") as unknown as { items: { id: number }[] }).items;
+  for (const it of left) await b.post("/sell", { id: it.id });
+}
+
 // ---------- personalities ----------
 
 async function playBanker(b: Bot) {
@@ -103,6 +117,7 @@ async function playBanker(b: Bot) {
     await healIfNeeded(b, r, 0.5);
     await trainIfReady(b, r);
   }
+  await tidyBag(b);
   await b.post("/inn");
   await b.post("/bank", { op: "deposit", amount: "all" });
 }
@@ -116,6 +131,7 @@ async function playDrunk(b: Bot, day: string) {
     await healIfNeeded(b, r, 0.35);
     await trainIfReady(b, r);
   }
+  await tidyBag(b);
   await b.post("/flirt");
   if (roll(99) < 50) {
     const lines = [
@@ -140,6 +156,7 @@ async function playRaider(b: Bot) {
     await healIfNeeded(b, r, 0.6);
     await trainIfReady(b, r);
   }
+  await tidyBag(b);
   if (r && r.state.alive) {
     await b.post("/healer", { hp: "all" });
     const me = await b.get("/status");
@@ -196,6 +213,7 @@ async function playGossip(b: Bot) {
       line = `${l.actor} made level ${l.detail.level}. Don't let it go to your head, I remember when you fought a mosquito.`;
     }
   }
+  await tidyBag(b);
   await b.post("/tavern", { body: line.slice(0, 280) });
   await b.post("/flirt");
   await b.post("/inn");

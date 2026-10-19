@@ -21583,15 +21583,35 @@ server.tool(
 );
 server.tool(
   "shop",
-  "See the weapon or armor catalog.",
-  { kind: external_exports.enum(["weapon", "armor"]) },
+  "See the weapon, armor, or bag catalog.",
+  { kind: external_exports.enum(["weapon", "armor", "bag"]) },
   async ({ kind }) => text(await call("GET", `/v1/shop?kind=${kind}`))
 );
 server.tool(
   "buy",
-  "Buy a weapon or armor by id. Your current one is traded in at half price.",
-  { kind: external_exports.enum(["weapon", "armor"]), id: external_exports.number().int() },
+  "Buy a weapon or armor by id (your current one is traded in at half price), or a bigger bag.",
+  { kind: external_exports.enum(["weapon", "armor", "bag"]), id: external_exports.number().int() },
   async ({ kind, id }) => text(await call("POST", "/v1/buy", { kind, id }))
+);
+server.tool("bag", "Look in your bag: what you're carrying, its weight, what each piece sells for, and anything lying on the ground.", {}, async () => text(await call("GET", "/v1/bag")));
+server.tool(
+  "equip",
+  "Equip a piece from your bag by its id, or the drop lying on the ground (ground: true). What you had goes into the bag.",
+  { id: external_exports.number().int().optional(), ground: external_exports.boolean().optional() },
+  async ({ id, ground }) => text(await call("POST", "/v1/equip", ground ? { ground: true } : { id }))
+);
+server.tool("take", "Pick up the drop lying on the ground and put it in your bag, if there's room.", {}, async () => text(await call("POST", "/v1/take")));
+server.tool(
+  "sell",
+  "Sell a piece from your bag by its id, for half its shop price.",
+  { id: external_exports.number().int() },
+  async ({ id }) => text(await call("POST", "/v1/sell", { id }))
+);
+server.tool(
+  "drop",
+  "Throw away a piece from your bag by its id.",
+  { id: external_exports.number().int() },
+  async ({ id }) => text(await call("POST", "/v1/drop", { id }))
 );
 server.tool(
   "bank",

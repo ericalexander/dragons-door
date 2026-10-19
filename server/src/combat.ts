@@ -91,27 +91,13 @@ export interface Drop {
   kind: "weapon" | "armor";
   item: string;
   tier: number;
-  /** true if it beat what the player had and they're now wearing/wielding it */
-  equipped: boolean;
-  /** gold from selling whichever piece was left over (the old one, or the drop itself) */
-  gold: number;
-  replaced?: string;
 }
 
-/**
- * Rare drop after a forest kill. A piece of gear one tier above the monster's level.
- * If it's an upgrade the player equips it and the old piece is sold; otherwise the drop is sold.
- * Pure: decides the outcome, the caller applies it.
- */
-export function rollDrop(monsterLevel: number, p: Player): Drop | null {
+/** Rare drop after a forest kill: a piece of gear one tier above the monster's level. Pure; the caller decides where it goes. */
+export function rollDrop(monsterLevel: number): Drop | null {
   const cfg = GAME.drops;
   if (roll(9999) >= Math.round(cfg.chance * 10000)) return null;
   const kind: Drop["kind"] = roll(1) === 0 ? "weapon" : "armor";
   const tier = Math.min(12, Math.max(1, monsterLevel + cfg.tierAbove));
-  const found = kind === "weapon" ? weapon(tier) : armor(tier);
-  const current = kind === "weapon" ? weapon(p.weapon_id) : armor(p.armor_id);
-  if (found.id > current.id) {
-    return { kind, item: found.name, tier, equipped: true, gold: Math.floor(current.cost * cfg.sellFraction), replaced: current.id > 0 ? current.name : undefined };
-  }
-  return { kind, item: found.name, tier, equipped: false, gold: Math.floor(found.cost * cfg.sellFraction) };
+  return { kind, item: (kind === "weapon" ? weapon(tier) : armor(tier)).name, tier };
 }

@@ -1,6 +1,8 @@
 import data from "./data/game.json" with { type: "json" };
 
 export const GAME = data;
+// Test hook: force the drop rate (e.g. LORD_DROP_CHANCE=1 locally). Unset in production.
+if (process.env.LORD_DROP_CHANCE) GAME.drops.chance = Number(process.env.LORD_DROP_CHANCE);
 
 export type PlayerClass = keyof typeof data.classes;
 
@@ -23,6 +25,8 @@ export interface Player {
   alive: boolean;
   location: "inn" | "fields";
   dragon_kills: number;
+  bag_id: number;
+  ground: { slot: "weapon" | "armor"; item_id: number } | null;
 }
 
 export interface Turns {
@@ -81,6 +85,10 @@ export interface PublicState {
   specials: number;
   in_encounter: boolean;
   dragon_alive: boolean;
+  bag: string;
+  bag_used: number;
+  bag_capacity: number;
+  ground: string | null;
 }
 
 export function weapon(id: number) {
@@ -112,7 +120,8 @@ export function effective(p: Player) {
   return { str: p.str + weapon(p.weapon_id).str, def: p.def + armor(p.armor_id).def };
 }
 
-export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean): PublicState {
+export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0): PublicState {
+  const b = GAME.bags.find((x) => x.id === p.bag_id) ?? GAME.bags[0];
   return {
     name: p.name,
     class: p.class,
@@ -136,6 +145,10 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     specials: t.specials,
     in_encounter: inEncounter,
     dragon_alive: dragonAlive,
+    bag: b.name,
+    bag_used: bagUsed,
+    bag_capacity: b.capacity,
+    ground: p.ground ? (p.ground.slot === "weapon" ? weapon(p.ground.item_id) : armor(p.ground.item_id)).name : null,
   };
 }
 
@@ -143,7 +156,8 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
 export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean): string[] {
   if (!p.alive) return ["news", "tavern", "rankings", "status"];
   if (inEncounter) return ["fight attack", "fight special", "fight run"];
-  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank"];
+  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag"];
+  if (p.ground) a.unshift("take", "equip ground");
   if (t.forest_fights > 0) a.unshift("forest");
   if (t.player_fights > 0) a.push("challenge");
   if (!t.flirted) a.push("flirt");

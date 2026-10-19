@@ -31,7 +31,7 @@ const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, numb
 type Cls = "warrior" | "thief" | "mage";
 
 function fresh(cls: Cls): Player {
-  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0 };
+  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null };
 }
 
 function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number): "won" | "fled" | "died" {
@@ -119,11 +119,20 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       const res = fight(p, m, specials, 0.5);
       if (res === "won") {
         p.gold += m.gold; p.exp += m.exp;
-        const drop = rollDrop(m.level ?? p.level, p);
+        const drop = rollDrop(m.level ?? p.level);
         if (drop) {
-          DROPS.n++; if (drop.equipped) DROPS.equipped++;
-          p.gold += drop.gold;
-          if (drop.equipped) { if (drop.kind === "weapon") p.weapon_id = drop.tier; else p.armor_id = drop.tier; }
+          // careful player: wear it if it's better and sell the old piece, otherwise sell the drop (half price)
+          DROPS.n++;
+          const curId = drop.kind === "weapon" ? p.weapon_id : p.armor_id;
+          const cur = drop.kind === "weapon" ? weapon(curId) : armor(curId);
+          const found = drop.kind === "weapon" ? weapon(drop.tier) : armor(drop.tier);
+          if (drop.tier > curId) {
+            DROPS.equipped++;
+            p.gold += Math.floor(cur.cost * GAME.sellFraction);
+            if (drop.kind === "weapon") p.weapon_id = drop.tier; else p.armor_id = drop.tier;
+          } else {
+            p.gold += Math.floor(found.cost * GAME.sellFraction);
+          }
         }
       }
       if (res === "died") { DEATH_L[p.level] = (DEATH_L[p.level] ?? 0) + 1; deaths++; p.alive = false; p.gold = 0; p.exp -= Math.floor(p.exp * 0.1); break; }
