@@ -6,6 +6,18 @@ You get ten forest fights and three player fights a day. Gold on hand is lost wh
 
 The server runs every rule and every dice roll. Claude narrates. That split is the whole design.
 
+## Play
+
+In Claude Code:
+
+```
+/plugin marketplace add ericalexander/lord
+/plugin install dragonmoor@lord
+/dragonmoor:lord
+```
+
+First run asks for a name and class and stores an API key in `~/.config/lord/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://lord-ebon.vercel.app` by default. Every new session greets you with one line of realm news.
+
 ## Layout
 
 ```
@@ -40,13 +52,19 @@ Smoke test in another shell:
 server/smoke.sh
 ```
 
-## Play it
+## Play against a local realm
 
 ```bash
-claude --plugin-dir ./plugin
+LORD_API_URL=http://localhost:8787 claude --plugin-dir ./plugin
 ```
 
-Then `/dragonmoor:lord`. First run asks for a name and class and stores an API key in `~/.config/lord/config.json`. Point at a hosted realm with `LORD_API_URL=https://...`.
+## Hosting
+
+Postgres on Supabase (`server/migrations/` applied; RLS on every table). API on Vercel with the Hono preset, root directory `server`, one env var: `DATABASE_URL` (the Supabase transaction-pooler string). Pushes to `main` deploy.
+
+## Not yet
+
+Admin tooling, seasons, mail between players, the "other places" extension points. Rankings and news give you the social loop; the rest comes once people are reading the news every morning.
 
 ## The contract
 
@@ -58,6 +76,3 @@ Every tool returns:
 
 `events` is what happened. `state` is where you are. `actions` is what's legal next — the narrator offers only those. See `plugin/skills/narrator/SKILL.md`.
 
-## Not yet
-
-Hosted realm, admin tooling, seasons, mail between players, the "other places" extension points. Rankings and news give you the social loop; the rest comes once people are reading the news every morning.

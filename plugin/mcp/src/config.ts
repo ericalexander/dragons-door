@@ -13,7 +13,7 @@ export interface Config {
 }
 
 export async function loadConfig(): Promise<Config> {
-  const fallback: Config = { api_url: process.env.LORD_API_URL ?? "http://localhost:8787" };
+  const fallback: Config = { api_url: process.env.LORD_API_URL ?? "https://lord-ebon.vercel.app" };
   try {
     const raw = JSON.parse(await readFile(CONFIG_FILE, "utf8")) as Partial<Config>;
     return { ...fallback, ...raw, api_url: process.env.LORD_API_URL ?? raw.api_url ?? fallback.api_url };

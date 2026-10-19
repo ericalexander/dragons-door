@@ -21504,7 +21504,7 @@ import { join } from "node:path";
 var CONFIG_DIR = process.env.LORD_CONFIG_DIR ?? join(homedir(), ".config", "lord");
 var CONFIG_FILE = join(CONFIG_DIR, "config.json");
 async function loadConfig() {
-  const fallback = { api_url: process.env.LORD_API_URL ?? "http://localhost:8787" };
+  const fallback = { api_url: process.env.LORD_API_URL ?? "https://lord-ebon.vercel.app" };
   try {
     const raw = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
     return { ...fallback, ...raw, api_url: process.env.LORD_API_URL ?? raw.api_url ?? fallback.api_url };
