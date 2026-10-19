@@ -21527,6 +21527,92 @@ async function saveConfig(cfg) {
   await writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 384 });
 }
 
+// src/statusline.ts
+import { chmod, copyFile, mkdir as mkdir2, readFile as readFile2, rm, writeFile as writeFile2, stat } from "node:fs/promises";
+import { homedir as homedir2 } from "node:os";
+import { dirname, join as join2 } from "node:path";
+import { fileURLToPath } from "node:url";
+var CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR ?? join2(homedir2(), ".claude");
+var SETTINGS = join2(CLAUDE_DIR, "settings.json");
+var SCRIPT_DEST = join2(CLAUDE_DIR, "dragonmoor-statusline.sh");
+var PREV = join2(CLAUDE_DIR, "dragonmoor-statusline.prev");
+var ORIG = join2(CLAUDE_DIR, "dragonmoor-statusline.orig.json");
+var OUR_COMMAND = `bash "${SCRIPT_DEST}"`;
+var SCRIPT_SRC = join2(dirname(fileURLToPath(import.meta.url)), "..", "..", "statusline", "dragonmoor-statusline.sh");
+async function exists(p) {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function readJson(p) {
+  try {
+    return JSON.parse(await readFile2(p, "utf8"));
+  } catch (e) {
+    if (e.code === "ENOENT") return {};
+    throw new Error(`couldn't read ${p}: ${e.message}`);
+  }
+}
+async function installStatusline(cwd) {
+  const settings = await readJson(SETTINGS);
+  const current = settings.statusLine;
+  const already = current?.command === OUR_COMMAND;
+  await mkdir2(CLAUDE_DIR, { recursive: true });
+  if (!already) {
+    const backup = `${SETTINGS}.dragonmoor-backup`;
+    if (await exists(SETTINGS) && !await exists(backup)) await copyFile(SETTINGS, backup);
+    await writeFile2(ORIG, JSON.stringify(current ?? null, null, 2));
+    await writeFile2(PREV, current?.type === "command" && current.command ? current.command : "");
+  }
+  await copyFile(SCRIPT_SRC, SCRIPT_DEST);
+  await chmod(SCRIPT_DEST, 493);
+  await mkdir2(CONFIG_DIR, { recursive: true, mode: 448 });
+  settings.statusLine = {
+    ...already ? current : current ?? {},
+    type: "command",
+    command: OUR_COMMAND,
+    refreshInterval: current?.refreshInterval ?? 30
+  };
+  await writeFile2(SETTINGS, JSON.stringify(settings, null, 2) + "\n");
+  const project = await readJson(join2(cwd, ".claude", "settings.json")).catch(() => ({}));
+  const projectLocal = await readJson(join2(cwd, ".claude", "settings.local.json")).catch(() => ({}));
+  const overridden = "statusLine" in project || "statusLine" in projectLocal;
+  return {
+    kind: "statusline_installed",
+    settings: SETTINGS,
+    kept_existing: Boolean(!already && current?.command),
+    previous: already ? "(already installed)" : current?.command ?? null,
+    refresh_seconds: settings.statusLine.refreshInterval,
+    project_overrides: overridden ? "This project's own .claude settings set a status line, which wins here; the envelope will show in other projects." : null,
+    backup: `${SETTINGS}.dragonmoor-backup`
+  };
+}
+async function uninstallStatusline() {
+  const settings = await readJson(SETTINGS);
+  const current = settings.statusLine;
+  if (current?.command !== OUR_COMMAND) return { kind: "statusline_not_installed" };
+  let orig = null;
+  try {
+    orig = JSON.parse(await readFile2(ORIG, "utf8"));
+  } catch {
+    orig = null;
+  }
+  if (orig) settings.statusLine = orig;
+  else delete settings.statusLine;
+  await writeFile2(SETTINGS, JSON.stringify(settings, null, 2) + "\n");
+  for (const f of [SCRIPT_DEST, PREV, ORIG]) await rm(f, { force: true });
+  return { kind: "statusline_removed", restored: orig?.command ?? null };
+}
+async function noteUnread(n) {
+  try {
+    await writeFile2(join2(CONFIG_DIR, "statusline-unread"), `${Math.floor(Date.now() / 1e3)} ${n}
+`);
+  } catch {
+  }
+}
+
 // src/index.ts
 var server = new McpServer({ name: "dragonmoor", version: "0.1.0" });
 async function call(method, path, body) {
@@ -21540,6 +21626,8 @@ async function call(method, path, body) {
     body: body === void 0 ? void 0 : JSON.stringify(body)
   });
   const json = await res.json().catch(() => ({ error: "bad_response", status: res.status }));
+  const unread = json.state?.unread_mail;
+  if (typeof unread === "number") await noteUnread(unread);
   return json;
 }
 var text = (v) => ({ content: [{ type: "text", text: JSON.stringify(v) }] });
@@ -21646,6 +21734,18 @@ server.tool(
   "Attack another player in the fields. Resolves the whole fight at once. Uses one player fight.",
   { name: external_exports.string().min(1) },
   async ({ name }) => text(await call("POST", "/v1/challenge", { name }))
+);
+server.tool(
+  "install_statusline",
+  "Add a mail indicator (\u2709 N) to the player's Claude Code status line, keeping whatever status line they already have. Only when the player asks. Edits ~/.claude/settings.json (backed up first). uninstall: true puts their old status line back.",
+  { uninstall: external_exports.boolean().default(false) },
+  async ({ uninstall }) => {
+    try {
+      return text(uninstall ? await uninstallStatusline() : await installStatusline(process.cwd()));
+    } catch (e) {
+      return text({ error: "statusline_failed", message: e.message });
+    }
+  }
 );
 var transport = new StdioServerTransport();
 await server.connect(transport);

@@ -1,6 +1,6 @@
 {
   "name": "dragonmoor",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A daily-turn text RPG in the spirit of the BBS door games. Fight in the forest, raid other players, read the morning news.",
   "author": { "name": "Eric Alexander" },
   "keywords": ["game", "rpg", "bbs", "door"]
