@@ -76,9 +76,10 @@
     user-select: none;
     overflow: hidden;
   }
-  pre.dragon { font-size: 15px; line-height: 1.05; margin-bottom: 10px; }
+  pre.dragon { font-size: 17px; line-height: 1.05; margin-bottom: 14px; color: var(--red-hi); font-weight: 600; }
   pre.logo { font-size: 12.5px; line-height: 1.15; letter-spacing: -0.02em; }
   pre.ansi .r { color: var(--red-hi); }
+  pre.dragon .r { color: #ff9a9a; }
   pre.logo .r { color: var(--red-hi); }
   pre.ansi .y { color: var(--yel); }
   pre.ansi .w { color: var(--hi); }
@@ -181,7 +182,7 @@
 
   @media (max-width: 720px) {
     body { font-size: 14px; }
-    pre.dragon { font-size: 11px; }
+    pre.dragon { font-size: 8px; }
     pre.logo { font-size: 6.5px; letter-spacing: -0.03em; }
     .day { grid-template-columns: 1fr; }
     h2::after { content: " ════════════════════"; }
@@ -199,13 +200,19 @@
   </div>
 
   <header class="title">
-<pre class="ansi dragon" aria-hidden="true">                               <span class="d">▄▄▄▄▄▄▄</span>
-                             <span class="d">▄</span>█████████<span class="d">▄</span>
-          <span class="d">▄▄▄▄▄</span>             ██████<span class="r">▀▀</span>██████<span class="d">▄</span>
-    <span class="y">▒▓</span>   ██████<span class="r">▀</span>██<span class="d">▄</span>         ████<span class="r">▀</span>       <span class="r">▀</span>████
-   <span class="y">░▒▓▓</span>  ███<span class="w">◢</span>    <span class="r">▀</span>███<span class="d">▄▄▄▄</span>  ███<span class="r">▀</span>           <span class="r">▀</span>██<span class="d">▄</span>
-    <span class="y">░▒</span>  ████<span class="r">▄▄▄▄▄▄▄▀▀▀▀▀</span>██████<span class="r">▀</span>              <span class="r">▀</span>█
-          <span class="r">▀▀▀▀▀</span>           <span class="r">▀▀▀</span></pre>
+<pre class="ansi dragon" aria-hidden="true">                 _                                _
+               _/ \                              / \_
+             _/ / \ \_                        _/ / \ \_
+           _/ /  /\ \ \_      <span class="r">.-"""-.</span>      _/ / /\  \ \_
+         _/ /  /  \ \  \_    <span class="r">/</span>  <span class="y">^ ^</span>  <span class="r">\</span>    _/  / /  \  \ \_
+       _/ /  /    \ \   \_   <span class="r">| (</span><span class="y">o</span> <span class="y">o</span><span class="r">) |</span>   _/   / /    \  \ \_
+      / /  /      \ \    \ \ <span class="r">\  \_/  /</span> / /    / /      \  \ \
+     / /  /        \ \    \ \ <span class="r">\</span><span class="w">_V_</span><span class="r">/</span> / /    / /        \  \ \
+    / /__/          \ \____\ \<span class="r">(   )</span>/ /____/ /          \__\ \
+    \/                \______\ <span class="r">| |</span> /______/                \/
+                             \ <span class="r">| |</span> /
+                              \<span class="r">| |</span>/
+                              <span class="r">/_|_\</span></pre>
 <pre class="ansi logo" role="img" aria-label="Dragonmoor"><span class="r">██████╗</span> <span class="r">██████╗</span>  <span class="r">█████╗</span>  <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">███╗</span>   <span class="r">██╗███╗</span>   <span class="r">███╗</span> <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">██████╗</span>
 <span class="r">██╔══██╗██╔══██╗██╔══██╗██╔════╝</span> <span class="r">██╔═══██╗████╗</span>  <span class="r">██║████╗</span> <span class="r">████║██╔═══██╗██╔═══██╗██╔══██╗</span>
 <span class="r">██║</span>  <span class="r">██║██████╔╝███████║██║</span>  <span class="r">███╗██║</span>   <span class="r">██║██╔██╗</span> <span class="r">██║██╔████╔██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██████╔╝</span>
