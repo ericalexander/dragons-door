@@ -1,5 +1,5 @@
 {
-  "description": "One line of Dragonmoor news when a session starts, so the game is waiting for you every morning.",
+  "description": "Dragonmoor: one line of realm news when a session starts, and a one-line nudge when new mail arrives.",
   "hooks": {
     "SessionStart": [
       {
@@ -9,6 +9,17 @@
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/news.sh\"",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/mail.sh\"",
+            "timeout": 3
           }
         ]
       }

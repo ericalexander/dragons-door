@@ -20,8 +20,9 @@ fetch(url, { headers: { authorization: "Bearer " + cfg.api_key }, signal: ac.sig
     const s = j.state || {};
     const lines = news && news.lines.length ? news.lines.slice(-3).join(" ") : "A quiet day in the realm.";
     const turns = `${s.forest_fights ?? "?"} forest fights, ${s.player_fights ?? "?"} player fights left.`;
+    const mail = news && news.unread_mail ? ` ${news.unread_mail} unread message${news.unread_mail === 1 ? "" : "s"}.` : "";
     // stdout from a SessionStart hook lands in Claude's context, not on screen; the narrator skill relays it.
-    console.log(`[Dragonmoor realm news — show this to the player in one line before anything else] ${lines} ${turns} /dragonmoor:lord to play.`);
+    console.log(`[Dragonmoor realm news — show this to the player in one line before anything else] ${lines} ${turns}${mail} /dragonmoor:lord to play.`);
   })
   .catch(() => {});
 EOF

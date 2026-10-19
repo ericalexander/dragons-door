@@ -39,6 +39,7 @@ export interface Turns {
   flirted: boolean;
   bank_tx: number;
   tavern_posts: number;
+  messages_sent: number;
 }
 
 export interface Monster {
@@ -154,9 +155,9 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
 
 /** Legal next actions given current state. The narrator only offers these. */
 export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean): string[] {
-  if (!p.alive) return ["news", "tavern", "rankings", "status"];
+  if (!p.alive) return ["news", "tavern", "rankings", "status", "mail"];
   if (inEncounter) return ["fight attack", "fight special", "fight run"];
-  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag"];
+  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail"];
   if (p.ground) a.unshift("take", "equip ground");
   if (t.forest_fights > 0) a.unshift("forest");
   if (t.player_fights > 0) a.push("challenge");

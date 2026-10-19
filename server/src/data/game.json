@@ -636,5 +636,6 @@
       "cost": 120000
     }
   ],
-  "sellFraction": 0.5
+  "sellFraction": 0.5,
+  "messagesPerDay": 30
 }

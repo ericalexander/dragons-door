@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { tx, type Client } from "./db.js";
+import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
   GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState,
@@ -31,7 +31,7 @@ interface Ctx {
 }
 
 /** Authenticate, lock the player row, roll the day if needed, run the handler, build the envelope. */
-async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Promise<void>): Promise<Envelope> {
+async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Promise<void>, opts: { quiet?: boolean } = {}): Promise<Envelope> {
   const key = authHeader?.replace(/^Bearer\s+/i, "").trim();
   if (!key) throw new GameError("unauthorized", "missing api key", 401);
   return tx(async (c) => {
@@ -45,7 +45,11 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
       ctx.events.push({ kind: "new_day", day });
       if (ctx.p.ground) await savePlayer(ctx, { ground: null });
     }
-    await drainMailbox(ctx);
+    // A quiet call (the session-start news line) reads only; it must not consume mail or robbery reports.
+    if (!opts.quiet) {
+      await drainMailbox(ctx);
+      await deliverMessages(ctx);
+    }
     await fn(ctx);
     await c.query("update players set last_seen = now() where id = $1", [ctx.p.id]);
     const enc = await c.query("select 1 from encounters where player_id = $1", [ctx.p.id]);
@@ -66,6 +70,19 @@ async function drainMailbox(ctx: Ctx) {
 }
 
 /** pg returns bigint columns as strings; the game wants numbers. */
+/** Unread mail rides along on every game action, up to 10 at a time, oldest first. */
+async function deliverMessages(ctx: Ctx) {
+  const r = await ctx.c.query<{ id: string; from_name: string; body: string; created_at: string }>(
+    `update messages m set read_at = now()
+     from players p
+     where m.id in (select id from messages where to_player = $1 and read_at is null order by id limit 10)
+       and p.id = m.from_player
+     returning m.id, p.name as from_name, m.body, m.created_at`, [ctx.p.id]);
+  for (const row of r.rows.sort((a, b) => Number(a.id) - Number(b.id))) {
+    ctx.events.push({ kind: "message", from: row.from_name, body: row.body, sent_at: row.created_at });
+  }
+}
+
 function numify(p: Player): Player {
   return { ...p, gold: Number(p.gold), bank: Number(p.bank), exp: Number(p.exp) };
 }
@@ -167,11 +184,12 @@ api.get("/news", async (c) => {
     const r = await ctx.c.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown>; ts: string }>(
       "select kind, actor, target, detail, ts from news where day = $1 order by id", [d]);
     if (compact) {
-      ctx.events.push({ kind: "news_compact", day: d, lines: r.rows.map(newsLine) });
+      const unread = await ctx.c.query<{ n: string }>("select count(*)::text as n from messages where to_player = $1 and read_at is null", [ctx.p.id]);
+      ctx.events.push({ kind: "news_compact", day: d, lines: r.rows.map(newsLine), unread_mail: Number(unread.rows[0].n) });
     } else {
       for (const row of r.rows) ctx.events.push({ kind: "news", day: d, what: row.kind, actor: row.actor, target: row.target, detail: row.detail, line: newsLine(row), ts: row.ts });
     }
-  }));
+  }, { quiet: compact }));
 });
 
 function aOrAn(item: string): string {
@@ -539,6 +557,68 @@ api.post("/drop", async (c) => {
     await ctx.c.query("delete from inventory where id = $1", [row.id]);
     ctx.events.push({ kind: "dropped", item: Bag.item(row.slot, row.item_id).name });
   }));
+});
+
+// ---------- mail ----------
+
+api.post("/mail", async (c) => {
+  const body = z.object({ to: z.string().trim().min(1).max(40), body: z.string().trim().min(1).max(500) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    if (ctx.t.messages_sent >= GAME.messagesPerDay) { ctx.events.push({ kind: "mail_limit", per_day: GAME.messagesPerDay }); return; }
+    const r = await ctx.c.query<{ id: string; name: string; is_bot: boolean }>("select id, name, is_bot from players where lower(name) = lower($1)", [body.to]);
+    if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.to }); return; }
+    const to = r.rows[0];
+    if (to.id === ctx.p.id) { ctx.events.push({ kind: "mail_self" }); return; }
+    await saveTurns(ctx, { messages_sent: ctx.t.messages_sent + 1 });
+    // If they've muted you, it looks sent from your side but never arrives.
+    const muted = await ctx.c.query("select 1 from mutes where player_id = $1 and muted_id = $2", [to.id, ctx.p.id]);
+    if (!muted.rowCount) await ctx.c.query("insert into messages (from_player, to_player, body) values ($1,$2,$3)", [ctx.p.id, to.id, body.body]);
+    ctx.events.push({ kind: "mail_sent", to: to.name, townsfolk: to.is_bot, sent_left: GAME.messagesPerDay - ctx.t.messages_sent });
+  }));
+});
+
+/** Recent mail, both directions. Anything unread was already delivered by the envelope above. */
+api.get("/mail", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  const r = await ctx.c.query<{ dir: string; other: string; body: string; created_at: string }>(
+    `select case when m.to_player = $1 then 'in' else 'out' end as dir,
+            case when m.to_player = $1 then f.name else t.name end as other,
+            m.body, m.created_at
+     from messages m join players f on f.id = m.from_player join players t on t.id = m.to_player
+     where m.to_player = $1 or m.from_player = $1
+     order by m.id desc limit 20`, [ctx.p.id]);
+  const muted = await ctx.c.query<{ name: string }>("select p.name from mutes m join players p on p.id = m.muted_id where m.player_id = $1 order by p.name", [ctx.p.id]);
+  ctx.events.push({ kind: "mail_history", messages: r.rows.reverse(), muted: muted.rows.map((x) => x.name) });
+})));
+
+api.post("/mute", async (c) => {
+  const body = z.object({ name: z.string().trim().min(1).max(40), on: z.boolean().default(true) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    const r = await ctx.c.query<{ id: string; name: string }>("select id, name from players where lower(name) = lower($1)", [body.name]);
+    if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.name }); return; }
+    if (r.rows[0].id === ctx.p.id) { ctx.events.push({ kind: "mute_self" }); return; }
+    if (body.on) await ctx.c.query("insert into mutes (player_id, muted_id) values ($1,$2) on conflict do nothing", [ctx.p.id, r.rows[0].id]);
+    else await ctx.c.query("delete from mutes where player_id = $1 and muted_id = $2", [ctx.p.id, r.rows[0].id]);
+    ctx.events.push({ kind: body.on ? "muted" : "unmuted", name: r.rows[0].name });
+  }));
+});
+
+/**
+ * For the plugin's prompt hook: how much unread mail, and from whom. Deliberately outside withPlayer,
+ * so peeking never rolls the day over, marks anything read, or consumes "while you were away" events.
+ */
+api.get("/mail/peek", async (c) => {
+  const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
+  if (!key) return c.json({ error: "unauthorized" }, 401);
+  const r = await pool.query<{ unread: string; latest: string | null; senders: string[] | null }>(
+    `select count(m.id)::text as unread, max(m.id)::text as latest, array_agg(distinct f.name) as senders
+     from players p
+     left join messages m on m.to_player = p.id and m.read_at is null
+     left join players f on f.id = m.from_player
+     where p.api_key_hash = $1
+     group by p.id`, [hash(key)]);
+  if (!r.rowCount) return c.json({ error: "unauthorized" }, 401);
+  const row = r.rows[0];
+  return c.json({ unread: Number(row.unread), latest: row.latest ? Number(row.latest) : 0, from: (row.senders ?? []).filter(Boolean) });
 });
 
 // ---------- pvp ----------
