@@ -122,6 +122,32 @@ api.post("/register", async (c) => {
   return c.json({ api_key: key, name: out.name, class: out.class, events: [{ kind: "joined", name: out.name, class: out.class }] });
 });
 
+// ---------- public (no auth) ----------
+
+/** What the website shows: player count, headlines, top of the board. Names only, nothing private. */
+api.get("/public/realm", async (c) => {
+  const out = await tx(async (db) => {
+    const settings = await realmSettings(db);
+    const today = realmDay(settings.resetHourUtc);
+    const y = new Date(today + "T00:00:00Z"); y.setUTCDate(y.getUTCDate() - 1);
+    const yesterday = y.toISOString().slice(0, 10);
+    const players = await db.query<{ n: string }>("select count(*)::text as n from players where not is_bot");
+    const news = await db.query<{ day: string; kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
+      "select day::text, kind, actor, target, detail from news where day in ($1, $2) order by id desc limit 12", [today, yesterday]);
+    const top = await db.query("select name, class, level, is_bot as bot, dragon_kills from players order by level desc, exp desc limit 8");
+    return {
+      day: today,
+      dragon_alive: settings.dragonAlive,
+      players: Number(players.rows[0].n),
+      news: news.rows.map((n) => ({ day: n.day, line: newsLine(n) })),
+      top: top.rows,
+    };
+  });
+  c.header("access-control-allow-origin", "*");
+  c.header("cache-control", "public, max-age=60");
+  return c.json(out);
+});
+
 // ---------- read-only ----------
 
 api.get("/status", async (c) => c.json(await withPlayer(c.req.header("authorization"), async () => {})));
