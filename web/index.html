@@ -163,12 +163,6 @@
   .day b { color: var(--yel); font-weight: 400; }
   .day .warn { color: var(--red-hi); }
 
-  /* ── Townsfolk ─────────────────────────────────────────────────── */
-  table { border-collapse: collapse; width: 100%; max-width: 76ch; }
-  td { padding: 4px 0; vertical-align: top; border-bottom: 1px dotted #222; }
-  td:first-child { color: var(--hi); width: 12ch; white-space: nowrap; }
-  td:nth-child(2) { color: var(--mag); width: 10ch; }
-
   /* ── From the realm ────────────────────────────────────────────── */
   .realm { max-width: 76ch; }
   .realm .status { color: var(--hi); margin: 0 0 10px; }
@@ -205,12 +199,13 @@
   </div>
 
   <header class="title">
-<pre class="ansi dragon" aria-hidden="true">              <span class="d">▄▄▄▄▄▄</span>
-           <span class="d">▄</span>██████████<span class="d">▄</span>
-          ███<span class="r">▀</span>  <span class="w">◢</span>  <span class="r">▀</span>█████<span class="d">▄</span>
-   <span class="y">▒▓</span>    ███<span class="r">▌</span>  <span class="r">▄▄▄</span>    <span class="r">▀</span>████<span class="d">▄</span>
-  <span class="y">░▒▓▓▒░</span><span class="r">▀</span>██<span class="r">▄▄▀▀█▀</span>      <span class="r">▀</span>████<span class="d">▄</span>
-    <span class="y">░</span>     <span class="r">▀▀▀▀▀</span>          <span class="r">▀</span>████<span class="d">▄</span></pre>
+<pre class="ansi dragon" aria-hidden="true">                               <span class="d">▄▄▄▄▄▄▄</span>
+                             <span class="d">▄</span>█████████<span class="d">▄</span>
+          <span class="d">▄▄▄▄▄</span>             ██████<span class="r">▀▀</span>██████<span class="d">▄</span>
+    <span class="y">▒▓</span>   ██████<span class="r">▀</span>██<span class="d">▄</span>         ████<span class="r">▀</span>       <span class="r">▀</span>████
+   <span class="y">░▒▓▓</span>  ███<span class="w">◢</span>    <span class="r">▀</span>███<span class="d">▄▄▄▄</span>  ███<span class="r">▀</span>           <span class="r">▀</span>██<span class="d">▄</span>
+    <span class="y">░▒</span>  ████<span class="r">▄▄▄▄▄▄▄▀▀▀▀▀</span>██████<span class="r">▀</span>              <span class="r">▀</span>█
+          <span class="r">▀▀▀▀▀</span>           <span class="r">▀▀▀</span></pre>
 <pre class="ansi logo" role="img" aria-label="Dragonmoor"><span class="r">██████╗</span> <span class="r">██████╗</span>  <span class="r">█████╗</span>  <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">███╗</span>   <span class="r">██╗███╗</span>   <span class="r">███╗</span> <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">██████╗</span>
 <span class="r">██╔══██╗██╔══██╗██╔══██╗██╔════╝</span> <span class="r">██╔═══██╗████╗</span>  <span class="r">██║████╗</span> <span class="r">████║██╔═══██╗██╔═══██╗██╔══██╗</span>
 <span class="r">██║</span>  <span class="r">██║██████╔╝███████║██║</span>  <span class="r">███╗██║</span>   <span class="r">██║██╔██╗</span> <span class="r">██║██╔████╔██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██████╔╝</span>
@@ -252,14 +247,14 @@
 
         <p class="u">/dragonmoor:lord</p>
         <p class="tool">Called plugin:dragonmoor:dragonmoor</p>
-        <p class="a">Morning. The realm reset while you slept, and you slept at the inn, so you're whole. The paper has one item: a newcomer called Eric, a warrior, has joined Dragonmoor. The town crier seems unbothered by this.</p>
+        <p class="a">Morning. The realm reset while you slept, and you slept at the inn, so you're whole. The paper has one item: a newcomer called Grimwald, a warrior, has joined Dragonmoor. The town crier seems unbothered by this.</p>
         <p class="hp">HP 20/20 · Gold 100 (bank 0) · L1 · Forest 10 · PvP 3 · Specials 3</p>
         <p class="menu"><span>(F)</span>orest  <span>(T)</span>avern  <span>(H)</span>ealer  <span>(S)</span>hop  <span>(B)</span>ank  <span>(I)</span>nn  <span>(C)</span>hallenge  <span>(N)</span>ews  <span>(R)</span>ankings  <span>(Q)</span>uit</p>
 
         <p class="u">F</p>
         <p class="tool">Called plugin:dragonmoor:dragonmoor</p>
         <p class="a">The trees close in behind you and the birdsong stops. A rustle in the undergrowth, then a scrawny figure darts out with a rusty knife and a hungry look. A Small Thief, all elbows and bad intentions, eyeing your coin purse.</p>
-        <p class="hp">Small Thief  HP 7/7  ·  Eric  HP 20/20</p>
+        <p class="hp">Small Thief  HP 7/7  ·  Grimwald  HP 20/20</p>
         <p class="menu"><span>(A)</span>ttack  <span>(S)</span>pecial  <span>(R)</span>un</p>
 
         <p class="u">A</p>
@@ -292,16 +287,6 @@
     </div>
   </section>
 
-  <section aria-labelledby="townsfolk">
-    <h2 id="townsfolk">Townsfolk</h2>
-    <p style="max-width:70ch;margin:0 0 12px">Four locals play every morning so the board is never empty. They're bound by the same rules as you: they can be robbed, and they can be killed.</p>
-    <table>
-      <tr><td>Hilde</td><td>warrior</td><td>Banks everything and sleeps at the inn, every night. You will not get a coin off her. She is the one to catch.</td></tr>
-      <tr><td>Grimwald</td><td>warrior</td><td>Never banks, never pays for a bed. Asleep in the fields most nights with whatever he won that day.</td></tr>
-      <tr><td>Vesper</td><td>thief</td><td>Spends her player fights on whoever's in the fields with the most gold on them. The reason you bank before you go.</td></tr>
-      <tr><td>Old Tam</td><td>mage</td><td>Fights a little, reads the paper, leaves one line on the tavern board about it. Usually at someone's expense.</td></tr>
-    </table>
-  </section>
 
   <section class="realm" aria-labelledby="fromrealm">
     <h2 id="fromrealm">From the realm</h2>
