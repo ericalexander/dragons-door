@@ -10,7 +10,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23000'/><text x='2' y='13' font-family='monospace' font-size='12' fill='%23ff5555'>▲</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&family=Noto+Sans+Mono&display=swap" rel="stylesheet">
 <style>
   /* ANSI 16 on true black. Colors are used by BBS convention, not as a single accent. */
   :root {
@@ -27,7 +27,7 @@
     --blue: #0000aa;
     --mag: #ff55ff;
     --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
-    --crt: "VT323", var(--mono);
+    --blocks: "Noto Sans Mono", "DejaVu Sans Mono", "Menlo", monospace;
   }
   * { box-sizing: border-box; }
   html { background: var(--bg); }
@@ -70,14 +70,17 @@
   .title { padding: 28px 0 0; }
   pre.ansi {
     margin: 0;
-    font-family: var(--mono);
+    font-family: var(--blocks);
+    font-variant-ligatures: none;
+    letter-spacing: 0;
     white-space: pre;
     color: var(--red);
     user-select: none;
     overflow: hidden;
   }
-  pre.dragon { font-size: 16px; line-height: 1.05; margin-bottom: 12px; color: var(--red); }
-  pre.logo { font-size: 12.5px; line-height: 1.15; letter-spacing: -0.02em; }
+  pre.dragon { font-size: 14px; line-height: 1; margin-bottom: 12px; color: var(--red); }
+  pre.dragon .k { color: #8a0000; }
+  pre.logo { font-size: 12.5px; line-height: 1.05; }
   pre.ansi .r { color: var(--red-hi); }
   pre.logo .r { color: var(--red-hi); }
   pre.ansi .y { color: var(--yel); }
@@ -173,8 +176,8 @@
 
   @media (max-width: 720px) {
     body { font-size: 14px; }
-    pre.dragon { font-size: 9px; }
-    pre.logo { font-size: 6.5px; letter-spacing: -0.03em; }
+    pre.dragon { font-size: 7.5px; }
+    pre.logo { font-size: 6.5px; }
     .day { grid-template-columns: 1fr; }
     h2::after { content: " ════════════════════"; }
     .bar span:nth-child(2) { display: none; }
@@ -191,15 +194,19 @@
   </div>
 
   <header class="title">
-<pre class="ansi dragon" aria-hidden="true">                 <span class="d">▄▄▄▄</span>
-          <span class="d">▄▄</span>█████████<span class="d">▄</span>
-        <span class="d">▄</span>███████████████<span class="d">▄</span>      <span class="d">▄</span>
-       ██████<span class="r">▀▀</span>   <span class="r">▀</span>██████<span class="d">▄</span>   <span class="d">▄</span>█<span class="r">▀</span>
-      ████<span class="r">▀</span>   <span class="w">●</span>     <span class="r">▀</span>██████<span class="d">▄</span>█<span class="r">▀</span>
-     ████<span class="r">▌</span>  <span class="r">▄▄▄▄</span>     <span class="r">▀</span>████████<span class="d">▄</span>
-     <span class="r">▀</span>████<span class="d">▄</span> <span class="r">▀▀▀█▀▄</span>     <span class="r">▀</span>████████<span class="d">▄</span>
-  <span class="y">░▒▓</span> <span class="r">▀</span>██████<span class="r">▄▄▄▀</span>        <span class="r">▀</span>████████<span class="d">▄</span>
-<span class="y">░▒▓▓▒░</span>   <span class="r">▀▀▀▀▀</span>             <span class="r">▀</span>███████<span class="d">▄</span></pre>
+<pre class="ansi dragon" aria-hidden="true">                                     <span class="r">▄</span>
+                                    <span class="r">▄</span>█▌
+                                   <span class="r">▄</span>███▌        <span class="r">▄</span>
+                                  <span class="r">▄</span>█████▌      <span class="r">▄</span>█▌
+         <span class="r">▄</span>                       <span class="r">▄</span>███████▌    <span class="r">▄</span>███▌
+        ▐█<span class="r">▄</span>         <span class="r">▄▄▄▄▄</span>       <span class="r">▄</span>█████████▌  <span class="r">▄</span>█████▌
+     <span class="r">▄▄▄</span>████<span class="r">▄▄</span>  <span class="r">▄▄</span>█████████<span class="r">▄▄</span>  <span class="r">▄</span>███████████<span class="r">▄▄</span>███████▌
+   <span class="r">▄</span>█████<span class="k">▀▀▀</span>████████████████████████████████████████<span class="r">▄</span>
+  ███<span class="k">▀</span>  <span class="w">●</span>  ▐██████████████████████████████████████████<span class="r">▄</span>
+  <span class="k">▀</span>██<span class="r">▄▄</span>    <span class="r">▄</span>███████<span class="k">▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀</span>██████<span class="k">▀▀▀</span>█████████<span class="r">▄</span>
+<span class="y">░▒▓</span> <span class="k">▀▀▀</span>█<span class="k">▀</span>█<span class="k">▀</span>█<span class="k">▀▀▀</span>██<span class="k">▀</span>                    ▐███▌    <span class="k">▀▀</span>████████<span class="r">▄▄</span>
+<span class="y">▒▓▓▒░</span>   <span class="k">▀</span> <span class="k">▀</span>     <span class="k">▀</span>                      <span class="k">▀▀▀▀</span>       <span class="k">▀▀</span>██████<span class="r">▄</span>
+ <span class="y">░▒</span>                                                  <span class="k">▀▀▀▀▀</span></pre>
 <pre class="ansi logo" role="img" aria-label="Dragonmoor"><span class="r">██████╗</span> <span class="r">██████╗</span>  <span class="r">█████╗</span>  <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">███╗</span>   <span class="r">██╗███╗</span>   <span class="r">███╗</span> <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">██████╗</span>
 <span class="r">██╔══██╗██╔══██╗██╔══██╗██╔════╝</span> <span class="r">██╔═══██╗████╗</span>  <span class="r">██║████╗</span> <span class="r">████║██╔═══██╗██╔═══██╗██╔══██╗</span>
 <span class="r">██║</span>  <span class="r">██║██████╔╝███████║██║</span>  <span class="r">███╗██║</span>   <span class="r">██║██╔██╗</span> <span class="r">██║██╔████╔██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██████╔╝</span>
