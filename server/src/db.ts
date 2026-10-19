@@ -12,8 +12,16 @@ for (const dir of [join(dirname(fileURLToPath(import.meta.url)), ".."), join(dir
 
 const { Pool } = pg;
 
+const url = process.env.DATABASE_URL ?? "postgres://lord:lord@localhost:5433/lord";
+const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL ?? "postgres://lord:lord@localhost:5433/lord",
+  connectionString: url,
+  // Hosted Postgres (Supabase etc.) requires TLS; local docker does not.
+  ssl: local ? false : { rejectUnauthorized: false },
+  // Serverless: many short-lived instances, so keep each pool tiny.
+  max: process.env.VERCEL ? 2 : 10,
+  idleTimeoutMillis: 10_000,
 });
 
 export type Client = pg.PoolClient;

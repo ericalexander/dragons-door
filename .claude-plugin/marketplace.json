@@ -1,0 +1,11 @@
+{
+  "name": "lord",
+  "owner": { "name": "Eric Alexander" },
+  "plugins": [
+    {
+      "name": "dragonmoor",
+      "source": "./plugin",
+      "description": "A daily-turn text RPG in the spirit of the BBS door games. Fight in the forest, raid other players, read the morning news."
+    }
+  ]
+}
