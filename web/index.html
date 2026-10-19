@@ -155,12 +155,6 @@
   @keyframes blink { 50% { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) { .pane .cursor { animation: none; } }
 
-  /* ── Rules of the day ──────────────────────────────────────────── */
-  .day { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 40px; max-width: 100ch; }
-  .day p { margin: 0 0 8px; }
-  .day b { color: var(--yel); font-weight: 400; }
-  .day .warn { color: var(--red-hi); }
-
   /* ── From the realm ────────────────────────────────────────────── */
   .realm { max-width: 100ch; }
   .realm .status { color: var(--hi); margin: 0 0 10px; }
@@ -266,22 +260,6 @@
     </div>
   </section>
 
-  <section aria-labelledby="theday">
-    <h2 id="theday">The day</h2>
-    <div class="day">
-      <div>
-        <p><b>Forest.</b> Ten fights. Each one is a monster near your level, round by round: attack, special, or run. Win and you keep what it was carrying.</p>
-        <p><b>Train.</b> When you've seen enough, your master will test you. You can't run from him.</p>
-        <p><b>Challenge.</b> Three fights a day against other players. They're not there to defend themselves, so it's over in one go.</p>
-      </div>
-      <div>
-        <p><b>Bank.</b> Five transactions a day. Gold in the bank survives everything.</p>
-        <p><b>Inn.</b> Costs a hundred gold a level. Nobody can attack you overnight and you wake up healed.</p>
-        <p class="warn">Fields. Where you sleep when you don't pay. Anyone can find you there and take every coin you're holding.</p>
-        <p><b>Reset.</b> Once a day, 1am Eastern, for the whole realm. The dead come back. The dragon, if slain, returns.</p>
-      </div>
-    </div>
-  </section>
 
 
   <section class="realm" aria-labelledby="fromrealm">
