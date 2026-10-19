@@ -1,0 +1,62 @@
+# Dragonmoor
+
+A daily-turn text RPG in the spirit of the BBS door games, played inside Claude Code.
+
+You get ten forest fights and three player fights a day. Gold on hand is lost when you die; banked gold is safe. Sleep at the inn and nobody can touch you overnight; sleep in the fields and anyone can. Every morning, one line of realm news tells you who killed whom.
+
+The server runs every rule and every dice roll. Claude narrates. That split is the whole design.
+
+## Layout
+
+```
+server/          Hono + Postgres API. All game state and rules.
+  migrations/    schema
+  src/data/      monsters, weapons, armor, classes, level table
+  src/combat.ts  the dice
+  src/api.ts     every endpoint
+  smoke.sh       end-to-end test against a running server
+plugin/          Claude Code plugin
+  .mcp.json      declares the MCP server
+  mcp/           stdio MCP server: thin bridge from tools to the API
+  skills/lord    the /dragonmoor:lord entry point
+  skills/narrator  how Claude turns events into prose
+  hooks/         SessionStart hook: one line of news
+```
+
+## Run it locally
+
+```bash
+docker compose up -d            # Postgres on :5432 (or point DATABASE_URL anywhere)
+npm install
+npm run build
+npm run migrate
+npm run dev                     # API on :8787
+```
+
+Smoke test in another shell:
+
+```bash
+server/smoke.sh
+```
+
+## Play it
+
+```bash
+claude --plugin-dir ./plugin
+```
+
+Then `/dragonmoor:lord`. First run asks for a name and class and stores an API key in `~/.config/lord/config.json`. Point at a hosted realm with `LORD_API_URL=https://...`.
+
+## The contract
+
+Every tool returns:
+
+```json
+{ "events": [...], "state": {...}, "actions": [...], "hint": "optional" }
+```
+
+`events` is what happened. `state` is where you are. `actions` is what's legal next — the narrator offers only those. See `plugin/skills/narrator/SKILL.md`.
+
+## Not yet
+
+Hosted realm, admin tooling, seasons, mail between players, the "other places" extension points. Rankings and news give you the social loop; the rest comes once people are reading the news every morning.

@@ -1,0 +1,17 @@
+{
+  "description": "One line of Dragonmoor news when a session starts, so the game is waiting for you every morning.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/news.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

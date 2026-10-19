@@ -1,0 +1,14 @@
+{
+  "name": "lord",
+  "private": true,
+  "workspaces": [
+    "server",
+    "plugin/mcp"
+  ],
+  "scripts": {
+    "build": "npm run build -w server && npm run build -w plugin/mcp",
+    "dev": "npm run dev -w server",
+    "migrate": "npm run migrate -w server",
+    "test": "npm test -w server"
+  }
+}
