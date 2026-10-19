@@ -90,6 +90,17 @@ export function armor(id: number) {
 export function expForLevel(level: number): number | null {
   return GAME.levels.find((l) => l.level === level)?.exp ?? null;
 }
+/** Stat gains on reaching `newLevel`. Gains grow with level so the player keeps pace with the bestiary. */
+export function levelGains(cls: PlayerClass, newLevel: number): { hp: number; str: number; def: number } {
+  const c = GAME.classes[cls];
+  const g = GAME.growth;
+  return {
+    hp: Math.round(c.hpPerLevel * (1 + g.hp * (newLevel - 1))),
+    str: Math.round(c.strPerLevel * (1 + g.str * (newLevel - 1))),
+    def: Math.round(c.defPerLevel * (1 + g.def * (newLevel - 1))),
+  };
+}
+
 export function master(level: number) {
   return GAME.masters.find((m) => m.level === level) ?? null;
 }

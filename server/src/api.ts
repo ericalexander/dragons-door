@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, expForLevel, master, legalActions, publicState,
+  GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, specialMultiplier } from "./combat.js";
@@ -232,14 +232,14 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     ctx.events.push({ kind: "monster_slain", monster: m.name, gold: m.gold, exp: m.exp });
     if (next !== null && ctx.p.exp >= next) ctx.events.push({ kind: "level_ready", level: ctx.p.level + 1 });
   } else if (kind === "master") {
-    const cls = GAME.classes[ctx.p.class];
     const lvl = ctx.p.level + 1;
+    const g = levelGains(ctx.p.class, lvl);
     await savePlayer(ctx, {
       level: lvl,
-      max_hp: ctx.p.max_hp + cls.hpPerLevel,
-      hp: ctx.p.max_hp + cls.hpPerLevel,
-      str: ctx.p.str + cls.strPerLevel,
-      def: ctx.p.def + cls.defPerLevel,
+      max_hp: ctx.p.max_hp + g.hp,
+      hp: ctx.p.max_hp + g.hp,
+      str: ctx.p.str + g.str,
+      def: ctx.p.def + g.def,
     });
     await post(ctx, "level_up", ctx.p.name, null, { level: lvl });
     ctx.events.push({ kind: "level_up", level: lvl, max_hp: ctx.p.max_hp, str: ctx.p.str, def: ctx.p.def });

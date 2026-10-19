@@ -1,105 +1,588 @@
 {
   "classes": {
-    "warrior": { "special": "Power Strike", "specialMult": 2.0, "hpPerLevel": 10, "strPerLevel": 4, "defPerLevel": 2 },
-    "thief":   { "special": "Sneak Attack", "specialMult": 1.5, "hpPerLevel": 8,  "strPerLevel": 3, "defPerLevel": 2, "specialDodge": true },
-    "mage":    { "special": "Fireball",     "specialMult": 2.5, "hpPerLevel": 7,  "strPerLevel": 2, "defPerLevel": 1 }
+    "warrior": {
+      "special": "Power Strike",
+      "specialMult": 2.0,
+      "specialsPerDay": 3,
+      "hpPerLevel": 10,
+      "strPerLevel": 4,
+      "defPerLevel": 2
+    },
+    "thief": {
+      "special": "Sneak Attack",
+      "specialMult": 2.0,
+      "specialsPerDay": 3,
+      "hpPerLevel": 9,
+      "strPerLevel": 3,
+      "defPerLevel": 3,
+      "specialDodge": true
+    },
+    "mage": {
+      "special": "Fireball",
+      "specialMult": 3.0,
+      "specialsPerDay": 6,
+      "hpPerLevel": 8,
+      "strPerLevel": 3,
+      "defPerLevel": 2
+    }
   },
-
   "levels": [
-    { "level": 1,  "exp": 0 },
-    { "level": 2,  "exp": 100 },
-    { "level": 3,  "exp": 400 },
-    { "level": 4,  "exp": 1000 },
-    { "level": 5,  "exp": 4000 },
-    { "level": 6,  "exp": 10000 },
-    { "level": 7,  "exp": 40000 },
-    { "level": 8,  "exp": 100000 },
-    { "level": 9,  "exp": 400000 },
-    { "level": 10, "exp": 1000000 },
-    { "level": 11, "exp": 4000000 },
-    { "level": 12, "exp": 10000000 }
+    {
+      "level": 1,
+      "exp": 0
+    },
+    {
+      "level": 2,
+      "exp": 100
+    },
+    {
+      "level": 3,
+      "exp": 400
+    },
+    {
+      "level": 4,
+      "exp": 1000
+    },
+    {
+      "level": 5,
+      "exp": 4000
+    },
+    {
+      "level": 6,
+      "exp": 10000
+    },
+    {
+      "level": 7,
+      "exp": 40000
+    },
+    {
+      "level": 8,
+      "exp": 100000
+    },
+    {
+      "level": 9,
+      "exp": 400000
+    },
+    {
+      "level": 10,
+      "exp": 1000000
+    },
+    {
+      "level": 11,
+      "exp": 4000000
+    },
+    {
+      "level": 12,
+      "exp": 10000000
+    }
   ],
-
   "masters": [
-    { "level": 1,  "name": "Halder",        "hp": 15,   "str": 5,    "def": 2 },
-    { "level": 2,  "name": "Barak",         "hp": 30,   "str": 10,   "def": 4 },
-    { "level": 3,  "name": "Aragorn",       "hp": 50,   "str": 18,   "def": 7 },
-    { "level": 4,  "name": "Olodrin",       "hp": 80,   "str": 28,   "def": 10 },
-    { "level": 5,  "name": "Sandtiger",     "hp": 120,  "str": 40,   "def": 14 },
-    { "level": 6,  "name": "Sparhawk",      "hp": 170,  "str": 55,   "def": 18 },
-    { "level": 7,  "name": "Atsuko Sensei", "hp": 240,  "str": 75,   "def": 23 },
-    { "level": 8,  "name": "Aladdin",       "hp": 320,  "str": 100,  "def": 28 },
-    { "level": 9,  "name": "Prince Caspian","hp": 420,  "str": 130,  "def": 34 },
-    { "level": 10, "name": "Gandalf",       "hp": 550,  "str": 170,  "def": 40 },
-    { "level": 11, "name": "Turgon",        "hp": 700,  "str": 220,  "def": 47 }
+    {
+      "level": 1,
+      "name": "Halder",
+      "hp": 15,
+      "str": 4,
+      "def": 2
+    },
+    {
+      "level": 2,
+      "name": "Barak",
+      "hp": 30,
+      "str": 7,
+      "def": 4
+    },
+    {
+      "level": 3,
+      "name": "Aragorn",
+      "hp": 50,
+      "str": 13,
+      "def": 7
+    },
+    {
+      "level": 4,
+      "name": "Olodrin",
+      "hp": 80,
+      "str": 20,
+      "def": 10
+    },
+    {
+      "level": 5,
+      "name": "Sandtiger",
+      "hp": 120,
+      "str": 28,
+      "def": 14
+    },
+    {
+      "level": 6,
+      "name": "Sparhawk",
+      "hp": 170,
+      "str": 38,
+      "def": 18
+    },
+    {
+      "level": 7,
+      "name": "Atsuko Sensei",
+      "hp": 240,
+      "str": 52,
+      "def": 23
+    },
+    {
+      "level": 8,
+      "name": "Aladdin",
+      "hp": 320,
+      "str": 70,
+      "def": 28
+    },
+    {
+      "level": 9,
+      "name": "Prince Caspian",
+      "hp": 420,
+      "str": 91,
+      "def": 34
+    },
+    {
+      "level": 10,
+      "name": "Gandalf",
+      "hp": 550,
+      "str": 119,
+      "def": 40
+    },
+    {
+      "level": 11,
+      "name": "Turgon",
+      "hp": 700,
+      "str": 154,
+      "def": 47
+    }
   ],
-
   "weapons": [
-    { "id": 0,  "name": "Fists",            "str": 0,    "cost": 0 },
-    { "id": 1,  "name": "Stick",            "str": 5,    "cost": 200 },
-    { "id": 2,  "name": "Dagger",           "str": 10,   "cost": 1000 },
-    { "id": 3,  "name": "Short Sword",      "str": 20,   "cost": 3000 },
-    { "id": 4,  "name": "Long Sword",       "str": 30,   "cost": 10000 },
-    { "id": 5,  "name": "Huge Axe",         "str": 40,   "cost": 30000 },
-    { "id": 6,  "name": "Bone Cruncher",    "str": 50,   "cost": 100000 },
-    { "id": 7,  "name": "Twin Swords",      "str": 60,   "cost": 150000 },
-    { "id": 8,  "name": "Power Axe",        "str": 70,   "cost": 200000 },
-    { "id": 9,  "name": "Able's Sword",     "str": 80,   "cost": 400000 },
-    { "id": 10, "name": "Wan's Weapon",     "str": 90,   "cost": 1000000 },
-    { "id": 11, "name": "Spear of Gold",    "str": 100,  "cost": 4000000 },
-    { "id": 12, "name": "Crystal Shard",    "str": 150,  "cost": 10000000 }
+    {
+      "id": 0,
+      "name": "Fists",
+      "str": 0,
+      "cost": 0
+    },
+    {
+      "id": 1,
+      "name": "Stick",
+      "str": 5,
+      "cost": 200
+    },
+    {
+      "id": 2,
+      "name": "Dagger",
+      "str": 10,
+      "cost": 1000
+    },
+    {
+      "id": 3,
+      "name": "Short Sword",
+      "str": 20,
+      "cost": 3000
+    },
+    {
+      "id": 4,
+      "name": "Long Sword",
+      "str": 30,
+      "cost": 10000
+    },
+    {
+      "id": 5,
+      "name": "Huge Axe",
+      "str": 40,
+      "cost": 30000
+    },
+    {
+      "id": 6,
+      "name": "Bone Cruncher",
+      "str": 50,
+      "cost": 100000
+    },
+    {
+      "id": 7,
+      "name": "Twin Swords",
+      "str": 60,
+      "cost": 150000
+    },
+    {
+      "id": 8,
+      "name": "Power Axe",
+      "str": 70,
+      "cost": 200000
+    },
+    {
+      "id": 9,
+      "name": "Able's Sword",
+      "str": 80,
+      "cost": 400000
+    },
+    {
+      "id": 10,
+      "name": "Wan's Weapon",
+      "str": 90,
+      "cost": 1000000
+    },
+    {
+      "id": 11,
+      "name": "Spear of Gold",
+      "str": 100,
+      "cost": 4000000
+    },
+    {
+      "id": 12,
+      "name": "Crystal Shard",
+      "str": 150,
+      "cost": 10000000
+    }
   ],
-
   "armor": [
-    { "id": 0,  "name": "Coat",             "def": 0,    "cost": 0 },
-    { "id": 1,  "name": "Leather Vest",     "def": 5,    "cost": 200 },
-    { "id": 2,  "name": "Bronze Armor",     "def": 10,   "cost": 1000 },
-    { "id": 3,  "name": "Iron Armor",       "def": 20,   "cost": 3000 },
-    { "id": 4,  "name": "Graphite Armor",   "def": 30,   "cost": 10000 },
-    { "id": 5,  "name": "Erdrick's Armor",  "def": 40,   "cost": 30000 },
-    { "id": 6,  "name": "Armor of Death",   "def": 50,   "cost": 100000 },
-    { "id": 7,  "name": "Able's Armor",     "def": 60,   "cost": 150000 },
-    { "id": 8,  "name": "Full Body Armor",  "def": 70,   "cost": 200000 },
-    { "id": 9,  "name": "Blood Armor",      "def": 80,   "cost": 400000 },
-    { "id": 10, "name": "Magic Protection", "def": 90,   "cost": 1000000 },
-    { "id": 11, "name": "Belar's Mail",     "def": 100,  "cost": 4000000 },
-    { "id": 12, "name": "Golden Armor",     "def": 150,  "cost": 10000000 }
+    {
+      "id": 0,
+      "name": "Coat",
+      "def": 0,
+      "cost": 0
+    },
+    {
+      "id": 1,
+      "name": "Leather Vest",
+      "def": 5,
+      "cost": 200
+    },
+    {
+      "id": 2,
+      "name": "Bronze Armor",
+      "def": 10,
+      "cost": 1000
+    },
+    {
+      "id": 3,
+      "name": "Iron Armor",
+      "def": 20,
+      "cost": 3000
+    },
+    {
+      "id": 4,
+      "name": "Graphite Armor",
+      "def": 30,
+      "cost": 10000
+    },
+    {
+      "id": 5,
+      "name": "Erdrick's Armor",
+      "def": 40,
+      "cost": 30000
+    },
+    {
+      "id": 6,
+      "name": "Armor of Death",
+      "def": 50,
+      "cost": 100000
+    },
+    {
+      "id": 7,
+      "name": "Able's Armor",
+      "def": 60,
+      "cost": 150000
+    },
+    {
+      "id": 8,
+      "name": "Full Body Armor",
+      "def": 70,
+      "cost": 200000
+    },
+    {
+      "id": 9,
+      "name": "Blood Armor",
+      "def": 80,
+      "cost": 400000
+    },
+    {
+      "id": 10,
+      "name": "Magic Protection",
+      "def": 90,
+      "cost": 1000000
+    },
+    {
+      "id": 11,
+      "name": "Belar's Mail",
+      "def": 100,
+      "cost": 4000000
+    },
+    {
+      "id": 12,
+      "name": "Golden Armor",
+      "def": 150,
+      "cost": 10000000
+    }
   ],
-
   "monsters": [
-    { "level": 1,  "name": "Small Thief",      "hp": 8,    "str": 3,    "def": 0,  "gold": 15,     "exp": 7 },
-    { "level": 1,  "name": "Rude Boy",         "hp": 10,   "str": 4,    "def": 0,  "gold": 20,     "exp": 9 },
-    { "level": 1,  "name": "Large Mosquito",   "hp": 6,    "str": 5,    "def": 0,  "gold": 10,     "exp": 6 },
-    { "level": 1,  "name": "Wild Boar",        "hp": 12,   "str": 5,    "def": 1,  "gold": 25,     "exp": 12 },
-    { "level": 2,  "name": "Old Man",          "hp": 20,   "str": 9,    "def": 2,  "gold": 60,     "exp": 25 },
-    { "level": 2,  "name": "Pack of Wolves",   "hp": 25,   "str": 11,   "def": 2,  "gold": 70,     "exp": 30 },
-    { "level": 2,  "name": "Bandit",           "hp": 22,   "str": 12,   "def": 3,  "gold": 90,     "exp": 32 },
-    { "level": 3,  "name": "Giant Spider",     "hp": 40,   "str": 18,   "def": 5,  "gold": 200,    "exp": 75 },
-    { "level": 3,  "name": "Enraged Ogre",     "hp": 50,   "str": 20,   "def": 6,  "gold": 250,    "exp": 90 },
-    { "level": 3,  "name": "Goblin Chieftain", "hp": 45,   "str": 22,   "def": 7,  "gold": 280,    "exp": 95 },
-    { "level": 4,  "name": "Fire Imp",         "hp": 70,   "str": 30,   "def": 9,  "gold": 500,    "exp": 200 },
-    { "level": 4,  "name": "Troll",            "hp": 90,   "str": 32,   "def": 11, "gold": 600,    "exp": 240 },
-    { "level": 5,  "name": "Werewolf",         "hp": 120,  "str": 45,   "def": 14, "gold": 1200,   "exp": 600 },
-    { "level": 5,  "name": "Shadow Knight",    "hp": 140,  "str": 50,   "def": 16, "gold": 1500,   "exp": 700 },
-    { "level": 6,  "name": "Wyvern",           "hp": 180,  "str": 65,   "def": 19, "gold": 3000,   "exp": 1500 },
-    { "level": 6,  "name": "Stone Golem",      "hp": 220,  "str": 60,   "def": 24, "gold": 3200,   "exp": 1700 },
-    { "level": 7,  "name": "Vampire",          "hp": 260,  "str": 85,   "def": 24, "gold": 6000,   "exp": 4000 },
-    { "level": 7,  "name": "Chimera",          "hp": 300,  "str": 90,   "def": 26, "gold": 7000,   "exp": 4500 },
-    { "level": 8,  "name": "Lich",             "hp": 360,  "str": 110,  "def": 30, "gold": 12000,  "exp": 9000 },
-    { "level": 8,  "name": "Frost Giant",      "hp": 420,  "str": 115,  "def": 33, "gold": 14000,  "exp": 10000 },
-    { "level": 9,  "name": "Hydra",            "hp": 500,  "str": 140,  "def": 36, "gold": 25000,  "exp": 25000 },
-    { "level": 9,  "name": "Demon Lord",       "hp": 560,  "str": 150,  "def": 38, "gold": 28000,  "exp": 28000 },
-    { "level": 10, "name": "Ancient Wyrm",     "hp": 650,  "str": 180,  "def": 42, "gold": 50000,  "exp": 60000 },
-    { "level": 10, "name": "Titan",            "hp": 720,  "str": 190,  "def": 45, "gold": 55000,  "exp": 65000 },
-    { "level": 11, "name": "Elder Lich",       "hp": 850,  "str": 230,  "def": 50, "gold": 120000, "exp": 180000 },
-    { "level": 11, "name": "Balrog",           "hp": 950,  "str": 250,  "def": 54, "gold": 140000, "exp": 200000 },
-    { "level": 12, "name": "Death Knight",     "hp": 1100, "str": 290,  "def": 60, "gold": 300000, "exp": 500000 },
-    { "level": 12, "name": "Shadow Dragon",    "hp": 1300, "str": 320,  "def": 65, "gold": 350000, "exp": 600000 }
+    {
+      "level": 1,
+      "name": "Small Thief",
+      "hp": 8,
+      "str": 2,
+      "def": 0,
+      "gold": 30,
+      "exp": 14
+    },
+    {
+      "level": 1,
+      "name": "Rude Boy",
+      "hp": 10,
+      "str": 3,
+      "def": 0,
+      "gold": 40,
+      "exp": 18
+    },
+    {
+      "level": 1,
+      "name": "Large Mosquito",
+      "hp": 6,
+      "str": 4,
+      "def": 0,
+      "gold": 20,
+      "exp": 12
+    },
+    {
+      "level": 1,
+      "name": "Wild Boar",
+      "hp": 12,
+      "str": 4,
+      "def": 1,
+      "gold": 50,
+      "exp": 24
+    },
+    {
+      "level": 2,
+      "name": "Old Man",
+      "hp": 20,
+      "str": 6,
+      "def": 2,
+      "gold": 120,
+      "exp": 50
+    },
+    {
+      "level": 2,
+      "name": "Pack of Wolves",
+      "hp": 25,
+      "str": 8,
+      "def": 2,
+      "gold": 140,
+      "exp": 60
+    },
+    {
+      "level": 2,
+      "name": "Bandit",
+      "hp": 22,
+      "str": 8,
+      "def": 3,
+      "gold": 180,
+      "exp": 64
+    },
+    {
+      "level": 3,
+      "name": "Giant Spider",
+      "hp": 40,
+      "str": 13,
+      "def": 5,
+      "gold": 400,
+      "exp": 150
+    },
+    {
+      "level": 3,
+      "name": "Enraged Ogre",
+      "hp": 50,
+      "str": 14,
+      "def": 6,
+      "gold": 500,
+      "exp": 180
+    },
+    {
+      "level": 3,
+      "name": "Goblin Chieftain",
+      "hp": 45,
+      "str": 15,
+      "def": 7,
+      "gold": 560,
+      "exp": 190
+    },
+    {
+      "level": 4,
+      "name": "Fire Imp",
+      "hp": 70,
+      "str": 21,
+      "def": 9,
+      "gold": 1000,
+      "exp": 400
+    },
+    {
+      "level": 4,
+      "name": "Troll",
+      "hp": 90,
+      "str": 22,
+      "def": 11,
+      "gold": 1200,
+      "exp": 480
+    },
+    {
+      "level": 5,
+      "name": "Werewolf",
+      "hp": 120,
+      "str": 31,
+      "def": 14,
+      "gold": 2400,
+      "exp": 1200
+    },
+    {
+      "level": 5,
+      "name": "Shadow Knight",
+      "hp": 140,
+      "str": 35,
+      "def": 16,
+      "gold": 3000,
+      "exp": 1400
+    },
+    {
+      "level": 6,
+      "name": "Wyvern",
+      "hp": 180,
+      "str": 46,
+      "def": 19,
+      "gold": 6000,
+      "exp": 3000
+    },
+    {
+      "level": 6,
+      "name": "Stone Golem",
+      "hp": 220,
+      "str": 42,
+      "def": 24,
+      "gold": 6400,
+      "exp": 3400
+    },
+    {
+      "level": 7,
+      "name": "Vampire",
+      "hp": 260,
+      "str": 59,
+      "def": 24,
+      "gold": 12000,
+      "exp": 8000
+    },
+    {
+      "level": 7,
+      "name": "Chimera",
+      "hp": 300,
+      "str": 63,
+      "def": 26,
+      "gold": 14000,
+      "exp": 9000
+    },
+    {
+      "level": 8,
+      "name": "Lich",
+      "hp": 360,
+      "str": 77,
+      "def": 30,
+      "gold": 24000,
+      "exp": 18000
+    },
+    {
+      "level": 8,
+      "name": "Frost Giant",
+      "hp": 420,
+      "str": 80,
+      "def": 33,
+      "gold": 28000,
+      "exp": 20000
+    },
+    {
+      "level": 9,
+      "name": "Hydra",
+      "hp": 500,
+      "str": 98,
+      "def": 36,
+      "gold": 50000,
+      "exp": 50000
+    },
+    {
+      "level": 9,
+      "name": "Demon Lord",
+      "hp": 560,
+      "str": 105,
+      "def": 38,
+      "gold": 56000,
+      "exp": 56000
+    },
+    {
+      "level": 10,
+      "name": "Ancient Wyrm",
+      "hp": 650,
+      "str": 112,
+      "def": 42,
+      "gold": 100000,
+      "exp": 120000
+    },
+    {
+      "level": 10,
+      "name": "Titan",
+      "hp": 720,
+      "str": 119,
+      "def": 45,
+      "gold": 110000,
+      "exp": 130000
+    },
+    {
+      "level": 11,
+      "name": "Elder Lich",
+      "hp": 850,
+      "str": 133,
+      "def": 50,
+      "gold": 240000,
+      "exp": 360000
+    },
+    {
+      "level": 11,
+      "name": "Balrog",
+      "hp": 950,
+      "str": 140,
+      "def": 54,
+      "gold": 280000,
+      "exp": 400000
+    },
+    {
+      "level": 12,
+      "name": "Death Knight",
+      "hp": 1100,
+      "str": 161,
+      "def": 60,
+      "gold": 600000,
+      "exp": 1000000
+    },
+    {
+      "level": 12,
+      "name": "Shadow Dragon",
+      "hp": 1300,
+      "str": 175,
+      "def": 65,
+      "gold": 700000,
+      "exp": 1200000
+    }
   ],
-
-  "dragon": { "name": "The Red Dragon", "hp": 15000, "str": 2000, "def": 120, "gold": 0, "exp": 0 },
-
+  "dragon": {
+    "name": "The Red Dragon",
+    "hp": 900,
+    "str": 320,
+    "def": 120,
+    "gold": 0,
+    "exp": 0
+  },
   "innCostPerLevel": 100,
   "healerCostPerHpPerLevel": 1,
-  "bankTxPerDay": 5
+  "bankTxPerDay": 5,
+  "growth": {
+    "hp": 0.5,
+    "str": 0.5,
+    "def": 0.5
+  }
 }
