@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: lord
       POSTGRES_DB: lord
     ports:
-      - "5432:5432"
+      - "${LORD_PG_PORT:-5433}:5432"
     volumes:
       - lord-pg:/var/lib/postgresql/data
 

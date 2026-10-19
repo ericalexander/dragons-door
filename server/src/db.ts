@@ -1,9 +1,19 @@
 import pg from "pg";
+import { loadEnvFile } from "node:process";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Read server/.env (and repo-root .env) if present. Real env vars win.
+for (const dir of [join(dirname(fileURLToPath(import.meta.url)), ".."), join(dirname(fileURLToPath(import.meta.url)), "..", "..")]) {
+  const f = join(dir, ".env");
+  if (existsSync(f)) { try { loadEnvFile(f); } catch { /* ignore */ } }
+}
 
 const { Pool } = pg;
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL ?? "postgres://lord:lord@localhost:5432/lord",
+  connectionString: process.env.DATABASE_URL ?? "postgres://lord:lord@localhost:5433/lord",
 });
 
 export type Client = pg.PoolClient;

@@ -26,7 +26,8 @@ plugin/          Claude Code plugin
 ## Run it locally
 
 ```bash
-docker compose up -d            # Postgres on :5432 (or point DATABASE_URL anywhere)
+docker compose up -d            # Postgres on :5433 (5432 is usually taken on a dev box)
+cp server/.env.example server/.env
 npm install
 npm run build
 npm run migrate
