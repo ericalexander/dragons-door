@@ -16,7 +16,7 @@ In Claude Code:
 /dragons-door:enter
 ```
 
-First run asks for a name and class and stores an API key in `~/.config/dragons-door/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://dragons-door-api.vercel.app` by default. Every new session greets you with one line of realm news.
+First run asks for a name and class and stores an API key in `~/.config/dragons-door/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://dragons-door-api.vercel.app` by default. Nothing from the game shows up in your Claude Code sessions until you run `/dragons-door:enter`; the optional status line shows `⚔` for unread news and `✉` for mail.
 
 ## Layout
 
@@ -32,7 +32,7 @@ plugin/          Claude Code plugin
   mcp/           stdio MCP server: thin bridge from tools to the API
   skills/enter   the /dragons-door:enter entry point
   skills/narrator  how Claude turns events into prose
-  hooks/         SessionStart hook: one line of news
+  statusline/    optional ⚔ / ✉ status line script
 ```
 
 ## Run it locally

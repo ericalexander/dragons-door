@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.3.3",
+    "lore": "The town crier has been asked, politely, to stop following you into your place of work. He took it well. The news will keep until you come through the gate.",
+    "plain": "No more realm news or mail notes at the start of your Claude Code sessions. Nothing shows until you enter; the ⚔ and ✉ in the status line still do."
+  },
+  {
     "version": "0.3.0",
     "lore": "There's music in the tavern now, and not always the same music. Some nights it's a cheerful piper, some nights an old man with a ballad that never ends, a minstrel singing about himself, or a woman in the corner who barely speaks. Ask nicely. A good song can do strange things for you.",
     "plain": "A bard plays the (T)avern each day — Fennick Reed, Dunstan the Unfinished, Corwin Lark or Wren. (L)isten once a day for a song and, sometimes, a small gift."

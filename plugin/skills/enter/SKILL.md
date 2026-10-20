@@ -1,6 +1,6 @@
 ---
 name: enter
-description: Enter Dragon's Door, the daily-turn BBS door game. Use when the player runs /dragons-door:enter or says they want to play the game, fight in the forest, raid someone, or check the realm news.
+description: Enter Dragon's Door, the daily-turn BBS door game. Use only when the player runs /dragons-door:enter or explicitly asks to play Dragon's Door by name. Never start it on your own from words like news, forest, attack or fight in ordinary work.
 argument-hint: [action]
 ---
 
