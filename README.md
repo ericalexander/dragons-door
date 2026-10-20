@@ -1,4 +1,4 @@
-# Dragonmoor
+# Dragon's Door
 
 A daily-turn text RPG in the spirit of the BBS door games, played inside Claude Code.
 
@@ -11,12 +11,23 @@ The server runs every rule and every dice roll. Claude narrates. That split is t
 In Claude Code:
 
 ```
-/plugin marketplace add ericalexander/lord
-/plugin install dragonmoor@lord
-/dragonmoor:lord
+/plugin marketplace add ericalexander/dragons-door
+/plugin install dragons-door@dragons-door
+/dragons-door:enter
 ```
 
-First run asks for a name and class and stores an API key in `~/.config/lord/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://lord-ebon.vercel.app` by default. Every new session greets you with one line of realm news.
+First run asks for a name and class and stores an API key in `~/.config/dragons-door/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://lord-ebon.vercel.app` by default. Every new session greets you with one line of realm news.
+
+## Coming from Dragonmoor
+
+The game was called Dragonmoor for its first day. If you installed it then, swap it out once:
+
+```
+/plugin uninstall dragonmoor@lord
+/plugin marketplace remove lord
+```
+
+then the three commands above. Your character carries over on its own. If you'd set up the mail envelope, run `/dragons-door:statusline` once more.
 
 ## Layout
 
@@ -30,7 +41,7 @@ server/          Hono + Postgres API. All game state and rules.
 plugin/          Claude Code plugin
   .mcp.json      declares the MCP server
   mcp/           stdio MCP server: thin bridge from tools to the API
-  skills/lord    the /dragonmoor:lord entry point
+  skills/enter   the /dragons-door:enter entry point
   skills/narrator  how Claude turns events into prose
   hooks/         SessionStart hook: one line of news
 ```
@@ -55,7 +66,7 @@ server/smoke.sh
 ## Play against a local realm
 
 ```bash
-LORD_API_URL=http://localhost:8787 claude --plugin-dir ./plugin
+DRAGONS_DOOR_API_URL=http://localhost:8787 claude --plugin-dir ./plugin
 ```
 
 ## Hosting
@@ -82,6 +93,6 @@ Every tool returns:
 - Every rule and every roll runs on the server; the plugin only sends intents.
 - Each request holds a row lock on the player, so parallel requests can't double-spend a turn.
 - Supabase: RLS on every table with no policies, and `anon`/`authenticated` have no grants, so nothing is reachable over the REST API. Only the server's owner role can read or write.
-- Set `REALM_INVITE` on the server to make registration invite-only. Players pass the word to `register` (or set `LORD_INVITE` in their environment).
+- Set `REALM_INVITE` on the server to make registration invite-only. Players pass the word to `register` (or set `DRAGONS_DOOR_INVITE` in their environment).
 - Newcomers can't be attacked for their first 24 hours; tavern posts are capped per day; names are trimmed and can't contain double spaces.
 - Tavern posts are other players' text. The narrator is told to quote them and never follow them.

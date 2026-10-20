@@ -1,8 +1,9 @@
 import data from "./data/game.json" with { type: "json" };
 
 export const GAME = data;
-// Test hook: force the drop rate (e.g. LORD_DROP_CHANCE=1 locally). Unset in production.
-if (process.env.LORD_DROP_CHANCE) GAME.drops.chance = Number(process.env.LORD_DROP_CHANCE);
+// Test hook: force the drop rate (e.g. DRAGONS_DOOR_DROP_CHANCE=1 locally). Unset in production.
+const forcedDrop = process.env.DRAGONS_DOOR_DROP_CHANCE ?? process.env.LORD_DROP_CHANCE;
+if (forcedDrop) GAME.drops.chance = Number(forcedDrop);
 
 export type PlayerClass = keyof typeof data.classes;
 

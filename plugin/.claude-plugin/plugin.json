@@ -1,7 +1,14 @@
 {
-  "name": "dragonmoor",
-  "version": "0.1.8",
-  "description": "A daily-turn text RPG in the spirit of the BBS door games. Fight in the forest, raid other players, read the morning news.",
-  "author": { "name": "Eric Alexander" },
-  "keywords": ["game", "rpg", "bbs", "door"]
+  "name": "dragons-door",
+  "version": "0.2.0",
+  "description": "Dragon's Door: an old-school BBS door game, played inside Claude Code. Fight in the forest, raid other players, read the morning news.",
+  "author": {
+    "name": "Eric Alexander"
+  },
+  "keywords": [
+    "game",
+    "rpg",
+    "bbs",
+    "door"
+  ]
 }

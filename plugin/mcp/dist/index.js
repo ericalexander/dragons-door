@@ -2874,20 +2874,20 @@ var require_compile = __commonJS({
     var util_1 = require_util();
     var validate_1 = require_validate();
     var SchemaEnv = class {
-      constructor(env) {
+      constructor(env2) {
         var _a;
         this.refs = {};
         this.dynamicAnchors = {};
         let schema;
-        if (typeof env.schema == "object")
-          schema = env.schema;
-        this.schema = env.schema;
-        this.schemaId = env.schemaId;
-        this.root = env.root || this;
-        this.baseId = (_a = env.baseId) !== null && _a !== void 0 ? _a : (0, resolve_1.normalizeId)(schema === null || schema === void 0 ? void 0 : schema[env.schemaId || "$id"]);
-        this.schemaPath = env.schemaPath;
-        this.localRefs = env.localRefs;
-        this.meta = env.meta;
+        if (typeof env2.schema == "object")
+          schema = env2.schema;
+        this.schema = env2.schema;
+        this.schemaId = env2.schemaId;
+        this.root = env2.root || this;
+        this.baseId = (_a = env2.baseId) !== null && _a !== void 0 ? _a : (0, resolve_1.normalizeId)(schema === null || schema === void 0 ? void 0 : schema[env2.schemaId || "$id"]);
+        this.schemaPath = env2.schemaPath;
+        this.localRefs = env2.localRefs;
+        this.meta = env2.meta;
         this.$async = schema === null || schema === void 0 ? void 0 : schema.$async;
         this.refs = {};
       }
@@ -3071,15 +3071,15 @@ var require_compile = __commonJS({
           baseId = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schId);
         }
       }
-      let env;
+      let env2;
       if (typeof schema != "boolean" && schema.$ref && !(0, util_1.schemaHasRulesButRef)(schema, this.RULES)) {
         const $ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, schema.$ref);
-        env = resolveSchema.call(this, root, $ref);
+        env2 = resolveSchema.call(this, root, $ref);
       }
       const { schemaId } = this.opts;
-      env = env || new SchemaEnv({ schema, schemaId, root, baseId });
-      if (env.schema !== env.root.schema)
-        return env;
+      env2 = env2 || new SchemaEnv({ schema, schemaId, root, baseId });
+      if (env2.schema !== env2.root.schema)
+        return env2;
       return void 0;
     }
   }
@@ -4877,8 +4877,8 @@ var require_ref = __commonJS({
       schemaType: "string",
       code(cxt) {
         const { gen, schema: $ref, it } = cxt;
-        const { baseId, schemaEnv: env, validateName, opts, self } = it;
-        const { root } = env;
+        const { baseId, schemaEnv: env2, validateName, opts, self } = it;
+        const { root } = env2;
         if (($ref === "#" || $ref === "#/") && baseId === root.baseId)
           return callRootRef();
         const schOrEnv = compile_1.resolveRef.call(self, root, baseId, $ref);
@@ -4888,8 +4888,8 @@ var require_ref = __commonJS({
           return callValidate(schOrEnv);
         return inlineRefSchema(schOrEnv);
         function callRootRef() {
-          if (env === root)
-            return callRef(cxt, validateName, env, env.$async);
+          if (env2 === root)
+            return callRef(cxt, validateName, env2, env2.$async);
           const rootName = gen.scopeValue("root", { ref: root });
           return callRef(cxt, (0, codegen_1._)`${rootName}.validate`, root, root.$async);
         }
@@ -4919,14 +4919,14 @@ var require_ref = __commonJS({
     exports.getValidate = getValidate;
     function callRef(cxt, v, sch, $async) {
       const { gen, it } = cxt;
-      const { allErrors, schemaEnv: env, opts } = it;
+      const { allErrors, schemaEnv: env2, opts } = it;
       const passCxt = opts.passContext ? names_1.default.this : codegen_1.nil;
       if ($async)
         callAsyncRef();
       else
         callSyncRef();
       function callAsyncRef() {
-        if (!env.$async)
+        if (!env2.$async)
           throw new Error("async schema referenced by sync schema");
         const valid = gen.let("valid");
         gen.try(() => {
@@ -21501,7 +21501,9 @@ var StdioServerTransport = class {
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-var CONFIG_DIR = process.env.LORD_CONFIG_DIR ?? join(homedir(), ".config", "lord");
+var env = (k) => process.env[`DRAGONS_DOOR_${k}`] ?? process.env[`LORD_${k}`];
+var CONFIG_DIR = env("CONFIG_DIR") ?? join(homedir(), ".config", "dragons-door");
+var LEGACY_DIR = join(homedir(), ".config", "lord");
 var CONFIG_FILE = join(CONFIG_DIR, "config.json");
 var DEFAULT_API_URL = "https://lord-ebon.vercel.app";
 async function loadConfig() {
@@ -21509,9 +21511,17 @@ async function loadConfig() {
   try {
     stored = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
   } catch {
+    try {
+      stored = JSON.parse(await readFile(join(LEGACY_DIR, "config.json"), "utf8"));
+      if (stored.api_key) {
+        await mkdir(CONFIG_DIR, { recursive: true, mode: 448 });
+        await writeFile(CONFIG_FILE, JSON.stringify(stored, null, 2), { mode: 384 });
+      }
+    } catch {
+    }
   }
   return {
-    api_url: process.env.LORD_API_URL ?? stored.api_url ?? DEFAULT_API_URL,
+    api_url: env("API_URL") ?? stored.api_url ?? DEFAULT_API_URL,
     api_key: stored.api_key,
     name: stored.name
   };
@@ -21534,11 +21544,13 @@ import { dirname, join as join2 } from "node:path";
 import { fileURLToPath } from "node:url";
 var CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR ?? join2(homedir2(), ".claude");
 var SETTINGS = join2(CLAUDE_DIR, "settings.json");
-var SCRIPT_DEST = join2(CLAUDE_DIR, "dragonmoor-statusline.sh");
-var PREV = join2(CLAUDE_DIR, "dragonmoor-statusline.prev");
-var ORIG = join2(CLAUDE_DIR, "dragonmoor-statusline.orig.json");
+var SCRIPT_DEST = join2(CLAUDE_DIR, "dragons-door-statusline.sh");
+var PREV = join2(CLAUDE_DIR, "dragons-door-statusline.prev");
+var ORIG = join2(CLAUDE_DIR, "dragons-door-statusline.orig.json");
+var LEGACY = { script: join2(CLAUDE_DIR, "dragonmoor-statusline.sh"), prev: join2(CLAUDE_DIR, "dragonmoor-statusline.prev"), orig: join2(CLAUDE_DIR, "dragonmoor-statusline.orig.json") };
+var LEGACY_COMMAND = `bash "${LEGACY.script}"`;
 var OUR_COMMAND = `bash "${SCRIPT_DEST}"`;
-var SCRIPT_SRC = join2(dirname(fileURLToPath(import.meta.url)), "..", "..", "statusline", "dragonmoor-statusline.sh");
+var SCRIPT_SRC = join2(dirname(fileURLToPath(import.meta.url)), "..", "..", "statusline", "dragons-door-statusline.sh");
 async function exists(p) {
   try {
     await stat(p);
@@ -21555,13 +21567,27 @@ async function readJson(p) {
     throw new Error(`couldn't read ${p}: ${e.message}`);
   }
 }
+async function migrateLegacy(settings) {
+  const current = settings.statusLine;
+  if (current?.command !== LEGACY_COMMAND) return false;
+  for (const [from, to] of [[LEGACY.prev, PREV], [LEGACY.orig, ORIG]]) {
+    try {
+      await writeFile2(to, await readFile2(from, "utf8"));
+    } catch {
+    }
+  }
+  settings.statusLine = { ...current, command: OUR_COMMAND };
+  for (const f of Object.values(LEGACY)) await rm(f, { force: true });
+  return true;
+}
 async function installStatusline(cwd) {
   const settings = await readJson(SETTINGS);
+  await migrateLegacy(settings);
   const current = settings.statusLine;
   const already = current?.command === OUR_COMMAND;
   await mkdir2(CLAUDE_DIR, { recursive: true });
   if (!already) {
-    const backup = `${SETTINGS}.dragonmoor-backup`;
+    const backup = `${SETTINGS}.dragons-door-backup`;
     if (await exists(SETTINGS) && !await exists(backup)) await copyFile(SETTINGS, backup);
     await writeFile2(ORIG, JSON.stringify(current ?? null, null, 2));
     await writeFile2(PREV, current?.type === "command" && current.command ? current.command : "");
@@ -21586,11 +21612,12 @@ async function installStatusline(cwd) {
     previous: already ? "(already installed)" : current?.command ?? null,
     refresh_seconds: settings.statusLine.refreshInterval,
     project_overrides: overridden ? "This project's own .claude settings set a status line, which wins here; the envelope will show in other projects." : null,
-    backup: `${SETTINGS}.dragonmoor-backup`
+    backup: `${SETTINGS}.dragons-door-backup`
   };
 }
 async function uninstallStatusline() {
   const settings = await readJson(SETTINGS);
+  await migrateLegacy(settings);
   const current = settings.statusLine;
   if (current?.command !== OUR_COMMAND) return { kind: "statusline_not_installed" };
   let orig = null;
@@ -21614,7 +21641,7 @@ async function noteUnread(n) {
 }
 
 // src/index.ts
-var server = new McpServer({ name: "dragonmoor", version: "0.1.0" });
+var server = new McpServer({ name: "dragons-door", version: "0.2.0" });
 async function call(method, path, body) {
   const cfg = await loadConfig();
   if (!cfg.api_key && path !== "/v1/register") {
@@ -21638,7 +21665,7 @@ server.tool(
   async ({ name, class: cls, invite }) => {
     const cfg = await loadConfig();
     if (cfg.api_key) return text({ error: "already_registered", name: cfg.name, message: "You already have a character on this machine." });
-    const r = await call("POST", "/v1/register", { name, class: cls, invite: invite ?? process.env.LORD_INVITE });
+    const r = await call("POST", "/v1/register", { name, class: cls, invite: invite ?? process.env.DRAGONS_DOOR_INVITE ?? process.env.LORD_INVITE });
     if (r.api_key) {
       await saveConfig({ ...cfg, api_key: r.api_key, name: r.name });
       delete r.api_key;

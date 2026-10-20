@@ -140,7 +140,7 @@ api.post("/register", async (c) => {
     const ok = given.length === invite.length && timingSafeEqual(Buffer.from(given), Buffer.from(invite));
     if (!ok) throw new GameError("invite_required", "this realm is invite-only; ask whoever runs it for the word", 403);
   }
-  const key = "lord_" + randomBytes(24).toString("base64url");
+  const key = "door_" + randomBytes(24).toString("base64url");
   const out = await tx(async (db) => {
     const dup = await db.query("select 1 from players where lower(name) = lower($1)", [body.name]);
     if (dup.rowCount) throw new GameError("name_taken", "that name is taken", 409);

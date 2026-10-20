@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Dragonmoor status line: runs your previous status line, then adds "✉ N" when mail is waiting.
-# Installed by /dragonmoor:statusline. Never blocks on the network: it shows the cached count and
+# Dragon's Door status line: runs your previous status line, then adds "✉ N" when mail is waiting.
+# Installed by /dragons-door:statusline. Never blocks on the network: it shows the cached count and
 # refreshes the cache in the background at most once a minute. Fails silent.
 input=$(cat)
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-DIR="${LORD_CONFIG_DIR:-$HOME/.config/lord}"
+DIR="${DRAGONS_DOOR_CONFIG_DIR:-${LORD_CONFIG_DIR:-$HOME/.config/dragons-door}}"
+[ -f "$DIR/config.json" ] || { [ -f "$HOME/.config/lord/config.json" ] && DIR="$HOME/.config/lord"; }
 CFG="$DIR/config.json"
 CACHE="$DIR/statusline-unread"
-PREV="$CLAUDE_DIR/dragonmoor-statusline.prev"
+PREV="$CLAUDE_DIR/dragons-door-statusline.prev"
 
 prev_out=""
 if [ -s "$PREV" ]; then
@@ -23,7 +24,7 @@ if [ $((now - ts)) -ge 60 ] && [ -f "$CFG" ] && command -v curl >/dev/null 2>&1;
   (
     key=$(sed -n 's/.*"api_key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG" | head -1)
     [ -n "$key" ] || exit 0
-    url="${LORD_API_URL:-$(sed -n 's/.*"api_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG" | head -1)}"
+    url="${DRAGONS_DOOR_API_URL:-${LORD_API_URL:-$(sed -n 's/.*"api_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG" | head -1)}}"
     url="${url:-https://lord-ebon.vercel.app}"
     # stamp first so a slow or failing server doesn't get hammered
     printf '%s %s\n' "$(date +%s)" "$n" > "$CACHE.tmp" && mv "$CACHE.tmp" "$CACHE"

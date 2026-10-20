@@ -3,13 +3,16 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /** Where the player's API key lives. Nothing else is stored client-side. */
-export const CONFIG_DIR = process.env.LORD_CONFIG_DIR ?? join(homedir(), ".config", "lord");
+const env = (k: string) => process.env[`DRAGONS_DOOR_${k}`] ?? process.env[`LORD_${k}`];
+export const CONFIG_DIR = env("CONFIG_DIR") ?? join(homedir(), ".config", "dragons-door");
+/** Where the plugin kept its key before the rename to Dragon's Door. Read once and copied over. */
+const LEGACY_DIR = join(homedir(), ".config", "lord");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 export const DEFAULT_API_URL = "https://lord-ebon.vercel.app";
 
 export interface Config {
-  /** Resolved at load time: LORD_API_URL env, else an explicit `api_url` in the file, else the hosted realm. */
+  /** Resolved at load time: DRAGONS_DOOR_API_URL env, else an explicit `api_url` in the file, else the hosted realm. */
   api_url: string;
   api_key?: string;
   name?: string;
@@ -27,10 +30,14 @@ export async function loadConfig(): Promise<Config> {
   try {
     stored = JSON.parse(await readFile(CONFIG_FILE, "utf8")) as StoredConfig;
   } catch {
-    /* no config yet */
+    // First run after the rename: carry the character over from the old folder.
+    try {
+      stored = JSON.parse(await readFile(join(LEGACY_DIR, "config.json"), "utf8")) as StoredConfig;
+      if (stored.api_key) { await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 }); await writeFile(CONFIG_FILE, JSON.stringify(stored, null, 2), { mode: 0o600 }); }
+    } catch { /* no config yet */ }
   }
   return {
-    api_url: process.env.LORD_API_URL ?? stored.api_url ?? DEFAULT_API_URL,
+    api_url: env("API_URL") ?? stored.api_url ?? DEFAULT_API_URL,
     api_key: stored.api_key,
     name: stored.name,
   };

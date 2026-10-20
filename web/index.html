@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dragonmoor</title>
+<title>Dragon's Door</title>
 <meta name="description" content="A daily-turn text RPG in the spirit of the BBS door games, played inside Claude Code. Ten forest fights a day. Three player fights. Bank your gold.">
-<meta property="og:title" content="Dragonmoor">
+<meta property="og:title" content="Dragon's Door">
 <meta property="og:description" content="A BBS door game for Claude Code. Ten fights a day. Bank your gold.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23000'/><text x='2' y='13' font-family='monospace' font-size='12' fill='%23ff5555'>▲</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -177,10 +177,12 @@
   @media (max-width: 720px) {
     body { font-size: 14px; }
     pre.dragon { font-size: 8.5px; }
-    pre.logo { font-size: 6.5px; }
+    pre.logo { font-size: 5.6px; }
     .day { grid-template-columns: 1fr; }
     h2::after { content: " ════════════════════"; }
     .bar span:nth-child(2) { display: none; }
+    .bar { font-size: 12.5px; padding: 2px 8px; gap: 1ch; }
+    .bar a { margin-left: .6ch; }
   }
 </style>
 </head>
@@ -188,9 +190,9 @@
 <div class="screen">
 
   <div class="bar" role="presentation">
-    <span><b>Dragonmoor</b> BBS</span>
+    <span><b>Dragon's Door</b> BBS</span>
     <span>node 1 of 1 · 2400 baud</span>
-    <span><a href="#fromrealm"><b>N</b>ews</a> <a href="#fromrealm"><b>R</b>ankings</a> <a href="https://github.com/ericalexander/lord"><b>S</b>ource</a></span>
+    <span><a href="#fromrealm"><b>N</b>ews</a> <a href="#fromrealm"><b>R</b>ankings</a> <a href="https://github.com/ericalexander/dragons-door"><b>S</b>ource</a></span>
   </div>
 
   <header class="title">
@@ -207,12 +209,12 @@
                    ▐████<span class="k">▀▀▀▀▀▀▀▀▀</span>████<span class="k">▀▀▀▀▀▀▀▀▀▀▀▀</span>
                    ▐███▌         ▐███▌
                   <span class="r">▄</span>████<span class="r">▄</span>        <span class="r">▄</span>████<span class="r">▄</span></pre>
-<pre class="ansi logo" role="img" aria-label="Dragonmoor"><span class="r">██████╗</span> <span class="r">██████╗</span>  <span class="r">█████╗</span>  <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">███╗</span>   <span class="r">██╗███╗</span>   <span class="r">███╗</span> <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">██████╗</span>
-<span class="r">██╔══██╗██╔══██╗██╔══██╗██╔════╝</span> <span class="r">██╔═══██╗████╗</span>  <span class="r">██║████╗</span> <span class="r">████║██╔═══██╗██╔═══██╗██╔══██╗</span>
-<span class="r">██║</span>  <span class="r">██║██████╔╝███████║██║</span>  <span class="r">███╗██║</span>   <span class="r">██║██╔██╗</span> <span class="r">██║██╔████╔██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██████╔╝</span>
-<span class="r">██║</span>  <span class="r">██║██╔══██╗██╔══██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██║╚██╗██║██║╚██╔╝██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██╔══██╗</span>
-<span class="r">██████╔╝██║</span>  <span class="r">██║██║</span>  <span class="r">██║╚██████╔╝╚██████╔╝██║</span> <span class="d">╚████║██║</span> <span class="d">╚═╝</span> <span class="r">██║╚██████╔╝╚██████╔╝██║</span>  <span class="r">██║</span>
-<span class="d">╚═════╝</span> <span class="d">╚═╝</span>  <span class="d">╚═╝╚═╝</span>  <span class="d">╚═╝</span> <span class="d">╚═════╝</span>  <span class="d">╚═════╝</span> <span class="d">╚═╝</span>  <span class="d">╚═══╝╚═╝</span>     <span class="d">╚═╝</span> <span class="d">╚═════╝</span>  <span class="d">╚═════╝</span> <span class="d">╚═╝</span>  <span class="d">╚═╝</span></pre>
+<pre class="ansi logo" role="img" aria-label="Dragon's Door"><span class="r">██████╗</span> <span class="r">██████╗</span>  <span class="r">█████╗</span>  <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">███╗</span>   <span class="r">██╗██╗</span> <span class="r">███████╗</span>    <span class="r">██████╗</span>  <span class="r">██████╗</span>  <span class="r">██████╗</span> <span class="r">██████╗</span>
+<span class="r">██╔══██╗██╔══██╗██╔══██╗██╔════╝</span> <span class="r">██╔═══██╗████╗</span>  <span class="r">██║╚█║</span> <span class="r">██╔════╝</span>    <span class="r">██╔══██╗██╔═══██╗██╔═══██╗██╔══██╗</span>
+<span class="r">██║</span>  <span class="r">██║██████╔╝███████║██║</span>  <span class="r">███╗██║</span>   <span class="r">██║██╔██╗</span> <span class="r">██║</span> <span class="d">╚╝</span> <span class="r">███████╗</span>    <span class="r">██║</span>  <span class="r">██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██████╔╝</span>
+<span class="r">██║</span>  <span class="r">██║██╔══██╗██╔══██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██║╚██╗██║</span>    <span class="d">╚════██║</span>    <span class="r">██║</span>  <span class="r">██║██║</span>   <span class="r">██║██║</span>   <span class="r">██║██╔══██╗</span>
+<span class="r">██████╔╝██║</span>  <span class="r">██║██║</span>  <span class="r">██║╚██████╔╝╚██████╔╝██║</span> <span class="d">╚████║</span>    <span class="r">███████║</span>    <span class="r">██████╔╝╚██████╔╝╚██████╔╝██║</span>  <span class="r">██║</span>
+<span class="d">╚═════╝</span> <span class="d">╚═╝</span>  <span class="d">╚═╝╚═╝</span>  <span class="d">╚═╝</span> <span class="d">╚═════╝</span>  <span class="d">╚═════╝</span> <span class="d">╚═╝</span>  <span class="d">╚═══╝</span>    <span class="d">╚══════╝</span>    <span class="d">╚═════╝</span>  <span class="d">╚═════╝</span>  <span class="d">╚═════╝</span> <span class="d">╚═╝</span>  <span class="d">╚═╝</span></pre>
     <p class="sub">An old-school BBS Door Game, but in Claude Code.</p>
   </header>
 
@@ -225,14 +227,14 @@
   <section class="login" aria-labelledby="install">
     <h2 id="install">Log in</h2>
     <p>In Claude Code, three commands:</p>
-    <div class="cmd"><span class="p">❯</span><code>/plugin marketplace add ericalexander/lord</code><button type="button" data-copy="/plugin marketplace add ericalexander/lord">copy</button></div>
-    <div class="cmd"><span class="p">❯</span><code>/plugin install dragonmoor@lord</code><button type="button" data-copy="/plugin install dragonmoor@lord">copy</button></div>
-    <div class="cmd"><span class="p">❯</span><code>/dragonmoor:lord</code><button type="button" data-copy="/dragonmoor:lord">copy</button></div>
+    <div class="cmd"><span class="p">❯</span><code>/plugin marketplace add ericalexander/dragons-door</code><button type="button" data-copy="/plugin marketplace add ericalexander/dragons-door">copy</button></div>
+    <div class="cmd"><span class="p">❯</span><code>/plugin install dragons-door@dragons-door</code><button type="button" data-copy="/plugin install dragons-door@dragons-door">copy</button></div>
+    <div class="cmd"><span class="p">❯</span><code>/dragons-door:enter</code><button type="button" data-copy="/dragons-door:enter">copy</button></div>
   </section>
 
   <section aria-labelledby="session">
     <h2 id="session">A session</h2>
-    <div class="pane" role="img" aria-label="A Claude Code session opening Dragonmoor: the morning news and the town menu, waiting for input.">
+    <div class="pane" role="img" aria-label="A Claude Code session opening Dragon's Door: the morning news and the town menu, waiting for input.">
       <span class="legend">claude</span>
       <div class="body">
         <div class="hdr">
@@ -242,9 +244,9 @@
           <div><b>Claude Code</b> v2.1.198<br>Opus 5.5 · Claude Max<br>~/Projects/turnip-ledger</div>
         </div>
 
-        <p class="u">/dragonmoor:lord</p>
-        <p class="tool">Called plugin:dragonmoor:dragonmoor</p>
-        <p class="a">Morning. The realm reset while you slept, and you slept at the inn, so you're whole. The paper has one item: a newcomer called Grimwald, a warrior, has joined Dragonmoor. The town crier seems unbothered by this.</p>
+        <p class="u">/dragons-door:enter</p>
+        <p class="tool">Called plugin:dragons-door:dragons-door</p>
+        <p class="a">Morning. The realm reset while you slept, and you slept at the inn, so you're whole. The paper has one item: a newcomer called Grimwald, a warrior, has joined Dragon's Door. The town crier seems unbothered by this.</p>
         <p class="hp">HP 20/20 · Gold 100 (bank 0) · L1 · Forest 10 · PvP 3 · Specials 3</p>
         <p class="menu"><span>(F)</span>orest  <span>(T)</span>avern  <span>(H)</span>ealer  <span>(S)</span>hop  <span>(B)</span>ank  <span>(I)</span>nn  <span>(C)</span>hallenge  <span>(N)</span>ews  <span>(R)</span>ankings  <span>(Q)</span>uit</p>
 
@@ -265,7 +267,7 @@
   </section>
 
   <footer>
-    <p><a href="https://github.com/ericalexander/lord">Source on GitHub</a>. Runs on a small server; the plugin is a thin client. Every rule and every roll happens server-side — the narrator only tells you what happened.</p>
+    <p><a href="https://github.com/ericalexander/dragons-door">Source on GitHub</a>. Runs on a small server; the plugin is a thin client. Every rule and every roll happens server-side — the narrator only tells you what happened.</p>
     <p>Not affiliated with Legend of the Red Dragon or its author. Thanks, Seth.</p>
   </footer>
 

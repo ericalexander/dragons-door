@@ -1,8 +1,10 @@
 {
   "mcpServers": {
-    "dragonmoor": {
+    "dragons-door": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/dist/index.js"]
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/mcp/dist/index.js"
+      ]
     }
   }
 }

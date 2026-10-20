@@ -1,5 +1,5 @@
 /**
- * Installs (or removes) the Dragonmoor mail indicator in the user's Claude Code status line.
+ * Installs (or removes) the Dragon's Door mail indicator in the user's Claude Code status line.
  * Plugins can't set statusLine themselves, so this runs only when the player asks.
  * It wraps whatever status line they already have, and saves it so uninstall restores it exactly.
  */
@@ -11,13 +11,16 @@ import { CONFIG_DIR } from "./config.js";
 
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
 const SETTINGS = join(CLAUDE_DIR, "settings.json");
-const SCRIPT_DEST = join(CLAUDE_DIR, "dragonmoor-statusline.sh");
-const PREV = join(CLAUDE_DIR, "dragonmoor-statusline.prev");
-const ORIG = join(CLAUDE_DIR, "dragonmoor-statusline.orig.json");
+const SCRIPT_DEST = join(CLAUDE_DIR, "dragons-door-statusline.sh");
+const PREV = join(CLAUDE_DIR, "dragons-door-statusline.prev");
+const ORIG = join(CLAUDE_DIR, "dragons-door-statusline.orig.json");
+// The same files from before the rename (Dragonmoor). Recognized and moved over, so nothing is lost.
+const LEGACY = { script: join(CLAUDE_DIR, "dragonmoor-statusline.sh"), prev: join(CLAUDE_DIR, "dragonmoor-statusline.prev"), orig: join(CLAUDE_DIR, "dragonmoor-statusline.orig.json") };
+const LEGACY_COMMAND = `bash "${LEGACY.script}"`;
 const OUR_COMMAND = `bash "${SCRIPT_DEST}"`;
 
 // dist/index.js lives at <plugin>/mcp/dist/, the script at <plugin>/statusline/
-const SCRIPT_SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "statusline", "dragonmoor-statusline.sh");
+const SCRIPT_SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "statusline", "dragons-door-statusline.sh");
 
 async function exists(p: string) { try { await stat(p); return true; } catch { return false; } }
 async function readJson(p: string): Promise<Record<string, unknown>> {
@@ -29,15 +32,28 @@ async function readJson(p: string): Promise<Record<string, unknown>> {
 
 type StatusLine = { type?: string; command?: string; padding?: number; refreshInterval?: number; [k: string]: unknown };
 
+/** If the pre-rename indicator is installed, move its saved files to the new names and point at the new script. */
+async function migrateLegacy(settings: Record<string, unknown>): Promise<boolean> {
+  const current = settings.statusLine as StatusLine | undefined;
+  if (current?.command !== LEGACY_COMMAND) return false;
+  for (const [from, to] of [[LEGACY.prev, PREV], [LEGACY.orig, ORIG]]) {
+    try { await writeFile(to, await readFile(from, "utf8")); } catch { /* missing is fine */ }
+  }
+  settings.statusLine = { ...current, command: OUR_COMMAND };
+  for (const f of Object.values(LEGACY)) await rm(f, { force: true });
+  return true;
+}
+
 export async function installStatusline(cwd: string): Promise<Record<string, unknown>> {
   const settings = await readJson(SETTINGS);
+  await migrateLegacy(settings);
   const current = settings.statusLine as StatusLine | undefined;
   const already = current?.command === OUR_COMMAND;
   await mkdir(CLAUDE_DIR, { recursive: true });
 
   if (!already) {
     // one-time backup of the whole settings file, then remember their status line
-    const backup = `${SETTINGS}.dragonmoor-backup`;
+    const backup = `${SETTINGS}.dragons-door-backup`;
     if (await exists(SETTINGS) && !(await exists(backup))) await copyFile(SETTINGS, backup);
     await writeFile(ORIG, JSON.stringify(current ?? null, null, 2));
     await writeFile(PREV, current?.type === "command" && current.command ? current.command : "");
@@ -65,12 +81,13 @@ export async function installStatusline(cwd: string): Promise<Record<string, unk
     previous: already ? "(already installed)" : current?.command ?? null,
     refresh_seconds: (settings.statusLine as StatusLine).refreshInterval,
     project_overrides: overridden ? "This project's own .claude settings set a status line, which wins here; the envelope will show in other projects." : null,
-    backup: `${SETTINGS}.dragonmoor-backup`,
+    backup: `${SETTINGS}.dragons-door-backup`,
   };
 }
 
 export async function uninstallStatusline(): Promise<Record<string, unknown>> {
   const settings = await readJson(SETTINGS);
+  await migrateLegacy(settings);
   const current = settings.statusLine as StatusLine | undefined;
   if (current?.command !== OUR_COMMAND) return { kind: "statusline_not_installed" };
   let orig: StatusLine | null = null;

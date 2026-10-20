@@ -1,4 +1,4 @@
--- Dragonmoor realm schema. Everything that matters lives here; the plugin holds only an API key.
+-- Dragon's Door realm schema. Everything that matters lives here; the plugin holds only an API key.
 
 create extension if not exists pgcrypto;
 

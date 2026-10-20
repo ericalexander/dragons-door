@@ -1,11 +1,13 @@
 {
-  "name": "lord",
-  "owner": { "name": "Eric Alexander" },
+  "name": "dragons-door",
+  "owner": {
+    "name": "Eric Alexander"
+  },
   "plugins": [
     {
-      "name": "dragonmoor",
+      "name": "dragons-door",
       "source": "./plugin",
-      "description": "A daily-turn text RPG in the spirit of the BBS door games. Fight in the forest, raid other players, read the morning news."
+      "description": "Dragon's Door: an old-school BBS door game, played inside Claude Code. Fight in the forest, raid other players, read the morning news."
     }
   ]
 }

@@ -1,6 +1,6 @@
 ---
-name: lord
-description: Enter Dragonmoor, the daily-turn text RPG. Use when the player runs /lord or says they want to play the game, fight in the forest, raid someone, or check the realm news.
+name: enter
+description: Enter Dragon's Door, the daily-turn BBS door game. Use when the player runs /dragons-door:enter or says they want to play the game, fight in the forest, raid someone, or check the realm news.
 argument-hint: [action]
 ---
 
@@ -23,9 +23,9 @@ Load the `narrator` skill and enter the game.
                    ▐███▌         ▐███▌
                   ▄████▄        ▄████▄
 
-░█▀▄░█▀▄░█▀█░█▀▀░█▀█░█▀█░█▄█░█▀█░█▀█░█▀▄
-░█░█░█▀▄░█▀█░█░█░█░█░█░█░█░█░█░█░█░█░█▀▄
-░▀▀░░▀░▀░▀░▀░▀▀▀░▀▀▀░▀░▀░▀░▀░▀▀▀░▀▀▀░▀░▀
+░█▀▄░█▀▄░█▀█░█▀▀░█▀█░█▀█░▀░█▀▀░░░█▀▄░█▀█░█▀█░█▀▄
+░█░█░█▀▄░█▀█░█░█░█░█░█░█░░░▀▀█░░░█░█░█░█░█░█░█▀▄
+░▀▀░░▀░▀░▀░▀░▀▀▀░▀▀▀░▀░▀░░░▀▀▀░░░▀▀░░▀▀▀░▀▀▀░▀░▀
 ```
 
 1. Call the `status` tool. If it returns `not_registered`, ask for a name and class and call `register`.

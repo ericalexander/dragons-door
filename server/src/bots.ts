@@ -329,7 +329,7 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
 bots.on(["GET", "POST"], "/bots/run", async (c) => {
   if (!authorized(c.req.header("authorization"))) return c.json({ error: "forbidden" }, 403);
   // A fake clock is for local testing only.
-  const fake = process.env.LORD_ALLOW_FAKE_CLOCK ? c.req.query("now") : undefined;
+  const fake = (process.env.DRAGONS_DOOR_ALLOW_FAKE_CLOCK ?? process.env.LORD_ALLOW_FAKE_CLOCK) ? c.req.query("now") : undefined;
   const out = await runBots(fake ? new Date(fake) : new Date());
   return c.json(out);
 });

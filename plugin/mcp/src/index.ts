@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Dragonmoor MCP server. Each tool is a thin call to the realm API; all rules live on the server.
+ * Dragon's Door MCP server. Each tool is a thin call to the realm API; all rules live on the server.
  * The narrator skill turns the returned events into prose. This file never decides outcomes.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -9,7 +9,7 @@ import { z } from "zod";
 import { loadConfig, saveConfig } from "./config.js";
 import { installStatusline, noteUnread, uninstallStatusline } from "./statusline.js";
 
-const server = new McpServer({ name: "dragonmoor", version: "0.1.0" });
+const server = new McpServer({ name: "dragons-door", version: "0.2.0" });
 
 async function call(method: "GET" | "POST", path: string, body?: unknown) {
   const cfg = await loadConfig();
@@ -34,7 +34,7 @@ server.tool("register", "Create your character. Run once. Stores your API key lo
   async ({ name, class: cls, invite }) => {
     const cfg = await loadConfig();
     if (cfg.api_key) return text({ error: "already_registered", name: cfg.name, message: "You already have a character on this machine." });
-    const r = (await call("POST", "/v1/register", { name, class: cls, invite: invite ?? process.env.LORD_INVITE })) as { api_key?: string; name?: string; error?: string };
+    const r = (await call("POST", "/v1/register", { name, class: cls, invite: invite ?? process.env.DRAGONS_DOOR_INVITE ?? process.env.LORD_INVITE })) as { api_key?: string; name?: string; error?: string };
     if (r.api_key) {
       await saveConfig({ ...cfg, api_key: r.api_key, name: r.name });
       delete (r as { api_key?: string }).api_key; // never echo the key into the conversation

@@ -1,5 +1,5 @@
 {
-  "description": "Dragonmoor: one line of realm news when a session starts, and a one-line nudge when new mail arrives.",
+  "description": "Dragon's Door: one line of realm news when a session starts, and a one-line nudge when new mail arrives.",
   "hooks": {
     "SessionStart": [
       {
