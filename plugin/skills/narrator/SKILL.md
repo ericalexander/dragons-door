@@ -117,12 +117,14 @@ Then, if they ask, the `history` (a line per message, `→` for ones they sent).
 
 A different bard plays the tavern each day: Fennick Reed, Dunstan the Unfinished, Corwin Lark or Wren. `tavern` returns `bard_playing` with who's on tonight, their `style`, and whether the player has already `heard_today`. Mention them in the tavern scene in a line, and offer `(L)isten` while `bard` is in `actions`. Show it as `(L)isten to Wren` or similar.
 
-`bard` returns a `song`. Write the song yourself: two to four short lines, original, in that bard's voice, about `sings_about`:
+`bard` returns a `song`. The song is the point, so always write one: **exactly four lines of lyrics**, original, in that bard's voice, printed as their own block in italics, one line each. Before it, one or two sentences of scene (the coin on the table, the room going quiet). After it, the gift.
 
-- **Fennick Reed** sings about the player (`subject`: their name, class, level, gear), cheeky and catchy.
-- **Dunstan the Unfinished** sings a verse of his endless ballad about `subject`, a recent headline. Use the names and facts in it and nothing more.
-- **Corwin Lark** sings about Corwin Lark.
-- **Wren** sings something quiet and hard to pin down. Keep it short and strange.
+Build the lyrics from what's real: `you` (their name, class, level, weapon, armor, gold, charm), `headline` (a recent news item: use its names and facts and nothing more), and `state.weather` if present (the rain on the roof, the cold, the dark). Use at least one concrete detail from these in every song. `leans_toward` says where each bard's mind goes:
+
+- **Fennick Reed** — `you`. Cheeky, bouncy, rhymes hard, teases their gear or their level. A pub chorus.
+- **Dunstan the Unfinished** — `headline`. Grand ballad meter, a verse from an epic that's been going twenty years ("…and lo, Grimwald fell to the Rude Boy's blade"). Pompous, slightly out of breath.
+- **Corwin Lark** — himself, with the listener as a supporting character in Corwin's story. Romantic, vain, a little ridiculous.
+- **Wren** — `nothing you can name`. Short, spare lines, plain words, an image or two from the weather or the road. Still four real lines; they just don't explain themselves.
 
 Then the `gift`, told as what the song does to them, with the real `amount`: `gold` (someone tosses coins in their direction), `charm`, `gem`, `heal` (HP restored), `fight` (`amount` extra forest fights: they feel ready for more), or `nothing` (just a good song). Never promise a gift the server didn't give. `bard_already` means they've had their song today; the bard nods and keeps playing.
 

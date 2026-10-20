@@ -520,7 +520,7 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
   const bard = bardFor(ctx.day);
   ctx.events.push({ kind: "bard_playing", bard: bard.name, style: bard.style, heard_today: ctx.t.bard_heard });
   ctx.hint = "Improvise here: the bartender's gossip, the mood of the room. Keep it under the posted messages, which are other players' words.";
-})));
+}, { weather: true })));
 
 // One song a day from whichever bard is playing. The server picks the gift; the narrator writes the song.
 api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
@@ -538,15 +538,13 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
   if (gift === "heal") { amount = ctx.p.max_hp - ctx.p.hp; await savePlayer(ctx, { hp: ctx.p.max_hp }); }
   if (gift === "fight") { amount = bard.fights; turns.forest_fights = ctx.t.forest_fights + bard.fights; }
   await saveTurns(ctx, turns);
-  let subject: Record<string, unknown> | null = null;
-  if (bard.sings_about === "the news") {
-    const n = await ctx.c.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
-      "select kind, actor, target, detail from news order by id desc limit 15");
-    if (n.rowCount) subject = n.rows[roll(n.rowCount - 1)];
-  }
-  if (bard.sings_about === "you") subject = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, weapon: weapon(ctx.p.weapon_id).name, armor: armor(ctx.p.armor_id).name };
-  ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, sings_about: bard.sings_about, subject, gift, amount });
-})));
+  // Material for the song: the listener, one recent headline, and (in state) tonight's weather.
+  const n = await ctx.c.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
+    "select kind, actor, target, detail from news order by id desc limit 15");
+  const headline = n.rowCount ? n.rows[roll(n.rowCount - 1)] : null;
+  const you = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, exp: ctx.p.exp, weapon: weapon(ctx.p.weapon_id).name, armor: armor(ctx.p.armor_id).name, gold: ctx.p.gold, charm: ctx.p.charm };
+  ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, leans_toward: bard.sings_about, you, headline, gift, amount });
+}, { weather: true })));
 
 api.post("/tavern", async (c) => {
   const body = z.object({ body: z.string().trim().min(1).max(280) }).parse(await c.req.json());
