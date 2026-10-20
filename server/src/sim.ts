@@ -5,7 +5,7 @@
  * Uses the real combat functions and data. Run: npx tsx src/sim.ts [class] [trials]
  */
 import { GAME, armor, weapon, expForLevel, master, levelGains, type Player, type Monster } from "./game.js";
-import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, rollDrop, specialMultiplier } from "./combat.js";
+import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 
 // ---- tuning knobs (env) so the curve can be searched without editing data ----
@@ -20,6 +20,8 @@ const K = {
   ghp: process.env.GHP, gstr: process.env.GSTR, gdef: process.env.GDEF, // growth overrides
 };
 if (process.env.DROP !== undefined) GAME.drops.chance = Number(process.env.DROP);
+if (process.env.TDROP !== undefined) (GAME.classes.thief as { dropChance?: number }).dropChance = Number(process.env.TDROP);
+if (process.env.DODGE !== undefined) (GAME.classes.thief as { specialDodge?: number }).specialDodge = Number(process.env.DODGE);
 if (process.env.DHP) GAME.dragon.hp = Number(process.env.DHP); if (process.env.DSTR) GAME.dragon.str = Number(process.env.DSTR); if (process.env.DDEF) GAME.dragon.def = Number(process.env.DDEF);
 if (K.ghp) GAME.growth.hp = Number(K.ghp); if (K.gstr) GAME.growth.str = Number(K.gstr); if (K.gdef) GAME.growth.def = Number(K.gdef);
 for (const m of GAME.monsters) { m.str = Math.round(m.str * K.mstr); m.hp = Math.round(m.hp * K.mhp); m.gold = Math.round(m.gold * K.mgold); m.exp = Math.round(m.exp * K.mexp); }
@@ -46,9 +48,9 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number)
       if (pf.hp <= 0) { p.hp = 0; return "died"; }
       continue;
     }
-    let mult = 1;
-    if (specials.n > 0 && mf.hp > pf.str * 1.5) { mult = specialMultiplier(p); specials.n--; }
-    exchange(pf, mf, mult);
+    let mult = 1, dodge = false;
+    if (specials.n > 0 && mf.hp > pf.str * 1.5) { mult = specialMultiplier(p); dodge = specialDodges(p); specials.n--; }
+    exchange(pf, mf, mult, dodge);
     if (mf.hp <= 0) { p.hp = pf.hp; return "won"; }
     if (pf.hp <= 0) { p.hp = 0; return "died"; }
   }
@@ -119,7 +121,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       const res = fight(p, m, specials, 0.5);
       if (res === "won") {
         p.gold += m.gold; p.exp += m.exp;
-        const drop = rollDrop(m.level ?? p.level);
+        const drop = rollDrop(m.level ?? p.level, p.class);
         if (drop) {
           // careful player: wear it if it's better and sell the old piece, otherwise sell the drop (half price)
           DROPS.n++;

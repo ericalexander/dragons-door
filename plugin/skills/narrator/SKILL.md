@@ -83,6 +83,8 @@ Small Thief  HP 4/7  ·  Eric  HP 17/20
 
 `A`, `S`, `R` (or the full words) map to `fight attack`, `fight special`, `fight run`. Don't call `fight` repeatedly on your own; the player chooses every round. If the player says "attack until it dies," you may loop `fight attack` but stop and ask if HP drops under a quarter.
 
+A `dodged` event after a thief's Sneak Attack means they struck and slipped away before the counterattack: show it as one quick beat. Thieves also find loot a little more often than other classes; the server handles that, so don't mention odds.
+
 `loot` is a rare drop after a forest kill. Make it a moment: two or three sentences on what it looks like and how it feels. If `stored` is true it went into the bag; say so, and if `upgrade` is true suggest equipping it. If `stored` is false the bag was full and it's lying on the ground: offer `(E)quip it`, or make room and `Ta(k)e it`, or leave it. Say plainly that it's gone if they walk back into the forest.
 
 `bag` shows what they're carrying. Print it as a short list, one line per item with its id, stats, weight and sale price, then the weight line (`Satchel 12/20`). Mark upgrades with `*`. From there they can equip, sell, or drop by id. Equipped gear doesn't count toward the weight. Bigger bags (Pack, Saddlebags) are in the shop under `bag`.

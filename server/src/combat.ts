@@ -27,7 +27,7 @@ export function monsterAsFighter(m: Monster): Fighter {
  * One exchange: attacker swings, then defender swings back if still standing.
  * Mutates hp on both fighters, returns the events in order.
  */
-export function exchange(att: Fighter, def: Fighter, attMult = 1): Event[] {
+export function exchange(att: Fighter, def: Fighter, attMult = 1, dodge = false): Event[] {
   const events: Event[] = [];
   const dmg = Math.max(0, Math.round((roll(att.str) - roll(def.def)) * attMult));
   if (dmg > 0) {
@@ -37,6 +37,10 @@ export function exchange(att: Fighter, def: Fighter, attMult = 1): Event[] {
     events.push({ kind: "miss", attacker: att.name, defender: def.name, special: attMult > 1 });
   }
   if (def.hp <= 0) return events;
+  if (dodge) {
+    events.push({ kind: "dodged", attacker: def.name, defender: att.name });
+    return events;
+  }
 
   const back = Math.max(0, roll(def.str) - roll(att.def));
   if (back > 0) {
@@ -56,6 +60,12 @@ export function fleeSucceeds(p: Player): boolean {
 
 export function specialMultiplier(p: Player): number {
   return GAME.classes[p.class].specialMult;
+}
+
+/** Does this special also slip the counterattack? Thieves' Sneak Attack does, at the class's dodge chance. */
+export function specialDodges(p: Player): boolean {
+  const chance = (GAME.classes[p.class] as { specialDodge?: number }).specialDodge ?? 0;
+  return chance > 0 && roll(99) < Math.round(chance * 100);
 }
 
 /** Pick a forest monster at or near the player's level. */
@@ -94,9 +104,10 @@ export interface Drop {
 }
 
 /** Rare drop after a forest kill: a piece of gear one tier above the monster's level. Pure; the caller decides where it goes. */
-export function rollDrop(monsterLevel: number): Drop | null {
+export function rollDrop(monsterLevel: number, cls?: Player["class"]): Drop | null {
   const cfg = GAME.drops;
-  if (roll(9999) >= Math.round(cfg.chance * 10000)) return null;
+  const chance = (cls && (GAME.classes[cls] as { dropChance?: number }).dropChance) || cfg.chance;
+  if (roll(9999) >= Math.round(chance * 10000)) return null;
   const kind: Drop["kind"] = roll(1) === 0 ? "weapon" : "armor";
   const tier = Math.min(12, Math.max(1, monsterLevel + cfg.tierAbove));
   return { kind, item: (kind === "weapon" ? weapon(tier) : armor(tier)).name, tier };

@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.3.4",
+    "lore": "Thieves have always had quick hands. Lately they've had quicker feet: a Sneak Attack now often lands before the beast can answer, and the forest seems to drop its valuables in a thief's path a little more often than anyone else's.",
+    "plain": "Thieves: Sneak Attack dodges the counterattack half the time, and thieves find loot more often (5% vs 3%)."
+  },
+  {
     "version": "0.3.3",
     "lore": "The town crier has been asked, politely, to stop following you into your place of work. He took it well. The news will keep until you come through the gate.",
     "plain": "No more realm news or mail notes at the start of your Claude Code sessions. Nothing shows until you enter; the ⚔ and ✉ in the status line still do."

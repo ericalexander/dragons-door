@@ -15,7 +15,8 @@
       "hpPerLevel": 9,
       "strPerLevel": 3,
       "defPerLevel": 3,
-      "specialDodge": true
+      "dropChance": 0.05,
+      "specialDodge": 0.5
     },
     "mage": {
       "special": "Fireball",

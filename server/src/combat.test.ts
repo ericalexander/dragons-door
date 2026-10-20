@@ -41,3 +41,13 @@ test("realmDay shifts by the reset hour", () => {
   assert.equal(realmDay(5, new Date("2026-10-19T05:00:00Z")), "2026-10-19");
   assert.equal(realmDay(0, new Date("2026-10-19T00:00:00Z")), "2026-10-19");
 });
+
+test("a dodged special takes no counterattack", () => {
+  for (let i = 0; i < 50; i++) {
+    const a = { name: "A", hp: 50, str: 1, def: 0 };
+    const d = { name: "D", hp: 1000, str: 500, def: 0 };
+    const evs = exchange(a, d, 2, true);
+    assert.equal(a.hp, 50);
+    assert.equal(evs.at(-1)?.kind, "dodged");
+  }
+});

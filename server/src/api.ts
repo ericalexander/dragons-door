@@ -11,7 +11,7 @@ import * as Bag from "./bag.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
 import { weatherAt } from "./weather.js";
 import { bardFor, pickGift } from "./bards.js";
-import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialMultiplier } from "./combat.js";
+import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
 
@@ -335,15 +335,17 @@ api.post("/fight", async (c) => {
     }
 
     let mult = 1;
+    let dodge = false;
     if (body.action === "special") {
       if (ctx.t.specials <= 0) { ctx.events.push({ kind: "no_specials_left" }); return; }
       await saveTurns(ctx, { specials: ctx.t.specials - 1 });
       mult = specialMultiplier(ctx.p);
+      dodge = specialDodges(ctx.p);
     }
 
     const pf = playerAsFighter(ctx.p);
     const mf = monsterAsFighter(m);
-    const evs = exchange(pf, mf, mult);
+    const evs = exchange(pf, mf, mult, dodge);
     ctx.events.push(...evs);
     m.hp = mf.hp;
     await savePlayer(ctx, { hp: pf.hp });
@@ -365,7 +367,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     const next = expForLevel(ctx.p.level + 1);
     await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp });
     ctx.events.push({ kind: "monster_slain", monster: m.name, gold: m.gold, exp: m.exp });
-    const drop = rollDrop(m.level ?? ctx.p.level);
+    const drop = rollDrop(m.level ?? ctx.p.level, ctx.p.class);
     if (drop) {
       const w = Bag.item(drop.kind, drop.tier).weight;
       const usedNow = await Bag.used(ctx.c, ctx.p.id);
