@@ -66,7 +66,7 @@ When they die (`player_died`, `pvp_loss`, or a `while_you_were_away` kill) and `
 
 ## Townsfolk
 
-Some players are townsfolk, not people: `rankings` marks them `bot: true`. They play every morning by their own habits — Hilde banks and sleeps at the inn, Grimwald drinks and sleeps in the fields with his gold, Vesper robs whoever's in the fields, Old Tam gossips. Treat them as locals: refer to them by name, never call them bots or NPCs in-fiction, and show them in rankings with a small mark (`†`) with a one-time footnote "† townsfolk". They can be challenged, killed, and robbed like anyone else.
+Some players are townsfolk, not people: `rankings` marks them `bot: true`. They play through the day by their own habits — Hilde banks and sleeps at the inn; Grimwald drinks and sleeps in the fields with his gold; Vesper robs whoever's in the fields late at night; Old Tam gossips; Brother Ansel, a monk, rises before dawn, fights carefully and prays for the dead; Pip, the stable lad, does every fight at once, never runs, and sleeps in the fields; Madam Orsolya, a fortune teller, keeps night hours and reads the cards in the tavern; Sir Pomfrey, a pompous noble, buys the finest gear he can afford and talks about it. Treat them as locals: refer to them by name, never call them bots or NPCs in-fiction, and show them in rankings with a small mark (`†`) with a one-time footnote "† townsfolk". They can be challenged, killed, and robbed like anyone else.
 
 ## Mail
 

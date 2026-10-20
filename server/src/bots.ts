@@ -20,13 +20,17 @@ import type { Envelope, Event } from "./game.js";
 
 export const bots = new Hono();
 
-type Personality = "banker" | "drunk" | "raider" | "gossip";
+type Personality = "banker" | "drunk" | "raider" | "gossip" | "pious" | "reckless" | "seer" | "braggart";
 
 const ROSTER: { name: string; class: "warrior" | "thief" | "mage"; personality: Personality }[] = [
   { name: "Hilde", class: "warrior", personality: "banker" },
   { name: "Grimwald", class: "warrior", personality: "drunk" },
   { name: "Vesper", class: "thief", personality: "raider" },
   { name: "Old Tam", class: "mage", personality: "gossip" },
+  { name: "Brother Ansel", class: "mage", personality: "pious" },
+  { name: "Pip", class: "thief", personality: "reckless" },
+  { name: "Madam Orsolya", class: "mage", personality: "seer" },
+  { name: "Sir Pomfrey", class: "warrior", personality: "braggart" },
 ];
 
 // ---------- auth ----------
@@ -118,6 +122,10 @@ const STYLE: Record<Personality, FightStyle> = {
   drunk: { useSpecial: true, healBelow: 0.35 },
   raider: { runBelow: 0.25, healBelow: 0.6 },
   gossip: { runBelow: 0.5, healBelow: 0.5 },
+  pious: { runBelow: 0.6, useSpecial: true, healBelow: 0.8 },   // never takes a risk
+  reckless: { healBelow: 0.15 },                                 // never runs, barely heals
+  seer: { useSpecial: true, runBelow: 0.35, healBelow: 0.5 },
+  braggart: { runBelow: 0.45, healBelow: 0.7 },                  // brave in the tavern, quick in the forest
 };
 
 async function fights(b: Bot, n: number) {
@@ -213,6 +221,124 @@ async function gossip(b: Bot) {
   b.log.push("posted in the tavern");
 }
 
+
+const pick = <T,>(a: T[]): T => a[roll(a.length - 1)];
+type NewsEvent = Event & { what: string; actor?: string; target?: string; detail: Record<string, unknown> };
+async function yesterday(b: Bot): Promise<NewsEvent[]> {
+  const news = await b.get("/news?day=yesterday");
+  return isErr(news) ? [] : (news.events.filter((e) => e.kind === "news") as NewsEvent[]);
+}
+const say = async (b: Bot, line: string) => { await b.post("/tavern", { body: line.slice(0, 280) }); };
+
+async function prayers(b: Bot) {
+  // Brother Ansel: a word for the dead, or a proverb nobody asked for.
+  const dead = (await yesterday(b)).filter((e) => e.what === "forest_death" || e.what === "pvp_kill");
+  if (dead.length && roll(99) < 75) {
+    const d = pick(dead);
+    const who = d.what === "pvp_kill" ? d.target : d.actor;
+    await say(b, pick([
+      `I lit a candle for ${who} this morning. The candle did better than they did.`,
+      `Prayers for ${who}, who met the ground yesterday. Rise slower next time, friend.`,
+      `${who} is at rest. Briefly. The realm is not known for letting people stay dead.`,
+    ]));
+  } else {
+    await say(b, pick([
+      "The patient man reaches the inn. The impatient man reaches the healer.",
+      "Run when you are winning. That is what makes it a habit.",
+      "Every beast in the forest was once a small beast. Remember this when it is large.",
+      "Gold in the bank is gold that sleeps soundly. So do you.",
+      "I have been asked to stop blessing the ale. I will not be stopping.",
+      "Pride is a heavy coat. Ask Sir Pomfrey; he wears two.",
+    ]));
+  }
+  b.log.push("a word in the tavern");
+}
+
+async function brag(b: Bot) {
+  // Pip, after a day in the forest: delighted with himself, whatever happened.
+  const me = await b.get("/status");
+  if (isErr(me) || !me.state.alive) return;
+  const s = me.state;
+  await say(b, pick([
+    `Did ten fights today! Hilde says that's not how you count, but it is.`,
+    `Level ${s.level} now. Grimwald says that's nothing. Grimwald was asleep in a ditch.`,
+    `I'm keeping my ${s.gold} gold on me. Banks are for people who are scared.`,
+    `Something in the forest bit me and I bit it back. We're even.`,
+    `Hit something with my ${s.weapon} so hard it said sorry. Didn't help it.`,
+    `Sleeping out in the fields tonight under the stars. Nobody bothers a stable lad.`,
+  ]));
+  b.log.push("bragged in the tavern");
+}
+
+async function fortune(b: Bot) {
+  // Madam Orsolya reads the cards for whoever sleeps richest in the fields. Vesper reads the same cards.
+  const r = await pool.query<{ name: string; gold: string }>(
+    `select name, gold::text from players where alive and location = 'fields' and gold > 0 and name <> $1
+     order by gold desc limit 1`, [b.name]);
+  const top = await pool.query<{ name: string }>("select name from players where name <> $1 order by level desc, exp desc limit 1", [b.name]);
+  if (r.rowCount && roll(99) < 70) {
+    const t = r.rows[0].name;
+    await say(b, pick([
+      `The cards turned up ${t} and the Tower. I would sleep at the inn tonight, dear. I would.`,
+      `I see gold leaving ${t}'s pockets before the moon is down. I do not see it coming back.`,
+      `${t}. A knife. A field. I'm only the messenger.`,
+    ]));
+  } else if (top.rowCount && roll(99) < 60) {
+    const t = top.rows[0].name;
+    await say(b, pick([
+      `${t} stands at the top of the board. The cards have seen many people stand there. Briefly.`,
+      `I drew the Wheel for ${t}. It goes round. That's the whole point of a wheel.`,
+    ]));
+  } else {
+    await say(b, pick([
+      "The cards are quiet tonight. That's never good.",
+      "Someone in this room will meet a dragon. Someone in this room will not enjoy it.",
+      "Cross my palm with gold and I'll tell you your future. Don't, and I'll tell you anyway.",
+      "I see a stranger arriving soon. Be kind. Then rob them, if you must.",
+    ]));
+  }
+  b.log.push("told a fortune");
+}
+
+async function shop(b: Bot) {
+  // Sir Pomfrey: buys the finest thing he can afford, every time. Then the next finest.
+  await b.post("/bank", { op: "withdraw", amount: "all" });
+  for (const kind of ["weapon", "armor"] as const) {
+    const cat = await b.get(`/shop?kind=${kind}`);
+    if (isErr(cat)) continue;
+    const ev = cat.events.find((e) => e.kind === "catalog") as unknown as { owned: number; items: { id: number; cost: number; name: string }[] };
+    const owned = ev.items.find((i) => i.id === ev.owned);
+    const tradeIn = Math.floor((owned?.cost ?? 0) / 2);
+    const gold = cat.state.gold;
+    const best = ev.items.filter((i) => i.id > ev.owned && i.cost - tradeIn <= gold).sort((a, z) => z.id - a.id)[0];
+    if (best) {
+      const r = await b.post("/buy", { kind, id: best.id });
+      if (!isErr(r) && kinds(r).includes("bought")) b.log.push(`bought ${best.name}`);
+    }
+  }
+}
+
+async function boast(b: Bot) {
+  const me = await b.get("/status");
+  if (isErr(me) || !me.state.alive) return;
+  const s = me.state;
+  await say(b, pick([
+    `Some of you may have noticed my ${s.weapon}. You may continue noticing it.`,
+    `My ${s.armor} was fitted by a man who fitted a duke. A minor duke. Still.`,
+    `Level ${s.level}, and I've not run from a single fight I couldn't have won.`,
+    `A Pomfrey does not flee. A Pomfrey repositions with dignity.`,
+    `Violet laughed at my joke today. Violet laughs at everyone's jokes, she says. Mine was different.`,
+    `I'd challenge the dragon myself, but it would be unsporting. To the dragon.`,
+  ]));
+  b.log.push("boasted in the tavern");
+}
+
+async function sleepRough(b: Bot) {
+  // Pip never banks and never pays for a bed.
+  await tidyBag(b);
+  b.log.push("asleep in the fields");
+}
+
 // ---------- the townsfolk's day (Eastern time) ----------
 
 type Step = (b: Bot) => Promise<void>;
@@ -240,6 +366,24 @@ const SCHEDULE: Record<Personality, Session[]> = {
     { at: "10:00", steps: [f(5)] },
     { at: "14:00", steps: [f(5)] },
     { at: "23:00", steps: [raid, bedInn] },
+  ],
+  pious: [ // Brother Ansel: up before dawn, careful all day, in bed by evening prayers
+    { at: "05:30", steps: [f(3)] },
+    { at: "09:00", steps: [prayers] },
+    { at: "13:00", steps: [f(4)] },
+    { at: "19:00", steps: [f(3), bedInn] },
+  ],
+  reckless: [ // Pip: chores all day, then every fight at once, then the fields
+    { at: "16:00", steps: [f(10), brag, sleepRough] },
+  ],
+  seer: [ // Madam Orsolya: wakes at dusk, reads the cards for the night ahead
+    { at: "17:00", steps: [f(5)] },
+    { at: "22:30", steps: [fortune, f(5), bedInn] },
+  ],
+  braggart: [ // Sir Pomfrey: shopping first, a little fighting, a lot of talking
+    { at: "09:30", steps: [shop, f(3)] },
+    { at: "13:00", steps: [f(3), boast] },
+    { at: "17:30", steps: [f(4), shop, flirt, bedInn] },
   ],
 };
 

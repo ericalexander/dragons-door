@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.2.6",
+    "lore": "There are new faces in town. A monk is up before the roosters, the stable lad has found a sword, a fortune teller has hung a curtain in the back of the tavern, and someone called Sir Pomfrey would like you to notice his armor.",
+    "plain": "Four new townsfolk: Brother Ansel, Pip, Madam Orsolya and Sir Pomfrey. They show up in (R)ankings and the tavern."
+  },
+  {
     "version": "0.2.5",
     "lore": "There's a new page nailed to the inside of your door, in a hand you don't recognize. It seems to know what's changed in the realm since you last slept, and it means to tell you.",
     "plain": "After an update, the game tells you what's new, once."
