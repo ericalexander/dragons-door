@@ -21587,9 +21587,34 @@ async function latest() {
   }
   return cached2;
 }
-async function clientInfo() {
-  const l = await latest();
-  return { version: VERSION, latest: l, update_available: Boolean(l && newer(l, VERSION)) };
+var CHANGES = (() => {
+  try {
+    return JSON.parse(readFileSync(join2(dirname(fileURLToPath(import.meta.url)), "..", "..", "changelog.json"), "utf8"));
+  } catch {
+    return [];
+  }
+})();
+var SEEN = join2(CONFIG_DIR, "last-version");
+async function whatsNew(registered) {
+  let seen = null;
+  try {
+    seen = (await readFile2(SEEN, "utf8")).trim() || null;
+  } catch {
+  }
+  if (seen === VERSION) return [];
+  let out = [];
+  if (seen) out = CHANGES.filter((c) => newer(c.version, seen) && !newer(c.version, VERSION));
+  else if (registered) out = CHANGES.filter((c) => !newer(c.version, VERSION)).slice(0, 1);
+  try {
+    await mkdir2(CONFIG_DIR, { recursive: true, mode: 448 });
+    await writeFile2(SEEN, VERSION + "\n");
+  } catch {
+  }
+  return out.slice(0, 3).reverse();
+}
+async function clientInfo(registered) {
+  const [l, whats_new] = await Promise.all([latest(), whatsNew(registered)]);
+  return { version: VERSION, latest: l, update_available: Boolean(l && newer(l, VERSION)), whats_new };
 }
 
 // src/statusline.ts
@@ -21743,10 +21768,11 @@ server.tool(
 );
 server.tool(
   "status",
-  "Your character's current state and what you can do next. Also reports the plugin version (client.version) and whether an update is out (client.update_available).",
+  "Your character's current state and what you can do next. Also reports the plugin version (client.version) and whether an update is out (client.update_available), and what's new since they last played (client.whats_new).",
   {},
   async () => {
-    const [r, client] = await Promise.all([call("GET", "/v1/status"), clientInfo()]);
+    const r = await call("GET", "/v1/status");
+    const client = await clientInfo(!r.error);
     return text({ ...r, client });
   }
 );

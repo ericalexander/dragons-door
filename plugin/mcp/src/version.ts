@@ -49,7 +49,30 @@ async function latest(): Promise<string | null> {
   return cached;
 }
 
-export async function clientInfo() {
-  const l = await latest();
-  return { version: VERSION, latest: l, update_available: Boolean(l && newer(l, VERSION)) };
+type Change = { version: string; lore: string; plain: string };
+const CHANGES: Change[] = (() => {
+  try { return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "changelog.json"), "utf8")); }
+  catch { return []; }
+})();
+const SEEN = join(CONFIG_DIR, "last-version");
+
+/**
+ * What changed since the version this player last entered with, oldest first, at most three.
+ * Shown once: the file is advanced as soon as we report it. A brand-new player sees nothing;
+ * a player from before this file existed sees only the newest entry.
+ */
+async function whatsNew(registered: boolean): Promise<Change[]> {
+  let seen: string | null = null;
+  try { seen = (await readFile(SEEN, "utf8")).trim() || null; } catch { /* first time */ }
+  if (seen === VERSION) return [];
+  let out: Change[] = [];
+  if (seen) out = CHANGES.filter((c) => newer(c.version, seen!) && !newer(c.version, VERSION));
+  else if (registered) out = CHANGES.filter((c) => !newer(c.version, VERSION)).slice(0, 1);
+  try { await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 }); await writeFile(SEEN, VERSION + "\n"); } catch { /* best effort */ }
+  return out.slice(0, 3).reverse();
+}
+
+export async function clientInfo(registered: boolean) {
+  const [l, whats_new] = await Promise.all([latest(), whatsNew(registered)]);
+  return { version: VERSION, latest: l, update_available: Boolean(l && newer(l, VERSION)), whats_new };
 }

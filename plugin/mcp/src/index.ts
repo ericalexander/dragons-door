@@ -44,9 +44,10 @@ server.tool("register", "Create your character. Run once. Stores your API key lo
     return text(r);
   });
 
-server.tool("status", "Your character's current state and what you can do next. Also reports the plugin version (client.version) and whether an update is out (client.update_available).", {},
+server.tool("status", "Your character's current state and what you can do next. Also reports the plugin version (client.version) and whether an update is out (client.update_available), and what's new since they last played (client.whats_new).", {},
   async () => {
-    const [r, client] = await Promise.all([call("GET", "/v1/status"), clientInfo()]);
+    const r = await call("GET", "/v1/status");
+    const client = await clientInfo(!(r as { error?: string }).error);
     return text({ ...(r as object), client });
   });
 

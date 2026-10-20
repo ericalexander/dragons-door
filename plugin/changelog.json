@@ -1,0 +1,42 @@
+[
+  {
+    "version": "0.2.5",
+    "lore": "There's a new page nailed to the inside of your door, in a hand you don't recognize. It seems to know what's changed in the realm since you last slept, and it means to tell you.",
+    "plain": "After an update, the game tells you what's new, once."
+  },
+  {
+    "version": "0.2.3",
+    "lore": "Your name is cut a little deeper into the inn's sign now, with a small mark beneath it. When the realm shifts, you'll feel it before anyone tells you.",
+    "plain": "The title screen shows your version, and the game tells you when an update is out."
+  },
+  {
+    "version": "0.2.2",
+    "lore": "A crossed pair of swords has been scratched into the corner of your vision. It glints whenever something happens in the realm that you haven't heard about yet.",
+    "plain": "⚔ N in your Claude Code status line for news you haven't read. (N)ews clears it."
+  },
+  {
+    "version": "0.2.0",
+    "lore": "The old sign over the gate has come down in the night. The new one is carved in heavier wood: Dragon's Door.",
+    "plain": "Dragonmoor is now Dragon's Door. The command is /dragons-door:enter."
+  },
+  {
+    "version": "0.1.8",
+    "lore": "Someone has painted the dragon over the gate, wings and all. You'll see it each time you come through.",
+    "plain": "A title screen when you enter."
+  },
+  {
+    "version": "0.1.7",
+    "lore": "A small envelope seems to hang at the edge of your sight whenever a letter is waiting, even when you're busy with other work.",
+    "plain": "✉ N in your Claude Code status line. Set it up with /dragons-door:statusline."
+  },
+  {
+    "version": "0.1.5",
+    "lore": "A pigeon loft has gone up behind the inn. Letters come and go now, and the townsfolk keep their own hours — some at dawn, some long after dark.",
+    "plain": "(M)ail to send and read letters. Townsfolk play at different times through the day."
+  },
+  {
+    "version": "0.1.4",
+    "lore": "You wake and notice something new in your room. A brown leather satchel sits in the corner, its strap worn soft. Now and then, a beast in the forest drops something worth keeping.",
+    "plain": "Rare loot drops, and a bag to carry them in. (G)ear to look inside; bigger bags at the shop. Die, and you lose one thing from it."
+  }
+]
