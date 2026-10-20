@@ -52,7 +52,7 @@ class Bot {
   async call(method: "GET" | "POST", path: string, body?: unknown): Promise<Envelope | { error: string; message?: string }> {
     const res = await api.request(path, {
       method,
-      headers: { "content-type": "application/json", authorization: `Bearer ${this.key}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${this.key}`, "x-dragons-door-app": "townsfolk" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     return (await res.json()) as Envelope | { error: string };

@@ -20,13 +20,23 @@ async function call(method: "GET" | "POST", path: string, body?: unknown) {
   }
   const res = await fetch(cfg.api_url + path, {
     method,
-    headers: { "content-type": "application/json", ...(cfg.api_key ? { authorization: `Bearer ${cfg.api_key}` } : {}) },
+    headers: { "content-type": "application/json", ...(cfg.api_key ? { authorization: `Bearer ${cfg.api_key}` } : {}), ...clientHeaders() },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({ error: "bad_response", status: res.status }));
   const st = (json as { state?: { unread_mail?: number; unread_news?: number } }).state;
   if (typeof st?.unread_mail === "number") await noteUnread(st.unread_mail, st.unread_news ?? 0);
   return json;
+}
+
+/** Which plugin, app and OS this is, so the realm can tell old clients apart. Nothing personal. */
+function clientHeaders(): Record<string, string> {
+  const app = server.server.getClientVersion();
+  return {
+    "x-dragons-door-version": VERSION,
+    "x-dragons-door-os": process.platform,
+    ...(app?.name ? { "x-dragons-door-app": `${app.name} ${app.version ?? ""}`.trim().slice(0, 60) } : {}),
+  };
 }
 
 const text = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] });
@@ -122,6 +132,10 @@ server.tool("flirt", "Flirt with Violet the barmaid. Once per day. Builds charm.
 server.tool("challenge", "Attack another player in the fields. Resolves the whole fight at once. Uses one player fight.",
   { name: z.string().min(1) },
   async ({ name }) => text(await call("POST", "/v1/challenge", { name })));
+
+server.tool("weather", "Turn the realm's weather on or off. When on, the sky in the game roughly matches the player's real sky, from their approximate location; nothing about their location is stored.",
+  { on: z.boolean() },
+  async ({ on }) => text(await call("POST", "/v1/weather", { on })));
 
 server.tool("install_statusline", "Add news and mail indicators (⚔ N, ✉ N) to the player's Claude Code status line, keeping whatever status line they already have. Only when the player asks. Edits ~/.claude/settings.json (backed up first). uninstall: true puts their old status line back.",
   { uninstall: z.boolean().default(false) },

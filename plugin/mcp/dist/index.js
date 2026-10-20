@@ -21742,13 +21742,21 @@ async function call(method, path, body) {
   }
   const res = await fetch(cfg.api_url + path, {
     method,
-    headers: { "content-type": "application/json", ...cfg.api_key ? { authorization: `Bearer ${cfg.api_key}` } : {} },
+    headers: { "content-type": "application/json", ...cfg.api_key ? { authorization: `Bearer ${cfg.api_key}` } : {}, ...clientHeaders() },
     body: body === void 0 ? void 0 : JSON.stringify(body)
   });
   const json = await res.json().catch(() => ({ error: "bad_response", status: res.status }));
   const st = json.state;
   if (typeof st?.unread_mail === "number") await noteUnread(st.unread_mail, st.unread_news ?? 0);
   return json;
+}
+function clientHeaders() {
+  const app = server.server.getClientVersion();
+  return {
+    "x-dragons-door-version": VERSION,
+    "x-dragons-door-os": process.platform,
+    ...app?.name ? { "x-dragons-door-app": `${app.name} ${app.version ?? ""}`.trim().slice(0, 60) } : {}
+  };
 }
 var text = (v) => ({ content: [{ type: "text", text: JSON.stringify(v) }] });
 server.tool(
@@ -21863,6 +21871,12 @@ server.tool(
   "Attack another player in the fields. Resolves the whole fight at once. Uses one player fight.",
   { name: external_exports.string().min(1) },
   async ({ name }) => text(await call("POST", "/v1/challenge", { name }))
+);
+server.tool(
+  "weather",
+  "Turn the realm's weather on or off. When on, the sky in the game roughly matches the player's real sky, from their approximate location; nothing about their location is stored.",
+  { on: external_exports.boolean() },
+  async ({ on }) => text(await call("POST", "/v1/weather", { on }))
 );
 server.tool(
   "install_statusline",

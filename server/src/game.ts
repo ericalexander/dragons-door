@@ -30,6 +30,8 @@ export interface Player {
   ground: { slot: "weapon" | "armor"; item_id: number } | null;
   mail_notified_upto: number;
   news_seen_upto: number;
+  client: unknown;
+  weather_off: boolean;
 }
 
 export interface Turns {
@@ -95,6 +97,8 @@ export interface PublicState {
   ground: string | null;
   unread_mail: number;
   unread_news: number;
+  /** The sky over the player, roughly. Only on status, forest and news, and only if they haven't turned it off. */
+  weather?: import("./weather.js").Weather;
 }
 
 export function weapon(id: number) {

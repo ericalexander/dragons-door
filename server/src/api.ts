@@ -8,9 +8,14 @@ import {
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
+import { current, fromHeaders, older, runWith } from "./request.js";
+import { weatherAt } from "./weather.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
+
+// Who's calling and roughly from where, for the code below that needs it.
+api.use("*", (c, next) => runWith(fromHeaders((n) => c.req.header(n)), next));
 
 class GameError extends Error {
   constructor(public code: string, msg: string, public status = 400) { super(msg); }
@@ -31,16 +36,34 @@ interface Ctx {
 }
 
 /** Authenticate, lock the player row, roll the day if needed, run the handler, build the envelope. */
-async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Promise<void>, opts: { quiet?: boolean } = {}): Promise<Envelope> {
+async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Promise<void>, opts: { quiet?: boolean; weather?: boolean } = {}): Promise<Envelope> {
   const key = authHeader?.replace(/^Bearer\s+/i, "").trim();
   if (!key) throw new GameError("unauthorized", "missing api key", 401);
-  return tx(async (c) => {
+  const info = current();
+  // Off unless MIN_PLUGIN_VERSION is set: only raised for releases that old plugins can't play against.
+  const min = process.env.MIN_PLUGIN_VERSION;
+  if (min && info && !info.townsfolk && (!info.plugin || older(info.plugin, min))) {
+    throw new GameError("update_required", `This realm needs Dragon's Door ${min} or newer (you have ${info.plugin ?? "an older version"}).`, 426);
+  }
+  // Look the sky up while the database work happens; it's dropped if the player has weather off.
+  const sky = opts.weather && info && !info.townsfolk ? weatherAt(info.lat, info.lon) : null;
+  let weatherOff = true;
+  const env = await tx(async (c) => {
     const r = await c.query<Player>("select * from players where api_key_hash = $1 for update", [hash(key)]);
     if (!r.rowCount) throw new GameError("unauthorized", "unknown api key", 401);
     const settings = await realmSettings(c);
     const day = realmDay(settings.resetHourUtc);
     const loaded = await loadTurns(c, r.rows[0], day);
     const ctx: Ctx = { c, p: numify(loaded.player), t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [] };
+    weatherOff = ctx.p.weather_off;
+    if (info && !info.townsfolk && info.plugin) {
+      const prev = ctx.p.client as { plugin?: string; app?: string; os?: string } | null;
+      if (prev?.plugin !== info.plugin || prev?.app !== info.app || prev?.os !== info.os) {
+        const client = { plugin: info.plugin, app: info.app, os: info.os, since: new Date().toISOString() };
+        await c.query("update players set client = $2 where id = $1", [ctx.p.id, JSON.stringify(client)]);
+        ctx.p.client = client;
+      }
+    }
     if (loaded.rolled) {
       ctx.events.push({ kind: "new_day", day });
       if (ctx.p.ground) await savePlayer(ctx, { ground: null });
@@ -64,6 +87,11 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
       ...(ctx.hint ? { hint: ctx.hint } : {}),
     };
   });
+  if (sky && !weatherOff) {
+    const w = await sky;
+    if (w) env.state.weather = w;
+  }
+  return env;
 }
 
 async function drainMailbox(ctx: Ctx) {
@@ -190,7 +218,16 @@ api.get("/public/realm", async (c) => {
 
 // ---------- read-only ----------
 
-api.get("/status", async (c) => c.json(await withPlayer(c.req.header("authorization"), async () => {})));
+api.get("/status", async (c) => c.json(await withPlayer(c.req.header("authorization"), async () => {}, { weather: true })));
+
+// Weather on or off for this player. Nothing about their location is kept either way.
+api.post("/weather", async (c) => {
+  const body = z.object({ on: z.boolean() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    await savePlayer(ctx, { weather_off: !body.on });
+    ctx.events.push({ kind: "weather_setting", on: body.on });
+  }, { weather: true }));
+});
 
 api.get("/news", async (c) => {
   const which = c.req.query("day") === "yesterday" ? -1 : 0;
@@ -209,7 +246,7 @@ api.get("/news", async (c) => {
       await savePlayer(ctx, { news_seen_upto: Number(top.rows[0].m) });
       for (const row of r.rows) ctx.events.push({ kind: "news", day: d, what: row.kind, actor: row.actor, target: row.target, detail: row.detail, line: newsLine(row), ts: row.ts });
     }
-  }, { quiet: compact }));
+  }, { quiet: compact, weather: !compact }));
 });
 
 function aOrAn(item: string): string {
@@ -269,7 +306,7 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const m = pickMonster(ctx.p.level);
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
   ctx.events.push({ kind: "encounter", monster: m });
-})));
+}, { weather: true })));
 
 api.post("/fight", async (c) => {
   const body = z.object({ action: z.enum(["attack", "special", "run"]) }).parse(await c.req.json());

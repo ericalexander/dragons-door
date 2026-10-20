@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.2.8",
+    "lore": "You step outside and the sky looks familiar. It ought to: it's the same one over your own roof, more or less. When it rains where you are, it rains in the forest too.",
+    "plain": "The realm's weather follows your real weather, from your rough location (never stored). Ask to turn it off any time."
+  },
+  {
     "version": "0.2.6",
     "lore": "There are new faces in town. A monk is up before the roosters, the stable lad has found a sword, a fortune teller has hung a curtain in the back of the tavern, and someone called Sir Pomfrey would like you to notice his armor.",
     "plain": "Four new townsfolk: Brother Ansel, Pip, Madam Orsolya and Sir Pomfrey. They show up in (R)ankings and the tavern."

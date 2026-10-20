@@ -77,6 +77,10 @@ Every tool returns:
 `events` is what happened. `state` is where you are. `actions` is what's legal next — the narrator offers only those. See `plugin/skills/narrator/SKILL.md`.
 
 
+## What the realm knows about you
+
+Your character, which plugin version, app and operating system you last played from, and whether you've turned weather off. For weather, each request's rough location (from Vercel's IP geolocation, rounded to about 50 km) is used to look up the current sky at Open-Meteo and then dropped; it's never written down. Ask the narrator to turn weather off, or call the `weather` tool with `on: false`.
+
 ## Keeping it honest
 
 - Every rule and every roll runs on the server; the plugin only sends intents.
