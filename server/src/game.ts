@@ -97,6 +97,9 @@ export interface PublicState {
   ground: string | null;
   unread_mail: number;
   unread_news: number;
+  /** What things cost right now, so the narrator can quote before the player commits. */
+  prices: { inn: number; heal_per_hp: number; heal_all: number };
+  bank_trips_left: number;
   /** The sky over the player, roughly. Only on status, forest and news, and only if they haven't turned it off. */
   weather?: import("./weather.js").Weather;
 }
@@ -161,6 +164,12 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     ground: p.ground ? (p.ground.slot === "weapon" ? weapon(p.ground.item_id) : armor(p.ground.item_id)).name : null,
     unread_mail: unreadMail,
     unread_news: unreadNews,
+    prices: {
+      inn: GAME.innCostPerLevel * p.level,
+      heal_per_hp: GAME.healerCostPerHpPerLevel * p.level,
+      heal_all: (p.max_hp - p.hp) * GAME.healerCostPerHpPerLevel * p.level,
+    },
+    bank_trips_left: Math.max(0, GAME.bankTxPerDay - t.bank_tx),
   };
 }
 
