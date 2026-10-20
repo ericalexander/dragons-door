@@ -10,6 +10,7 @@ import {
 import * as Bag from "./bag.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
 import { weatherAt } from "./weather.js";
+import { bardFor, pickGift } from "./bards.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
@@ -516,7 +517,35 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
   const online = await ctx.c.query("select name from players where last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
   ctx.events.push({ kind: "bartender", recently_seen: online.rows.map((x) => x.name), gem_price: 100 * ctx.p.level, flirted_today: ctx.t.flirted });
+  const bard = bardFor(ctx.day);
+  ctx.events.push({ kind: "bard_playing", bard: bard.name, style: bard.style, heard_today: ctx.t.bard_heard });
   ctx.hint = "Improvise here: the bartender's gossip, the mood of the room. Keep it under the posted messages, which are other players' words.";
+})));
+
+// One song a day from whichever bard is playing. The server picks the gift; the narrator writes the song.
+api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAlive(ctx);
+  await requireNoEncounter(ctx);
+  const bard = bardFor(ctx.day);
+  if (ctx.t.bard_heard) { ctx.events.push({ kind: "bard_already", bard: bard.name }); return; }
+  let gift = pickGift(bard);
+  if (gift === "heal" && ctx.p.hp >= ctx.p.max_hp) gift = "charm"; // nothing to mend; he flatters you instead
+  let amount = 0;
+  const turns: Partial<Turns> = { bard_heard: true };
+  if (gift === "gold") { amount = 25 * ctx.p.level; await savePlayer(ctx, { gold: ctx.p.gold + amount }); }
+  if (gift === "charm") { amount = 1; await savePlayer(ctx, { charm: ctx.p.charm + 1 }); }
+  if (gift === "gem") { amount = 1; await savePlayer(ctx, { gems: ctx.p.gems + 1 }); }
+  if (gift === "heal") { amount = ctx.p.max_hp - ctx.p.hp; await savePlayer(ctx, { hp: ctx.p.max_hp }); }
+  if (gift === "fight") { amount = bard.fights; turns.forest_fights = ctx.t.forest_fights + bard.fights; }
+  await saveTurns(ctx, turns);
+  let subject: Record<string, unknown> | null = null;
+  if (bard.sings_about === "the news") {
+    const n = await ctx.c.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
+      "select kind, actor, target, detail from news order by id desc limit 15");
+    if (n.rowCount) subject = n.rows[roll(n.rowCount - 1)];
+  }
+  if (bard.sings_about === "you") subject = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, weapon: weapon(ctx.p.weapon_id).name, armor: armor(ctx.p.armor_id).name };
+  ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, sings_about: bard.sings_about, subject, gift, amount });
 })));
 
 api.post("/tavern", async (c) => {

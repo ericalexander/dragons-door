@@ -154,6 +154,7 @@ async function drunkNight(b: Bot) {
   // Never banks, never pays for a bed. Asleep in the fields with whatever he won.
   await tidyBag(b);
   await b.post("/flirt");
+  await b.post("/bard");
   if (roll(99) < 60) {
     const lines = [
       "Anyone seen my boots? Woke up in the fields again.",
@@ -345,6 +346,7 @@ type Step = (b: Bot) => Promise<void>;
 interface Session { at: string; steps: Step[] }
 const f = (n: number): Step => (b) => fights(b, n);
 const flirt: Step = async (b) => { await b.post("/flirt"); };
+const song: Step = async (b) => { await b.post("/bard"); };
 
 const SCHEDULE: Record<Personality, Session[]> = {
   banker: [ // Hilde: steady all day, banks and beds down at dinner
@@ -383,7 +385,7 @@ const SCHEDULE: Record<Personality, Session[]> = {
   braggart: [ // Sir Pomfrey: shopping first, a little fighting, a lot of talking
     { at: "09:30", steps: [shop, f(3)] },
     { at: "13:00", steps: [f(3), boast] },
-    { at: "17:30", steps: [f(4), shop, flirt, bedInn] },
+    { at: "17:30", steps: [f(4), shop, flirt, song, bedInn] },
   ],
 };
 

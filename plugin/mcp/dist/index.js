@@ -21865,6 +21865,7 @@ server.tool(
   { name: external_exports.string().min(1), on: external_exports.boolean().default(true) },
   async ({ name, on }) => text(await call("POST", "/v1/mute", { name, on }))
 );
+server.tool("bard", "Ask tonight's bard in the tavern for a song. Once a day. A different bard plays on different days; the song sometimes brings a small gift.", {}, async () => text(await call("POST", "/v1/bard")));
 server.tool("flirt", "Flirt with Violet the barmaid. Once per day. Builds charm.", {}, async () => text(await call("POST", "/v1/flirt")));
 server.tool(
   "challenge",

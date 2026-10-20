@@ -45,6 +45,7 @@ export interface Turns {
   bank_tx: number;
   tavern_posts: number;
   messages_sent: number;
+  bard_heard: boolean;
 }
 
 export interface Monster {
@@ -183,6 +184,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
   if (t.player_fights > 0) a.push("challenge");
   if (!t.flirted) a.push("flirt");
   if (!t.inn_used) a.push("inn");
+  if (!t.bard_heard) a.push("bard");
   const next = expForLevel(p.level + 1);
   if (next !== null && p.exp >= next) a.unshift("train");
   if (p.level >= 12 && dragonAlive && t.forest_fights > 0) a.unshift("dragon");
