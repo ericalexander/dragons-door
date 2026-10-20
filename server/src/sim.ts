@@ -27,9 +27,11 @@ const MAGE = {
   pierce: Number(process.env.PIERCE ?? 0),   // share of the target's defense a Fireball ignores
   regen: Number(process.env.REGEN ?? 0),     // share of max HP a mage gets back after each forest win
   expb: Number(process.env.MEXPB ?? 1),      // mage experience multiplier
-  crit: Number(process.env.CRIT ?? 0),       // chance any mage swing lands as a critical hit
-  critx: Number(process.env.CRITX ?? 2),     // critical hit damage multiplier
 };
+// crit chances per class, and the crit multiplier, override game.json
+for (const [k, cls] of [["WCRIT", "warrior"], ["TCRIT", "thief"], ["MCRIT", "mage"]] as const)
+  if (process.env[k] !== undefined) (GAME.classes[cls] as { critChance?: number }).critChance = Number(process.env[k]);
+if (process.env.CRITX) (GAME as { critMultiplier: number }).critMultiplier = Number(process.env.CRITX);
 if (process.env.MAGE_HP) GAME.classes.mage.hpPerLevel = Number(process.env.MAGE_HP);
 if (process.env.MAGE_DEF) GAME.classes.mage.defPerLevel = Number(process.env.MAGE_DEF);
 if (process.env.MAGE_STR) GAME.classes.mage.strPerLevel = Number(process.env.MAGE_STR);
@@ -63,7 +65,6 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number)
     }
     let mult = 1, dodge = false;
     if (specials.n > 0 && mf.hp > pf.str * 1.5) { mult = specialMultiplier(p); dodge = specialDodges(p); specials.n--; }
-    if (p.class === "mage" && MAGE.crit > 0 && roll(9999) < Math.round(MAGE.crit * 10000)) mult *= MAGE.critx;
     if (mult > 1 && p.class === "mage" && MAGE.pierce > 0) {
       const armour = mf.def; mf.def = Math.round(armour * (1 - MAGE.pierce));
       exchange(pf, mf, mult, dodge); mf.def = armour;

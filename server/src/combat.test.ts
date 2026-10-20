@@ -51,3 +51,15 @@ test("a dodged special takes no counterattack", () => {
     assert.equal(evs.at(-1)?.kind, "dodged");
   }
 });
+
+test("a sure crit is flagged and monsters never crit", () => {
+  for (let i = 0; i < 50; i++) {
+    const a = { name: "A", hp: 1000, str: 50, def: 0, crit: 1 };
+    const m = { name: "M", hp: 100000, str: 50, def: 0 };
+    const evs = exchange(a, m);
+    const mine = evs.find((e) => e.attacker === "A");
+    if (mine?.kind === "hit") assert.equal(mine.crit, true);
+    const theirs = evs.find((e) => e.attacker === "M");
+    assert.notEqual(theirs?.crit, true);
+  }
+});

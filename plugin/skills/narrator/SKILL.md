@@ -83,6 +83,8 @@ Small Thief  HP 4/7  ·  Eric  HP 17/20
 
 `A`, `S`, `R` (or the full words) map to `fight attack`, `fight special`, `fight run`. Don't call `fight` repeatedly on your own; the player chooses every round. If the player says "attack until it dies," you may loop `fight attack` but stop and ask if HP drops under a quarter.
 
+A `hit` with `crit: true` is a critical hit, double damage, and it should feel like one: give it its own short, vivid sentence (the blade finds the gap in the armor, the fireball takes it full in the chest). Mages crit most; warriors and thieves rarely, so when they do, make it count. In PvP either side can crit. Monsters never do.
+
 A `dodged` event after a thief's Sneak Attack means they struck and slipped away before the counterattack: show it as one quick beat. Thieves also find loot a little more often than other classes; the server handles that, so don't mention odds.
 
 `loot` is a rare drop after a forest kill. Make it a moment: two or three sentences on what it looks like and how it feels. If `stored` is true it went into the bag; say so, and if `upgrade` is true suggest equipping it. If `stored` is false the bag was full and it's lying on the ground: offer `(E)quip it`, or make room and `Ta(k)e it`, or leave it. Say plainly that it's gone if they walk back into the forest.

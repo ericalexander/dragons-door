@@ -6,7 +6,8 @@
       "specialsPerDay": 3,
       "hpPerLevel": 10,
       "strPerLevel": 4,
-      "defPerLevel": 2
+      "defPerLevel": 2,
+      "critChance": 0.03
     },
     "thief": {
       "special": "Sneak Attack",
@@ -16,7 +17,8 @@
       "strPerLevel": 3,
       "defPerLevel": 3,
       "dropChance": 0.05,
-      "specialDodge": 0.5
+      "specialDodge": 0.5,
+      "critChance": 0.03
     },
     "mage": {
       "special": "Fireball",
@@ -24,7 +26,8 @@
       "specialsPerDay": 6,
       "hpPerLevel": 8,
       "strPerLevel": 3,
-      "defPerLevel": 2
+      "defPerLevel": 2,
+      "critChance": 0.17
     }
   },
   "levels": [
@@ -638,5 +641,6 @@
     }
   ],
   "sellFraction": 0.5,
-  "messagesPerDay": 30
+  "messagesPerDay": 30,
+  "critMultiplier": 2
 }

@@ -12,12 +12,16 @@ export interface Fighter {
   hp: number;
   str: number;
   def: number;
+  /** Chance each swing lands as a critical hit. Players only; monsters never crit. */
+  crit?: number;
 }
 
 export function playerAsFighter(p: Player): Fighter {
   const e = effective(p);
-  return { name: p.name, hp: p.hp, str: e.str, def: e.def };
+  return { name: p.name, hp: p.hp, str: e.str, def: e.def, crit: (GAME.classes[p.class] as { critChance?: number }).critChance ?? 0 };
 }
+
+const crits = (f: Fighter) => (f.crit ?? 0) > 0 && roll(9999) < Math.round((f.crit ?? 0) * 10000);
 
 export function monsterAsFighter(m: Monster): Fighter {
   return { name: m.name, hp: m.hp, str: m.str, def: m.def };
@@ -29,10 +33,11 @@ export function monsterAsFighter(m: Monster): Fighter {
  */
 export function exchange(att: Fighter, def: Fighter, attMult = 1, dodge = false): Event[] {
   const events: Event[] = [];
-  const dmg = Math.max(0, Math.round((roll(att.str) - roll(def.def)) * attMult));
+  const crit = crits(att);
+  const dmg = Math.max(0, Math.round((roll(att.str) - roll(def.def)) * attMult * (crit ? GAME.critMultiplier : 1)));
   if (dmg > 0) {
     def.hp = Math.max(0, def.hp - dmg);
-    events.push({ kind: "hit", attacker: att.name, defender: def.name, damage: dmg, defender_hp: def.hp, special: attMult > 1 });
+    events.push({ kind: "hit", attacker: att.name, defender: def.name, damage: dmg, defender_hp: def.hp, special: attMult > 1, ...(crit ? { crit: true } : {}) });
   } else {
     events.push({ kind: "miss", attacker: att.name, defender: def.name, special: attMult > 1 });
   }
@@ -42,10 +47,11 @@ export function exchange(att: Fighter, def: Fighter, attMult = 1, dodge = false)
     return events;
   }
 
-  const back = Math.max(0, roll(def.str) - roll(att.def));
+  const backCrit = crits(def);
+  const back = Math.max(0, (roll(def.str) - roll(att.def)) * (backCrit ? GAME.critMultiplier : 1));
   if (back > 0) {
     att.hp = Math.max(0, att.hp - back);
-    events.push({ kind: "hit", attacker: def.name, defender: att.name, damage: back, defender_hp: att.hp });
+    events.push({ kind: "hit", attacker: def.name, defender: att.name, damage: back, defender_hp: att.hp, ...(backCrit ? { crit: true } : {}) });
   } else {
     events.push({ kind: "miss", attacker: def.name, defender: att.name });
   }
