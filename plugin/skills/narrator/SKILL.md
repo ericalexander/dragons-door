@@ -31,9 +31,25 @@ HP 14/20 · Gold 212 (bank 1,000) · L3 · Forest 7 · PvP 3 · Specials 2 · Sa
 (F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (G)ear  (I)nn  (C)hallenge  (M)ail  (N)ews  (R)ankings  (Q)uit
 ```
 
-The `bag` action shows as `(G)ear`.
-
 Build the menu from `actions` only, then always add `(Q)uit` at the end of the town menu (not the fight menu). Always show the hotkey in parentheses on every menu item, every time. The player will answer with a single letter or the full word; treat both the same.
+
+### Hotkeys never repeat
+
+Every action has one fixed label. Use these exactly, even when the first letter of the word looks free, so the same key always means the same thing:
+
+| action | label | | action | label |
+|---|---|---|---|---|
+| `forest` | `(F)orest` | | `train` | `Tr(a)in` |
+| `tavern` | `(T)avern` | | `dragon` | `(D)ragon` |
+| `healer` | `(H)ealer` | | `flirt` | `(V)iolet` |
+| `shop` | `(S)hop` | | `equip ground` | `(E)quip it` |
+| `bank` | `(B)ank` | | `take` | `Ta(k)e it` |
+| `bag` | `(G)ear` | | `challenge` | `(C)hallenge` |
+| `inn` | `(I)nn` | | `mail` | `(M)ail` |
+| `news` | `(N)ews` | | `rankings` | `(R)ankings` |
+| quit | `(Q)uit` | | | |
+
+Any other menu you put together (shop lists, bank, the quit question, a list of players, a yes/no) follows the same rule: **within one menu, every hotkey is a different letter.** Before printing a menu, check its letters. If two items would share one, give the second a different letter from inside its word, marked the same way (`Tr(a)in`, `Ta(k)e`), or number the items `(1)`, `(2)`, `(3)` instead. Never print two items with the same letter, and never reuse a letter in a sub-menu for something different from what it means on the menu right above it when both are on screen.
 
 ## Quitting is a choice about tonight
 
@@ -56,7 +72,7 @@ Small Thief  HP 4/7  ·  Eric  HP 17/20
 
 `A`, `S`, `R` (or the full words) map to `fight attack`, `fight special`, `fight run`. Don't call `fight` repeatedly on your own; the player chooses every round. If the player says "attack until it dies," you may loop `fight attack` but stop and ask if HP drops under a quarter.
 
-`loot` is a rare drop after a forest kill. Make it a moment: two or three sentences on what it looks like and how it feels. If `stored` is true it went into the bag; say so, and if `upgrade` is true suggest equipping it. If `stored` is false the bag was full and it's lying on the ground: offer `(E)quip it`, or make room and `(T)ake` it, or leave it. Say plainly that it's gone if they walk back into the forest.
+`loot` is a rare drop after a forest kill. Make it a moment: two or three sentences on what it looks like and how it feels. If `stored` is true it went into the bag; say so, and if `upgrade` is true suggest equipping it. If `stored` is false the bag was full and it's lying on the ground: offer `(E)quip it`, or make room and `Ta(k)e it`, or leave it. Say plainly that it's gone if they walk back into the forest.
 
 `bag` shows what they're carrying. Print it as a short list, one line per item with its id, stats, weight and sale price, then the weight line (`Satchel 12/20`). Mark upgrades with `*`. From there they can equip, sell, or drop by id. Equipped gear doesn't count toward the weight. Bigger bags (Pack, Saddlebags) are in the shop under `bag`.
 
