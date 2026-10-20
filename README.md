@@ -18,17 +18,6 @@ In Claude Code:
 
 First run asks for a name and class and stores an API key in `~/.config/dragons-door/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://dragons-door-api.vercel.app` by default. Every new session greets you with one line of realm news.
 
-## Coming from Dragonmoor
-
-The game was called Dragonmoor for its first day. If you installed it then, swap it out once:
-
-```
-/plugin uninstall dragonmoor@lord
-/plugin marketplace remove lord
-```
-
-then the three commands above. Your character carries over on its own. If you'd set up the mail envelope, run `/dragons-door:statusline` once more.
-
 ## Layout
 
 ```
