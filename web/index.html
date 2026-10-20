@@ -67,7 +67,8 @@
   .bar a:hover { text-decoration: none; background: var(--cyan-lo); }
 
   /* ── Title screen ──────────────────────────────────────────────── */
-  .title { padding: 28px 0 0; }
+  .title { padding: 28px 0 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .title pre.ansi { width: fit-content; max-width: 100%; text-align: left; }
   pre.ansi {
     margin: 0;
     font-family: var(--blocks);
