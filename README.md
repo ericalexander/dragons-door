@@ -16,7 +16,7 @@ In Claude Code:
 /dragons-door:enter
 ```
 
-First run asks for a name and class and stores an API key in `~/.config/dragons-door/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://lord-ebon.vercel.app` by default. Every new session greets you with one line of realm news.
+First run asks for a name and class and stores an API key in `~/.config/dragons-door/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://dragons-door-api.vercel.app` by default. Every new session greets you with one line of realm news.
 
 ## Coming from Dragonmoor
 

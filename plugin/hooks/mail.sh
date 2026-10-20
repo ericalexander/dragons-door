@@ -14,7 +14,7 @@ const fs = require("fs");
 const [cfgPath, seenPath] = process.argv.slice(2);
 const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
 if (!cfg.api_key) process.exit(0);
-const url = (process.env.DRAGONS_DOOR_API_URL || process.env.LORD_API_URL || cfg.api_url || "https://lord-ebon.vercel.app") + "/v1/mail/peek";
+const url = (process.env.DRAGONS_DOOR_API_URL || process.env.LORD_API_URL || cfg.api_url || "https://dragons-door-api.vercel.app") + "/v1/mail/peek";
 let seen = 0; try { seen = Number(fs.readFileSync(seenPath, "utf8")) || 0; } catch {}
 const ac = new AbortController(); setTimeout(() => ac.abort(), 1200);
 fetch(url, { headers: { authorization: "Bearer " + cfg.api_key }, signal: ac.signal })

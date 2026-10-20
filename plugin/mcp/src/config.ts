@@ -9,7 +9,7 @@ export const CONFIG_DIR = env("CONFIG_DIR") ?? join(homedir(), ".config", "drago
 const LEGACY_DIR = join(homedir(), ".config", "lord");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
-export const DEFAULT_API_URL = "https://lord-ebon.vercel.app";
+export const DEFAULT_API_URL = "https://dragons-door-api.vercel.app";
 
 export interface Config {
   /** Resolved at load time: DRAGONS_DOOR_API_URL env, else an explicit `api_url` in the file, else the hosted realm. */

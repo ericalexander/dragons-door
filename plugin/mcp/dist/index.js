@@ -21505,7 +21505,7 @@ var env = (k) => process.env[`DRAGONS_DOOR_${k}`] ?? process.env[`LORD_${k}`];
 var CONFIG_DIR = env("CONFIG_DIR") ?? join(homedir(), ".config", "dragons-door");
 var LEGACY_DIR = join(homedir(), ".config", "lord");
 var CONFIG_FILE = join(CONFIG_DIR, "config.json");
-var DEFAULT_API_URL = "https://lord-ebon.vercel.app";
+var DEFAULT_API_URL = "https://dragons-door-api.vercel.app";
 async function loadConfig() {
   let stored = {};
   try {
