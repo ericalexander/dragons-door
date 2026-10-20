@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.3.6",
+    "lore": "The town has been tidied. The square is where the roads meet; the tavern keeps its own company, with rooms upstairs; the forest keeps you until you choose to walk out. You go in, you do your business, you come back out.",
+    "plain": "Each place has its own short menu. (R)eturn to town to go somewhere else. The Inn is now upstairs in the (T)avern."
+  },
+  {
     "version": "0.3.5",
     "lore": "Every so often now, a blow lands exactly right: through the gap in the armor, square between the eyes. It doesn't happen often. For mages it happens a good deal more, which the forest's larger residents are beginning to notice.",
     "plain": "Critical hits: any swing can land for double damage. Warriors and thieves crit 3% of the time, mages 17%. Works in player fights too."
