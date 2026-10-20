@@ -22,6 +22,17 @@ const K = {
 if (process.env.DROP !== undefined) GAME.drops.chance = Number(process.env.DROP);
 if (process.env.TDROP !== undefined) (GAME.classes.thief as { dropChance?: number }).dropChance = Number(process.env.TDROP);
 if (process.env.DODGE !== undefined) (GAME.classes.thief as { specialDodge?: number }).specialDodge = Number(process.env.DODGE);
+// mage experiments
+const MAGE = {
+  pierce: Number(process.env.PIERCE ?? 0),   // share of the target's defense a Fireball ignores
+  regen: Number(process.env.REGEN ?? 0),     // share of max HP a mage gets back after each forest win
+  expb: Number(process.env.MEXPB ?? 1),      // mage experience multiplier
+};
+if (process.env.MAGE_HP) GAME.classes.mage.hpPerLevel = Number(process.env.MAGE_HP);
+if (process.env.MAGE_DEF) GAME.classes.mage.defPerLevel = Number(process.env.MAGE_DEF);
+if (process.env.MAGE_STR) GAME.classes.mage.strPerLevel = Number(process.env.MAGE_STR);
+if (process.env.MAGE_MULT) GAME.classes.mage.specialMult = Number(process.env.MAGE_MULT);
+if (process.env.MAGE_SPD) GAME.classes.mage.specialsPerDay = Number(process.env.MAGE_SPD);
 if (process.env.DHP) GAME.dragon.hp = Number(process.env.DHP); if (process.env.DSTR) GAME.dragon.str = Number(process.env.DSTR); if (process.env.DDEF) GAME.dragon.def = Number(process.env.DDEF);
 if (K.ghp) GAME.growth.hp = Number(K.ghp); if (K.gstr) GAME.growth.str = Number(K.gstr); if (K.gdef) GAME.growth.def = Number(K.gdef);
 for (const m of GAME.monsters) { m.str = Math.round(m.str * K.mstr); m.hp = Math.round(m.hp * K.mhp); m.gold = Math.round(m.gold * K.mgold); m.exp = Math.round(m.exp * K.mexp); }
@@ -50,7 +61,10 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number)
     }
     let mult = 1, dodge = false;
     if (specials.n > 0 && mf.hp > pf.str * 1.5) { mult = specialMultiplier(p); dodge = specialDodges(p); specials.n--; }
-    exchange(pf, mf, mult, dodge);
+    if (mult > 1 && p.class === "mage" && MAGE.pierce > 0) {
+      const armour = mf.def; mf.def = Math.round(armour * (1 - MAGE.pierce));
+      exchange(pf, mf, mult, dodge); mf.def = armour;
+    } else exchange(pf, mf, mult, dodge);
     if (mf.hp <= 0) { p.hp = pf.hp; return "won"; }
     if (pf.hp <= 0) { p.hp = 0; return "died"; }
   }
@@ -120,7 +134,8 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       const m = pickMonster(p.level);
       const res = fight(p, m, specials, 0.5);
       if (res === "won") {
-        p.gold += m.gold; p.exp += m.exp;
+        p.gold += m.gold; p.exp += p.class === "mage" ? Math.round(m.exp * MAGE.expb) : m.exp;
+        if (p.class === "mage" && MAGE.regen > 0) p.hp = Math.min(p.max_hp, p.hp + Math.round(p.max_hp * MAGE.regen));
         const drop = rollDrop(m.level ?? p.level, p.class);
         if (drop) {
           // careful player: wear it if it's better and sell the old piece, otherwise sell the drop (half price)
