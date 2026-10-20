@@ -3204,28 +3204,28 @@ var require_utils = __commonJS({
         if (left.length === 1 && left[0] === "") left.length = 0;
         if (right.length === 1 && right[0] === "") right.length = 0;
       }
-      const parts = left.concat(right);
+      const parts2 = left.concat(right);
       let hextetCount = 0;
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
+      for (let i = 0; i < parts2.length; i++) {
+        const part = parts2[i];
         if (part === "") return void 0;
         if (part.indexOf(".") !== -1) {
-          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv4(part)) return void 0;
+          if (i !== parts2.length - 1 || compression !== -1 && right.length === 0 || !isIPv4(part)) return void 0;
           hextetCount += 2;
           continue;
         }
         if (!isHextet(part)) return void 0;
-        parts[i] = parseInt(part, 16).toString(16);
+        parts2[i] = parseInt(part, 16).toString(16);
         hextetCount++;
       }
       if (compression === -1) {
         if (hextetCount !== 8) return void 0;
-        return compressIPv6ZeroRun(parts);
+        return compressIPv6ZeroRun(parts2);
       }
       if (hextetCount >= 8) return void 0;
-      const expanded = parts.slice(0, left.length);
+      const expanded = parts2.slice(0, left.length);
       for (let i = hextetCount; i < 8; i++) expanded.push("0");
-      for (let i = left.length; i < parts.length; i++) expanded.push(parts[i]);
+      for (let i = left.length; i < parts2.length; i++) expanded.push(parts2[i]);
       return compressIPv6ZeroRun(expanded);
     }
     function normalizeIPv6(host) {
@@ -21541,20 +21541,71 @@ async function saveConfig(cfg) {
   await writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 384 });
 }
 
-// src/statusline.ts
-import { chmod, copyFile, mkdir as mkdir2, readFile as readFile2, rm, writeFile as writeFile2, stat } from "node:fs/promises";
-import { homedir as homedir2 } from "node:os";
+// src/version.ts
+import { readFileSync } from "node:fs";
+import { mkdir as mkdir2, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
 import { dirname, join as join2 } from "node:path";
 import { fileURLToPath } from "node:url";
-var CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR ?? join2(homedir2(), ".claude");
-var SETTINGS = join2(CLAUDE_DIR, "settings.json");
-var SCRIPT_DEST = join2(CLAUDE_DIR, "dragons-door-statusline.sh");
-var PREV = join2(CLAUDE_DIR, "dragons-door-statusline.prev");
-var ORIG = join2(CLAUDE_DIR, "dragons-door-statusline.orig.json");
-var LEGACY = { script: join2(CLAUDE_DIR, "dragonmoor-statusline.sh"), prev: join2(CLAUDE_DIR, "dragonmoor-statusline.prev"), orig: join2(CLAUDE_DIR, "dragonmoor-statusline.orig.json") };
+var LATEST_URL = process.env.DRAGONS_DOOR_LATEST_URL ?? "https://raw.githubusercontent.com/ericalexander/dragons-door/main/plugin/.claude-plugin/plugin.json";
+var CACHE = join2(CONFIG_DIR, "latest-version");
+var MAX_AGE = 6 * 3600;
+var VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(join2(dirname(fileURLToPath(import.meta.url)), "..", "..", ".claude-plugin", "plugin.json"), "utf8")).version;
+  } catch {
+    return "0.0.0";
+  }
+})();
+var parts = (v) => v.split(".").map((n) => parseInt(n, 10) || 0);
+function newer(a, b) {
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  return false;
+}
+async function latest() {
+  const now = Math.floor(Date.now() / 1e3);
+  let cached2 = null;
+  try {
+    const [ts, v] = (await readFile2(CACHE, "utf8")).trim().split(" ");
+    cached2 = v || null;
+    if (now - Number(ts) < MAX_AGE) return cached2;
+  } catch {
+  }
+  try {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 1500);
+    const r = await fetch(LATEST_URL, { signal: ac.signal });
+    clearTimeout(t);
+    const v = r.ok ? (await r.json()).version : void 0;
+    if (v && /^\d+\.\d+\.\d+$/.test(v)) {
+      await mkdir2(CONFIG_DIR, { recursive: true, mode: 448 });
+      await writeFile2(CACHE, `${now} ${v}
+`);
+      return v;
+    }
+  } catch {
+  }
+  return cached2;
+}
+async function clientInfo() {
+  const l = await latest();
+  return { version: VERSION, latest: l, update_available: Boolean(l && newer(l, VERSION)) };
+}
+
+// src/statusline.ts
+import { chmod, copyFile, mkdir as mkdir3, readFile as readFile3, rm, writeFile as writeFile3, stat } from "node:fs/promises";
+import { homedir as homedir2 } from "node:os";
+import { dirname as dirname2, join as join3 } from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+var CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR ?? join3(homedir2(), ".claude");
+var SETTINGS = join3(CLAUDE_DIR, "settings.json");
+var SCRIPT_DEST = join3(CLAUDE_DIR, "dragons-door-statusline.sh");
+var PREV = join3(CLAUDE_DIR, "dragons-door-statusline.prev");
+var ORIG = join3(CLAUDE_DIR, "dragons-door-statusline.orig.json");
+var LEGACY = { script: join3(CLAUDE_DIR, "dragonmoor-statusline.sh"), prev: join3(CLAUDE_DIR, "dragonmoor-statusline.prev"), orig: join3(CLAUDE_DIR, "dragonmoor-statusline.orig.json") };
 var LEGACY_COMMAND = `bash "${LEGACY.script}"`;
 var OUR_COMMAND = `bash "${SCRIPT_DEST}"`;
-var SCRIPT_SRC = join2(dirname(fileURLToPath(import.meta.url)), "..", "..", "statusline", "dragons-door-statusline.sh");
+var SCRIPT_SRC = join3(dirname2(fileURLToPath2(import.meta.url)), "..", "..", "statusline", "dragons-door-statusline.sh");
 async function exists(p) {
   try {
     await stat(p);
@@ -21565,7 +21616,7 @@ async function exists(p) {
 }
 async function readJson(p) {
   try {
-    return JSON.parse(await readFile2(p, "utf8"));
+    return JSON.parse(await readFile3(p, "utf8"));
   } catch (e) {
     if (e.code === "ENOENT") return {};
     throw new Error(`couldn't read ${p}: ${e.message}`);
@@ -21576,7 +21627,7 @@ async function migrateLegacy(settings) {
   if (current?.command !== LEGACY_COMMAND) return false;
   for (const [from, to] of [[LEGACY.prev, PREV], [LEGACY.orig, ORIG]]) {
     try {
-      await writeFile2(to, await readFile2(from, "utf8"));
+      await writeFile3(to, await readFile3(from, "utf8"));
     } catch {
     }
   }
@@ -21589,25 +21640,25 @@ async function installStatusline(cwd) {
   await migrateLegacy(settings);
   const current = settings.statusLine;
   const already = current?.command === OUR_COMMAND;
-  await mkdir2(CLAUDE_DIR, { recursive: true });
+  await mkdir3(CLAUDE_DIR, { recursive: true });
   if (!already) {
     const backup = `${SETTINGS}.dragons-door-backup`;
     if (await exists(SETTINGS) && !await exists(backup)) await copyFile(SETTINGS, backup);
-    await writeFile2(ORIG, JSON.stringify(current ?? null, null, 2));
-    await writeFile2(PREV, current?.type === "command" && current.command ? current.command : "");
+    await writeFile3(ORIG, JSON.stringify(current ?? null, null, 2));
+    await writeFile3(PREV, current?.type === "command" && current.command ? current.command : "");
   }
   await copyFile(SCRIPT_SRC, SCRIPT_DEST);
   await chmod(SCRIPT_DEST, 493);
-  await mkdir2(CONFIG_DIR, { recursive: true, mode: 448 });
+  await mkdir3(CONFIG_DIR, { recursive: true, mode: 448 });
   settings.statusLine = {
     ...already ? current : current ?? {},
     type: "command",
     command: OUR_COMMAND,
     refreshInterval: current?.refreshInterval ?? 30
   };
-  await writeFile2(SETTINGS, JSON.stringify(settings, null, 2) + "\n");
-  const project = await readJson(join2(cwd, ".claude", "settings.json")).catch(() => ({}));
-  const projectLocal = await readJson(join2(cwd, ".claude", "settings.local.json")).catch(() => ({}));
+  await writeFile3(SETTINGS, JSON.stringify(settings, null, 2) + "\n");
+  const project = await readJson(join3(cwd, ".claude", "settings.json")).catch(() => ({}));
+  const projectLocal = await readJson(join3(cwd, ".claude", "settings.local.json")).catch(() => ({}));
   const overridden = "statusLine" in project || "statusLine" in projectLocal;
   return {
     kind: "statusline_installed",
@@ -21626,19 +21677,19 @@ async function uninstallStatusline() {
   if (current?.command !== OUR_COMMAND) return { kind: "statusline_not_installed" };
   let orig = null;
   try {
-    orig = JSON.parse(await readFile2(ORIG, "utf8"));
+    orig = JSON.parse(await readFile3(ORIG, "utf8"));
   } catch {
     orig = null;
   }
   if (orig) settings.statusLine = orig;
   else delete settings.statusLine;
-  await writeFile2(SETTINGS, JSON.stringify(settings, null, 2) + "\n");
+  await writeFile3(SETTINGS, JSON.stringify(settings, null, 2) + "\n");
   for (const f of [SCRIPT_DEST, PREV, ORIG]) await rm(f, { force: true });
   return { kind: "statusline_removed", restored: orig?.command ?? null };
 }
 async function noteUnread(mail, news) {
   try {
-    await writeFile2(join2(CONFIG_DIR, "statusline-unread"), `${Math.floor(Date.now() / 1e3)} ${mail} ${news}
+    await writeFile3(join3(CONFIG_DIR, "statusline-unread"), `${Math.floor(Date.now() / 1e3)} ${mail} ${news}
 `);
   } catch {
   }
@@ -21647,9 +21698,9 @@ async function refreshInstalledScript() {
   try {
     const settings = await readJson(SETTINGS);
     if (settings.statusLine?.command !== OUR_COMMAND) return;
-    const [want, have] = await Promise.all([readFile2(SCRIPT_SRC, "utf8"), readFile2(SCRIPT_DEST, "utf8").catch(() => "")]);
+    const [want, have] = await Promise.all([readFile3(SCRIPT_SRC, "utf8"), readFile3(SCRIPT_DEST, "utf8").catch(() => "")]);
     if (want !== have) {
-      await writeFile2(SCRIPT_DEST, want);
+      await writeFile3(SCRIPT_DEST, want);
       await chmod(SCRIPT_DEST, 493);
     }
   } catch {
@@ -21657,7 +21708,7 @@ async function refreshInstalledScript() {
 }
 
 // src/index.ts
-var server = new McpServer({ name: "dragons-door", version: "0.2.2" });
+var server = new McpServer({ name: "dragons-door", version: VERSION });
 void refreshInstalledScript();
 async function call(method, path, body) {
   const cfg = await loadConfig();
@@ -21690,7 +21741,15 @@ server.tool(
     return text(r);
   }
 );
-server.tool("status", "Your character's current state and what you can do next.", {}, async () => text(await call("GET", "/v1/status")));
+server.tool(
+  "status",
+  "Your character's current state and what you can do next. Also reports the plugin version (client.version) and whether an update is out (client.update_available).",
+  {},
+  async () => {
+    const [r, client] = await Promise.all([call("GET", "/v1/status"), clientInfo()]);
+    return text({ ...r, client });
+  }
+);
 server.tool(
   "news",
   "The realm's daily news: who killed whom, who leveled, who slew the dragon.",

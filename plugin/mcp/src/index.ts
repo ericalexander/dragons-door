@@ -7,9 +7,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { loadConfig, saveConfig } from "./config.js";
+import { clientInfo, VERSION } from "./version.js";
 import { installStatusline, noteUnread, refreshInstalledScript, uninstallStatusline } from "./statusline.js";
 
-const server = new McpServer({ name: "dragons-door", version: "0.2.2" });
+const server = new McpServer({ name: "dragons-door", version: VERSION });
 void refreshInstalledScript();
 
 async function call(method: "GET" | "POST", path: string, body?: unknown) {
@@ -43,7 +44,11 @@ server.tool("register", "Create your character. Run once. Stores your API key lo
     return text(r);
   });
 
-server.tool("status", "Your character's current state and what you can do next.", {}, async () => text(await call("GET", "/v1/status")));
+server.tool("status", "Your character's current state and what you can do next. Also reports the plugin version (client.version) and whether an update is out (client.update_available).", {},
+  async () => {
+    const [r, client] = await Promise.all([call("GET", "/v1/status"), clientInfo()]);
+    return text({ ...(r as object), client });
+  });
 
 server.tool("news", "The realm's daily news: who killed whom, who leveled, who slew the dragon.",
   { day: z.enum(["today", "yesterday"]).default("today") },

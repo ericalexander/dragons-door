@@ -6,7 +6,7 @@ argument-hint: [action]
 
 Load the `narrator` skill and enter the game.
 
-0. **Title screen.** The first time the game starts in this conversation, before anything else in your reply, print the title screen below exactly as written, inside a ```text code block, with nothing added or changed. Skip it if you've already shown it earlier in this conversation, or if `$ARGUMENTS` names an action.
+0. **Title screen.** Call the `status` tool first. Then, the first time the game starts in this conversation, before any other text in your reply, print the title screen below exactly as written, inside a ```text code block, with nothing else added or changed, except: replace `vX.Y.Z` with `v` + `client.version` from the status result, keeping its position. Skip the title screen if you've already shown it earlier in this conversation, or if `$ARGUMENTS` names an action.
 
 ```text
                                        ▄▄▄██
@@ -26,9 +26,18 @@ Load the `narrator` skill and enter the game.
 ░█▀▄░█▀▄░█▀█░█▀▀░█▀█░█▀█░▀░█▀▀░░░█▀▄░█▀█░█▀█░█▀▄
 ░█░█░█▀▄░█▀█░█░█░█░█░█░█░░░▀▀█░░░█░█░█░█░█░█░█▀▄
 ░▀▀░░▀░▀░▀░▀░▀▀▀░▀▀▀░▀░▀░░░▀▀▀░░░▀▀░░▀▀▀░▀▀▀░▀░▀
+                                          vX.Y.Z
 ```
 
-1. Call the `status` tool. If it returns `not_registered`, ask for a name and class and call `register`.
+   **Update waiting.** If `client.update_available` is true, right after the title screen (or at the top of your reply if you skipped it), and only once per conversation, print this, filling in the versions:
+
+   > *Something stirs inside you. You feel a new strength waiting to be claimed — but not in this body. Not yet.*
+   >
+   > Dragon's Door v`client.latest` is out (you have v`client.version`). To update: run `/plugin`, go to **Installed**, pick **dragons-door**, choose **Update now**, then run `/reload-plugins`. Your character is safe; it lives on the server.
+
+   Then carry on with the game as normal. Don't mention updates otherwise.
+
+1. Use that `status` result. If it returns `not_registered`, ask for a name and class and call `register`.
 2. If `$ARGUMENTS` names an action (forest, tavern, news, challenge <name>, …), do that. Otherwise, if there are `new_day` or `while_you_were_away` events, narrate them, then call `news` and give the headlines.
 3. Print the status line and the menu from `actions`, and wait for the player.
 
