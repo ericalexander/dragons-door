@@ -34,6 +34,8 @@ Load the `narrator` skill and enter the game.
    > *Something stirs inside you. You feel a new strength waiting to be claimed — but not in this body. Not yet.*
    >
    > Dragon's Door v`client.latest` is out (you have v`client.version`). To update: run `/plugin`, go to **Installed**, pick **dragons-door**, choose **Update now**, then run `/reload-plugins`. Your character is safe; it lives on the server.
+   >
+   > To get future updates without asking: `/plugin` → **Marketplaces** → **dragons-door** → **Enable auto-update**.
 
    Then carry on with the game as normal. Don't mention updates otherwise.
 
