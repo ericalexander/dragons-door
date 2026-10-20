@@ -13,7 +13,7 @@ export interface Bard {
   /** For the narrator: who they are and how they sing. */
   style: string;
   /** What the song is about. */
-  sings_about: "you" | "the news" | "himself" | "nothing you can name";
+  sings_about: "you" | "the news" | "himself" | "the weather and the road";
   /** Weighted gifts. `fights` is how many extra forest fights a "fight" gift gives. */
   gifts: [Gift, number][];
   fights: number;
@@ -43,8 +43,8 @@ export const BARDS: Bard[] = [
   },
   {
     name: "Wren",
-    style: "quiet, a battered lute in the corner, barely speaks; when she sings the room goes still, and you're not sure afterward what the song was about",
-    sings_about: "nothing you can name",
+    style: "quiet, a battered lute in the corner, barely speaks; when she sings the room goes still. Short, plain lines, images from the weather and the road",
+    sings_about: "the weather and the road",
     gifts: [["nothing", 40], ["fight", 25], ["gem", 20], ["heal", 15]],
     fights: 2,
   },

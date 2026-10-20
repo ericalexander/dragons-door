@@ -544,6 +544,7 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
   const headline = n.rowCount ? n.rows[roll(n.rowCount - 1)] : null;
   const you = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, exp: ctx.p.exp, weapon: weapon(ctx.p.weapon_id).name, armor: armor(ctx.p.armor_id).name, gold: ctx.p.gold, charm: ctx.p.charm };
   ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, leans_toward: bard.sings_about, you, headline, gift, amount });
+  ctx.hint = `Write the song: exactly four lines of original lyrics in ${bard.name}'s voice, printed one per line in italics, using at least one real detail from you/headline/weather. Print the lyrics themselves; don't summarize or describe the song. Then the gift.`;
 }, { weather: true })));
 
 api.post("/tavern", async (c) => {

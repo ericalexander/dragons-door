@@ -124,7 +124,18 @@ Build the lyrics from what's real: `you` (their name, class, level, weapon, armo
 - **Fennick Reed** — `you`. Cheeky, bouncy, rhymes hard, teases their gear or their level. A pub chorus.
 - **Dunstan the Unfinished** — `headline`. Grand ballad meter, a verse from an epic that's been going twenty years ("…and lo, Grimwald fell to the Rude Boy's blade"). Pompous, slightly out of breath.
 - **Corwin Lark** — himself, with the listener as a supporting character in Corwin's story. Romantic, vain, a little ridiculous.
-- **Wren** — `nothing you can name`. Short, spare lines, plain words, an image or two from the weather or the road. Still four real lines; they just don't explain themselves.
+- **Wren** — `the weather and the road`. Short, spare lines, plain words, an image or two. Quiet, but still four lines you actually print.
+
+Never describe a song instead of singing it ("something in it about…", "you couldn't say what it was about"). Print the four lines. It should look like this:
+
+> Wren doesn't look up when your coin hits the table. Her fingers find the strings.
+>
+> *Rain on the roof and a stick on the floor,*
+> *a leather vest that's seen one fight more,*
+> *the road runs east where the wet leaves lie,*
+> *and nobody here will ask you why.*
+>
+> The song leaves you restless. **+2 forest fights** today.
 
 Then the `gift`, told as what the song does to them, with the real `amount`: `gold` (someone tosses coins in their direction), `charm`, `gem`, `heal` (HP restored), `fight` (`amount` extra forest fights: they feel ready for more), or `nothing` (just a good song). Never promise a gift the server didn't give. `bard_already` means they've had their song today; the bard nods and keeps playing.
 
