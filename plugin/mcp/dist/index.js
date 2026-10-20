@@ -21506,6 +21506,8 @@ var CONFIG_DIR = env("CONFIG_DIR") ?? join(homedir(), ".config", "dragons-door")
 var LEGACY_DIR = join(homedir(), ".config", "lord");
 var CONFIG_FILE = join(CONFIG_DIR, "config.json");
 var DEFAULT_API_URL = "https://dragons-door-api.vercel.app";
+var RETIRED_URLS = [/^https?:\/\/lord-ebon\.vercel\.app\/?$/];
+var usable = (u) => u && !RETIRED_URLS.some((r) => r.test(u)) ? u : void 0;
 async function loadConfig() {
   let stored = {};
   try {
@@ -21513,6 +21515,7 @@ async function loadConfig() {
   } catch {
     try {
       stored = JSON.parse(await readFile(join(LEGACY_DIR, "config.json"), "utf8"));
+      if (!usable(stored.api_url)) delete stored.api_url;
       if (stored.api_key) {
         await mkdir(CONFIG_DIR, { recursive: true, mode: 448 });
         await writeFile(CONFIG_FILE, JSON.stringify(stored, null, 2), { mode: 384 });
@@ -21521,7 +21524,7 @@ async function loadConfig() {
     }
   }
   return {
-    api_url: env("API_URL") ?? stored.api_url ?? DEFAULT_API_URL,
+    api_url: env("API_URL") ?? usable(stored.api_url) ?? DEFAULT_API_URL,
     api_key: stored.api_key,
     name: stored.name
   };
@@ -21533,6 +21536,7 @@ async function saveConfig(cfg) {
   } catch {
   }
   const next = { ...stored, api_key: cfg.api_key, name: cfg.name };
+  if (!usable(next.api_url)) delete next.api_url;
   await mkdir(CONFIG_DIR, { recursive: true, mode: 448 });
   await writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 384 });
 }

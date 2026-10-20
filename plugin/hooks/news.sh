@@ -12,7 +12,7 @@ node - "$CFG" <<'EOF' 2>/dev/null
 const fs = require("fs");
 const cfg = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 if (!cfg.api_key) process.exit(0);
-const url = (process.env.DRAGONS_DOOR_API_URL || process.env.LORD_API_URL || cfg.api_url || "https://dragons-door-api.vercel.app") + "/v1/news?compact=1";
+const url = (process.env.DRAGONS_DOOR_API_URL || process.env.LORD_API_URL || (cfg.api_url && !/lord-ebon\.vercel\.app/.test(cfg.api_url) ? cfg.api_url : "") || "https://dragons-door-api.vercel.app") + "/v1/news?compact=1";
 const ac = new AbortController();
 setTimeout(() => ac.abort(), 1500);
 fetch(url, { headers: { authorization: "Bearer " + cfg.api_key }, signal: ac.signal })
