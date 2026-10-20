@@ -56,9 +56,10 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const inEnc = enc.rowCount! > 0;
     const bagUsed = await Bag.used(c, ctx.p.id);
     const unreadMail = await unreadCount(ctx);
+    const newsUnread = await unreadNews(ctx);
     return {
       events: ctx.events,
-      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail),
+      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread),
       actions: legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive),
       ...(ctx.hint ? { hint: ctx.hint } : {}),
     };
@@ -87,13 +88,19 @@ async function noticeMail(ctx: Ctx) {
   await savePlayer(ctx, { mail_notified_upto: Number(row.max_id) });
 }
 
+async function unreadNews(ctx: Ctx): Promise<number> {
+  const r = await ctx.c.query<{ n: string }>(
+    "select count(*)::text as n from news where id > $1 and actor is distinct from $2", [ctx.p.news_seen_upto, ctx.p.name]);
+  return Number(r.rows[0].n);
+}
+
 async function unreadCount(ctx: Ctx): Promise<number> {
   const r = await ctx.c.query<{ n: string }>("select count(*)::text as n from messages where to_player = $1 and read_at is null", [ctx.p.id]);
   return Number(r.rows[0].n);
 }
 
 function numify(p: Player): Player {
-  return { ...p, gold: Number(p.gold), bank: Number(p.bank), exp: Number(p.exp), mail_notified_upto: Number(p.mail_notified_upto ?? 0) };
+  return { ...p, gold: Number(p.gold), bank: Number(p.bank), exp: Number(p.exp), mail_notified_upto: Number(p.mail_notified_upto ?? 0), news_seen_upto: Number(p.news_seen_upto ?? 0) };
 }
 
 async function savePlayer(ctx: Ctx, patch: Partial<Player>) {
@@ -144,7 +151,9 @@ api.post("/register", async (c) => {
   const out = await tx(async (db) => {
     const dup = await db.query("select 1 from players where lower(name) = lower($1)", [body.name]);
     if (dup.rowCount) throw new GameError("name_taken", "that name is taken", 409);
-    const r = await db.query<Player>("insert into players (name, api_key_hash, class) values ($1,$2,$3) returning *", [body.name, hash(key), body.class]);
+    const r = await db.query<Player>(
+      "insert into players (name, api_key_hash, class, news_seen_upto) values ($1,$2,$3,(select coalesce(max(id), 0) from news)) returning *",
+      [body.name, hash(key), body.class]);
     const settings = await realmSettings(db);
     const day = realmDay(settings.resetHourUtc);
     await db.query("insert into news (day, kind, actor) values ($1,'join',$2)", [day, body.name]);
@@ -196,6 +205,8 @@ api.get("/news", async (c) => {
       const unread = await ctx.c.query<{ n: string }>("select count(*)::text as n from messages where to_player = $1 and read_at is null", [ctx.p.id]);
       ctx.events.push({ kind: "news_compact", day: d, lines: r.rows.map(newsLine), unread_mail: Number(unread.rows[0].n) });
     } else {
+      const top = await ctx.c.query<{ m: string }>("select coalesce(max(id), 0)::text as m from news");
+      await savePlayer(ctx, { news_seen_upto: Number(top.rows[0].m) });
       for (const row of r.rows) ctx.events.push({ kind: "news", day: d, what: row.kind, actor: row.actor, target: row.target, detail: row.detail, line: newsLine(row), ts: row.ts });
     }
   }, { quiet: compact }));
@@ -628,8 +639,9 @@ api.post("/mute", async (c) => {
 api.get("/mail/peek", async (c) => {
   const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
   if (!key) return c.json({ error: "unauthorized" }, 401);
-  const r = await pool.query<{ unread: string; latest: string | null; senders: string[] | null }>(
-    `select count(m.id)::text as unread, max(m.id)::text as latest, array_agg(distinct f.name) as senders
+  const r = await pool.query<{ unread: string; latest: string | null; senders: string[] | null; news: string }>(
+    `select count(m.id)::text as unread, max(m.id)::text as latest, array_agg(distinct f.name) as senders,
+            (select count(*) from news n where n.id > p.news_seen_upto and n.actor is distinct from p.name)::text as news
      from players p
      left join messages m on m.to_player = p.id and m.read_at is null
      left join players f on f.id = m.from_player
@@ -637,7 +649,7 @@ api.get("/mail/peek", async (c) => {
      group by p.id`, [hash(key)]);
   if (!r.rowCount) return c.json({ error: "unauthorized" }, 401);
   const row = r.rows[0];
-  return c.json({ unread: Number(row.unread), latest: row.latest ? Number(row.latest) : 0, from: (row.senders ?? []).filter(Boolean) });
+  return c.json({ unread: Number(row.unread), latest: row.latest ? Number(row.latest) : 0, from: (row.senders ?? []).filter(Boolean), news: Number(row.news) });
 });
 
 // ---------- pvp ----------

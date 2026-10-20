@@ -1,13 +1,13 @@
 ---
 name: statusline
-description: Add (or remove) a Dragon's Door mail indicator to the Claude Code status line. Use when the player runs /dragons-door:statusline or asks for a mail icon, envelope, or unread count at the bottom of the screen.
+description: Add (or remove) Dragon's Door news and mail indicators to the Claude Code status line. Use when the player runs /dragons-door:statusline or asks for a mail icon, envelope, or unread count at the bottom of the screen.
 argument-hint: [remove]
 ---
 
 Set up the mail indicator in the player's status line.
 
 1. If `$ARGUMENTS` says remove, off, or uninstall, call `install_statusline` with `uninstall: true` and tell them in one line that their previous status line is back (or that there was nothing to remove). Stop.
-2. Otherwise, say in one line what's about to happen: it edits their Claude Code settings file to add `✉ N` at the end of their status line when mail is waiting, keeps their current status line, and backs up the settings file first. Then call `install_statusline`.
+2. Otherwise, say in one line what's about to happen: it edits their Claude Code settings file to add `⚔ N` at the end of their status line when there's realm news they haven't read and `✉ N` when mail is waiting, keeps their current status line, and backs up the settings file first. Then call `install_statusline`.
 3. Report from the result, briefly:
    - It's installed, and checks for mail about once a minute (plus instantly whenever they play).
    - If `kept_existing` is true, their old status line is still there with the envelope added to the end.

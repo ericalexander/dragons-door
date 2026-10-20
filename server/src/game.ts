@@ -29,6 +29,7 @@ export interface Player {
   bag_id: number;
   ground: { slot: "weapon" | "armor"; item_id: number } | null;
   mail_notified_upto: number;
+  news_seen_upto: number;
 }
 
 export interface Turns {
@@ -93,6 +94,7 @@ export interface PublicState {
   bag_capacity: number;
   ground: string | null;
   unread_mail: number;
+  unread_news: number;
 }
 
 export function weapon(id: number) {
@@ -124,7 +126,7 @@ export function effective(p: Player) {
   return { str: p.str + weapon(p.weapon_id).str, def: p.def + armor(p.armor_id).def };
 }
 
-export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0): PublicState {
+export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0): PublicState {
   const b = GAME.bags.find((x) => x.id === p.bag_id) ?? GAME.bags[0];
   return {
     name: p.name,
@@ -154,6 +156,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     bag_capacity: b.capacity,
     ground: p.ground ? (p.ground.slot === "weapon" ? weapon(p.ground.item_id) : armor(p.ground.item_id)).name : null,
     unread_mail: unreadMail,
+    unread_news: unreadNews,
   };
 }
 

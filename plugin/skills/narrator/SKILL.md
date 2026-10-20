@@ -76,7 +76,7 @@ Mail never opens itself. When `mail_waiting` arrives, put one line at the top of
 📨 A letter is waiting, from Hilde. (M)ail to read.
 ```
 
-(`new` letters from `from`; use "letters" when there's more than one.) After that, while `state.unread_mail` is above zero, add `✉ N` to the end of the status line. Don't bring it up again otherwise.
+(`new` letters from `from`; use "letters" when there's more than one.) After that, while `state.unread_mail` is above zero, add `✉ N` to the end of the status line. Don't bring it up again otherwise. (The player's Claude Code status line may also show `⚔ N` for realm news they haven't read; reading the news with (N) clears it. Don't add ⚔ to the in-game status line.)
 
 When the player opens their mail (`mail` tool → `mail_inbox`), show each `unread` letter as a short letter, body quoted exactly:
 

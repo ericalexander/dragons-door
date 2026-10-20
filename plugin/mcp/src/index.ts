@@ -7,9 +7,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { loadConfig, saveConfig } from "./config.js";
-import { installStatusline, noteUnread, uninstallStatusline } from "./statusline.js";
+import { installStatusline, noteUnread, refreshInstalledScript, uninstallStatusline } from "./statusline.js";
 
-const server = new McpServer({ name: "dragons-door", version: "0.2.0" });
+const server = new McpServer({ name: "dragons-door", version: "0.2.2" });
+void refreshInstalledScript();
 
 async function call(method: "GET" | "POST", path: string, body?: unknown) {
   const cfg = await loadConfig();
@@ -22,8 +23,8 @@ async function call(method: "GET" | "POST", path: string, body?: unknown) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({ error: "bad_response", status: res.status }));
-  const unread = (json as { state?: { unread_mail?: number } }).state?.unread_mail;
-  if (typeof unread === "number") await noteUnread(unread);
+  const st = (json as { state?: { unread_mail?: number; unread_news?: number } }).state;
+  if (typeof st?.unread_mail === "number") await noteUnread(st.unread_mail, st.unread_news ?? 0);
   return json;
 }
 
@@ -116,7 +117,7 @@ server.tool("challenge", "Attack another player in the fields. Resolves the whol
   { name: z.string().min(1) },
   async ({ name }) => text(await call("POST", "/v1/challenge", { name })));
 
-server.tool("install_statusline", "Add a mail indicator (✉ N) to the player's Claude Code status line, keeping whatever status line they already have. Only when the player asks. Edits ~/.claude/settings.json (backed up first). uninstall: true puts their old status line back.",
+server.tool("install_statusline", "Add news and mail indicators (⚔ N, ✉ N) to the player's Claude Code status line, keeping whatever status line they already have. Only when the player asks. Edits ~/.claude/settings.json (backed up first). uninstall: true puts their old status line back.",
   { uninstall: z.boolean().default(false) },
   async ({ uninstall }) => {
     try { return text(uninstall ? await uninstallStatusline() : await installStatusline(process.cwd())); }

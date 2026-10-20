@@ -1,5 +1,5 @@
 /**
- * Installs (or removes) the Dragon's Door mail indicator in the user's Claude Code status line.
+ * Installs (or removes) the Dragon's Door news and mail indicators in the user's Claude Code status line.
  * Plugins can't set statusLine themselves, so this runs only when the player asks.
  * It wraps whatever status line they already have, and saves it so uninstall restores it exactly.
  */
@@ -98,7 +98,17 @@ export async function uninstallStatusline(): Promise<Record<string, unknown>> {
   return { kind: "statusline_removed", restored: orig?.command ?? null };
 }
 
-/** Keep the status line's cached count current while playing, without waiting for its own refresh. */
-export async function noteUnread(n: number) {
-  try { await writeFile(join(CONFIG_DIR, "statusline-unread"), `${Math.floor(Date.now() / 1000)} ${n}\n`); } catch { /* best effort */ }
+/** Keep the status line's cached counts (mail, news) current while playing, without waiting for its own refresh. */
+export async function noteUnread(mail: number, news: number) {
+  try { await writeFile(join(CONFIG_DIR, "statusline-unread"), `${Math.floor(Date.now() / 1000)} ${mail} ${news}\n`); } catch { /* best effort */ }
+}
+
+/** If the indicator is installed, keep its copied script in step with the plugin's, so updates reach it without reinstalling. */
+export async function refreshInstalledScript() {
+  try {
+    const settings = await readJson(SETTINGS);
+    if ((settings.statusLine as StatusLine | undefined)?.command !== OUR_COMMAND) return;
+    const [want, have] = await Promise.all([readFile(SCRIPT_SRC, "utf8"), readFile(SCRIPT_DEST, "utf8").catch(() => "")]);
+    if (want !== have) { await writeFile(SCRIPT_DEST, want); await chmod(SCRIPT_DEST, 0o755); }
+  } catch { /* best effort */ }
 }

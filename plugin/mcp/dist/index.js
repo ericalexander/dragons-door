@@ -21636,16 +21636,29 @@ async function uninstallStatusline() {
   for (const f of [SCRIPT_DEST, PREV, ORIG]) await rm(f, { force: true });
   return { kind: "statusline_removed", restored: orig?.command ?? null };
 }
-async function noteUnread(n) {
+async function noteUnread(mail, news) {
   try {
-    await writeFile2(join2(CONFIG_DIR, "statusline-unread"), `${Math.floor(Date.now() / 1e3)} ${n}
+    await writeFile2(join2(CONFIG_DIR, "statusline-unread"), `${Math.floor(Date.now() / 1e3)} ${mail} ${news}
 `);
+  } catch {
+  }
+}
+async function refreshInstalledScript() {
+  try {
+    const settings = await readJson(SETTINGS);
+    if (settings.statusLine?.command !== OUR_COMMAND) return;
+    const [want, have] = await Promise.all([readFile2(SCRIPT_SRC, "utf8"), readFile2(SCRIPT_DEST, "utf8").catch(() => "")]);
+    if (want !== have) {
+      await writeFile2(SCRIPT_DEST, want);
+      await chmod(SCRIPT_DEST, 493);
+    }
   } catch {
   }
 }
 
 // src/index.ts
-var server = new McpServer({ name: "dragons-door", version: "0.2.0" });
+var server = new McpServer({ name: "dragons-door", version: "0.2.2" });
+void refreshInstalledScript();
 async function call(method, path, body) {
   const cfg = await loadConfig();
   if (!cfg.api_key && path !== "/v1/register") {
@@ -21657,8 +21670,8 @@ async function call(method, path, body) {
     body: body === void 0 ? void 0 : JSON.stringify(body)
   });
   const json = await res.json().catch(() => ({ error: "bad_response", status: res.status }));
-  const unread = json.state?.unread_mail;
-  if (typeof unread === "number") await noteUnread(unread);
+  const st = json.state;
+  if (typeof st?.unread_mail === "number") await noteUnread(st.unread_mail, st.unread_news ?? 0);
   return json;
 }
 var text = (v) => ({ content: [{ type: "text", text: JSON.stringify(v) }] });
@@ -21768,7 +21781,7 @@ server.tool(
 );
 server.tool(
   "install_statusline",
-  "Add a mail indicator (\u2709 N) to the player's Claude Code status line, keeping whatever status line they already have. Only when the player asks. Edits ~/.claude/settings.json (backed up first). uninstall: true puts their old status line back.",
+  "Add news and mail indicators (\u2694 N, \u2709 N) to the player's Claude Code status line, keeping whatever status line they already have. Only when the player asks. Edits ~/.claude/settings.json (backed up first). uninstall: true puts their old status line back.",
   { uninstall: external_exports.boolean().default(false) },
   async ({ uninstall }) => {
     try {
