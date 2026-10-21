@@ -796,9 +796,9 @@ api.post("/flirt", async (c) => {
       ctx.events.push({ kind: "flirt", with: who.name, outcome: "spouse", charm_delta: 1, charm: ctx.p.charm });
       return;
     }
-    const rolled = flirtOutcome(ctx.p.charm, who.coy);
-    // Townsfolk court but don't marry, for now: their hearts aren't in play against real players.
-    const { outcome, delta } = rolled.outcome === "married" && ctx.p.role !== "player" ? { outcome: "kiss" as const, delta: 2 } : rolled;
+    // Townsfolk court and marry too, so Sir Pomfrey can win your spouse away, but their charm counts for at most 20
+    // here (about a 5% chance a night), so a local steals a heart now and then rather than every other day.
+    const { outcome, delta } = flirtOutcome(ctx.p.role === "player" ? ctx.p.charm : Math.min(ctx.p.charm, 20), who.coy);
     let stoleFrom: string | null = null;
     let left: string | null = null;
     if (outcome === "married" && row) {

@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.4.3",
+    "lore": "Hearts in this town have grown harder to win, and easier to lose. A wedding now takes real luck, and the locals have started courting too. Sir Pomfrey, in particular, has bought a new cloak.",
+    "plain": "Weddings are rarer (charm helps a little, not a lot), and townsfolk can now marry, so they can win your spouse away."
+  },
+  {
     "version": "0.4.2",
     "lore": "Violet has competition. The healer has taken on an apprentice with ink on her fingers, the lamplighter walks the square after dark, and a juggler comes through at the weekends. And charm, at last, buys you something: shopkeepers knock a little off, and bards seem to sing a bit more kindly.",
     "plain": "Court Rosalind (healer, by day), Mara (square, at night) or Jory (square, weekends), each with their own marriage perk. Charm now gives shop discounts and better luck with bards and visitors."

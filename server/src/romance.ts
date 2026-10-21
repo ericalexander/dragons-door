@@ -50,12 +50,19 @@ export function available(s: Suitor, now = new Date()): boolean {
   return true;
 }
 
-/** The flirt itself. Charm helps; some people are harder to win. */
+/** How much charm counts when flirting: a quarter of it, up to 20 points, so weddings stay special. */
+const FLIRT_SHARE = Number(process.env.SIM_FLIRT_SHARE ?? 0.25);
+const FLIRT_CAP = Number(process.env.SIM_FLIRT_CAP ?? 20);
+/** The roll a flirt needs to end in a wedding (out of 99, after charm and coyness). */
+const WEDDING_AT = Number(process.env.SIM_WEDDING_AT ?? 100);
+export const charmInFlirting = (charm: number) => Math.min(FLIRT_CAP, Math.floor(Math.max(0, charm) * FLIRT_SHARE));
+
+/** The flirt itself. Charm helps, a little; some people are harder to win. */
 export function flirtOutcome(charm: number, coy: number): { outcome: "ignored" | "smile" | "kiss" | "married"; delta: number } {
-  const r = roll(99) + charm - coy;
+  const r = roll(99) + charmInFlirting(charm) - coy;
   if (r < 30) return { outcome: "ignored", delta: 0 };
   if (r < 70) return { outcome: "smile", delta: 1 };
-  if (r < 95) return { outcome: "kiss", delta: 2 };
+  if (r < WEDDING_AT) return { outcome: "kiss", delta: 2 };
   return { outcome: "married", delta: 5 };
 }
 

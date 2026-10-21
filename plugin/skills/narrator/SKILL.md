@@ -188,8 +188,8 @@ Who can be courted, and what marrying them does:
 - **Mara**, the lamplighter (the square, 7pm–1am): robbers who catch you in the fields get only half your gold.
 - **Jory**, a traveling juggler (the square, Friday to Sunday): +1 charm every day (`spouse_gift` at the start of a day).
 
-`state.suitors_around` says who's around right now; `not_around` means you went looking at the wrong hour (say when they're usually about). Each of them is married to one player at a time, and each player to one of them:
-- **married** is a real wedding, remembered in `state.spouse`; `perk` says what it brings. `stole_from` means they left that player for this one: a scandal. `left` means the player just left their old spouse for this one: a different scandal.
+Weddings are rare: a flirt needs real luck, and charm only helps a little. `state.suitors_around` says who's around right now; `not_around` means you went looking at the wrong hour (say when they're usually about). Each of them is married to one player at a time, and each player to one of them:
+- **married** is a real wedding, remembered in `state.spouse`; `perk` says what it brings. `stole_from` means they left that player for this one: a scandal. Townsfolk court and marry too, so the rival may be Sir Pomfrey. `left` means the player just left their old spouse for this one: a different scandal.
 - **spouse** means they're already married to this person: no second wedding, just an evening together and a little charm.
 - The perks already show in the numbers (`prices.inn`, `prices.heal_all`); mention them when they matter.
 - A `while_you_were_away` with `what: spouse_stolen` means someone else won their spouse while they were gone: name who (`by`), and let it sting a little.
