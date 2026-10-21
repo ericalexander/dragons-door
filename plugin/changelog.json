@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.6.2",
+    "lore": "The town has learned to write. Leave a letter for Hilde, or Violet, or Odile at her bench, and sooner or later a reply turns up in your mailbag, in their own hand. Sir Pomfrey's arrive sealed in wax.",
+    "plain": "Townsfolk and characters now answer your mail, usually within an hour or two. One reply a day from each, covering everything you sent them."
+  },
+  {
     "version": "0.6.1",
     "lore": "People in this town talk, if you let them. Stop and pass the time with whoever's about. Odile at her bench, Violet behind the bar, Pip in the square. You never know what someone will let slip. And if the Cartographer is in town, she might take a pencil to your map.",
     "plain": "You can talk to townsfolk and characters who are around (just ask the narrator to talk to them). The Cartographer, when she visits, may mark nearby places on your map."

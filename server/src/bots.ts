@@ -17,6 +17,7 @@ import { PLAN, sessionTime, type Personality } from "./schedule.js";
 export { sessionTime } from "./schedule.js";
 import { pool } from "./db.js";
 import { catchUp, writeEntry } from "./chronicle.js";
+import { answerLetters } from "./letters.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { realmDay, realmSettings } from "./day.js";
@@ -809,5 +810,8 @@ bots.on(["GET", "POST"], "/bots/run", async (c) => {
   // Yesterday's chronicle, once the day is over. Never lets a failure stop the townsfolk.
   let chronicle: string[] = [];
   try { chronicle = await catchUp(when); } catch (e) { chronicle = [`error: ${(e as Error).message}`]; }
-  return c.json({ ...out, chronicle });
+  // Townsfolk and characters answer their mail.
+  let letters: string[] = [];
+  try { letters = await answerLetters(when); } catch (e) { letters = [`error: ${(e as Error).message}`]; }
+  return c.json({ ...out, chronicle, letters });
 });

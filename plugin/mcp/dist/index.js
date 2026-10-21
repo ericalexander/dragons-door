@@ -21901,7 +21901,7 @@ server.tool(
 );
 server.tool(
   "send_mail",
-  "Send a private message to another player (or a townsperson). They're told a letter is waiting the next time they do anything in the game, and read it with mail. 500 characters max.",
+  "Send a private message to another player, a townsperson, or one of the realm's characters (who write back in their own time). They're told a letter is waiting the next time they do anything in the game, and read it with mail. 500 characters max.",
   { to: external_exports.string().min(1), body: external_exports.string().min(1).max(500) },
   async ({ to, body }) => text(await call("POST", "/v1/mail", { to, body }))
 );
