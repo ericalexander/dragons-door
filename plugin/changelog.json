@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.3.7",
+    "lore": "The town has had a word with its more inventive citizens. The healer won't patch you up mid-swing anymore, a room at the inn only protects you while you're actually in it, masters now send you off bruised instead of dead, and the dragon, it turns out, comes back.",
+    "plain": "Fairness fixes: no healing, shopping or banking mid-fight; leaving your room to fight ends its protection; losing to your master isn't fatal; the dragon returns at the daily reset; new characters can post, mail and attack from level 2."
+  },
+  {
     "version": "0.3.6",
     "lore": "The town has been tidied. The square is where the roads meet; the tavern keeps its own company, with rooms upstairs; the forest keeps you until you choose to walk out. You go in, you do your business, you come back out.",
     "plain": "Each place has its own short menu. (R)eturn to town to go somewhere else. The Inn is now upstairs in the (T)avern."

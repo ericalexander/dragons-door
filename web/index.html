@@ -267,7 +267,7 @@
 
   <footer>
     <p><a href="https://github.com/ericalexander/dragons-door">Source on GitHub</a>. Runs on a small server; the plugin is a thin client. Every rule and every roll happens server-side — the narrator only tells you what happened.</p>
-    <p>The realm's weather follows yours. To do that it uses your rough location from your internet address, looks up the sky for that area, and forgets it. It keeps your character, your plugin version and your operating system, and nothing else about you. Ask the narrator to turn weather off any time. This page counts visits with Vercel Web Analytics, which uses no cookies.</p>
+    <p>The realm's weather follows yours. To do that it uses your rough location from your internet address, looks up the sky for that area, and forgets it. It keeps your character, your plugin version and your operating system, and nothing else about you. Ask the narrator to turn weather off any time. This page counts visits with Vercel Web Analytics, which uses no cookies. To limit fake accounts, the realm counts sign-ups per internet address for a day, using a scrambled code that can't be turned back into the address.</p>
   </footer>
 
 </div>
@@ -291,11 +291,12 @@
     const dragon = d.dragon_alive
       ? '<span class="alive">The Red Dragon is alive.</span>'
       : '<span class="dead">The Red Dragon is dead, for now.</span>';
-    status.innerHTML = `${d.players} player${d.players === 1 ? "" : "s"} in the realm. ${dragon}`;
+    status.innerHTML = `${Number(d.players)} player${d.players === 1 ? "" : "s"} in the realm. ${dragon}`;
     const lines = d.news.filter(n => !/has entered the realm/.test(n.line)).slice(0, 6);
     if (!lines.length) list.innerHTML = '<li class="quiet">A quiet day. Somebody go poke the forest.</li>';
     else for (const n of lines) { const li = document.createElement("li"); li.textContent = n.line; list.appendChild(li); }
-    const top = d.top.slice(0, 5).map(p => `<span>${p.name}</span>${p.bot ? "<i>†</i>" : ""} L${p.level}`).join("   ");
+    const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    const top = d.top.slice(0, 5).map(p => `<span>${esc(p.name)}</span>${p.bot ? "<i>†</i>" : ""} L${Number(p.level)}`).join("   ");
     board.innerHTML = top ? `Top of the board: ${top}<br><i>† townsfolk</i>` : "";
   }).catch(() => { status.textContent = "The realm isn't answering right now. It'll be back."; });
 </script>

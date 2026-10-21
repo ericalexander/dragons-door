@@ -46,12 +46,13 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
   if (min && info && !info.townsfolk && (!info.plugin || older(info.plugin, min))) {
     throw new GameError("update_required", `This realm needs Dragon's Door ${min} or newer (you have ${info.plugin ?? "an older version"}).`, 426);
   }
-  // Look the sky up while the database work happens; it's dropped if the player has weather off.
-  const sky = opts.weather && info && !info.townsfolk ? weatherAt(info.lat, info.lon) : null;
+  // The sky is looked up once the key checks out, alongside the rest of the work; dropped if weather is off.
+  let sky: ReturnType<typeof weatherAt> | null = null;
   let weatherOff = true;
   const env = await tx(async (c) => {
     const r = await c.query<Player>("select * from players where api_key_hash = $1 for update", [hash(key)]);
     if (!r.rowCount) throw new GameError("unauthorized", "unknown api key", 401);
+    if (opts.weather && info && !info.townsfolk) sky = weatherAt(info.lat, info.lon);
     const settings = await realmSettings(c);
     const day = realmDay(settings.resetHourUtc);
     const loaded = await loadTurns(c, r.rows[0], day);
@@ -113,7 +114,8 @@ async function noticeMail(ctx: Ctx) {
   const row = r.rows[0];
   if (!row.max_id) return;
   const unread = await unreadCount(ctx);
-  ctx.events.push({ kind: "mail_waiting", new: Number(row.fresh), unread, from: row.senders ?? [] });
+  const from = row.senders ?? [];
+  ctx.events.push({ kind: "mail_waiting", new: Number(row.fresh), unread, from: from.slice(0, 5), ...(from.length > 5 ? { and_others: from.length - 5 } : {}) });
   await savePlayer(ctx, { mail_notified_upto: Number(row.max_id) });
 }
 
@@ -156,6 +158,40 @@ function requireAlive(ctx: Ctx) {
   if (!ctx.p.alive) throw new GameError("dead", "you are dead until the realm resets");
 }
 
+/** Player-written text goes to other players' Claude. One plain line: no control or invisible characters, no line breaks. */
+export function cleanText(t: string): string {
+  return t.replace(/[\u0000-\u001f\u007f-\u009f\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** New characters earn a voice: posting, mail and attacks open at level 2. Townsfolk are exempt. */
+const SEASONED_LEVEL = 2;
+function seasoned(ctx: Ctx, what: string): boolean {
+  if (ctx.p.is_bot || ctx.p.level >= SEASONED_LEVEL) return true;
+  ctx.events.push({ kind: "too_new", what, needed_level: SEASONED_LEVEL });
+  return false;
+}
+
+/** Names that would pass for a local. Compared after folding lookalike characters. */
+const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
+  "violet", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
+  "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic"];
+// i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
+const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
+const RESERVED_FOLDED = new Set(RESERVED.map(fold));
+export function reservedName(n: string): boolean {
+  const f = fold(n);
+  return RESERVED_FOLDED.has(f) || RESERVED_FOLDED.has(f.replace(/ /g, "")) || [...RESERVED_FOLDED].some((r) => r.replace(/ /g, "") === f.replace(/ /g, ""));
+}
+
+const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
+
+/** Going out to fight means leaving your room: you're back in the fields and fair game tonight. */
+async function leaveInn(ctx: Ctx) {
+  if (ctx.p.location !== "inn") return;
+  await savePlayer(ctx, { location: "fields" });
+  ctx.events.push({ kind: "left_inn" });
+}
+
 async function requireNoEncounter(ctx: Ctx) {
   const r = await ctx.c.query("select 1 from encounters where player_id = $1", [ctx.p.id]);
   if (r.rowCount) throw new GameError("in_encounter", "finish or flee your current fight first");
@@ -176,10 +212,22 @@ api.post("/register", async (c) => {
     const ok = given.length === invite.length && timingSafeEqual(Buffer.from(given), Buffer.from(invite));
     if (!ok) throw new GameError("invite_required", "this realm is invite-only; ask whoever runs it for the word", 403);
   }
+  const info = current();
+  if (!info?.townsfolk && reservedName(body.name)) throw new GameError("name_taken", "that name belongs to someone in town already", 409);
   const key = "door_" + randomBytes(24).toString("base64url");
   const out = await tx(async (db) => {
     const dup = await db.query("select 1 from players where lower(name) = lower($1)", [body.name]);
     if (dup.rowCount) throw new GameError("name_taken", "that name is taken", 409);
+    if (info?.addr && !info.townsfolk) {
+      const today = realmDay((await realmSettings(db)).resetHourUtc);
+      const salt = process.env.SIGNUP_SALT ?? process.env.CRON_SECRET ?? "dragons-door";
+      const addrHash = createHash("sha256").update(`${today}|${salt}|${info.addr}`).digest("hex");
+      await db.query("delete from signups where day < $1", [today]);
+      const n = await db.query<{ n: number }>(
+        `insert into signups (addr_hash, day, n) values ($1, $2, 1)
+         on conflict (addr_hash, day) do update set n = signups.n + 1 returning n`, [addrHash, today]);
+      if (n.rows[0].n > SIGNUPS_PER_ADDRESS_PER_DAY) throw new GameError("too_many_signups", "the gatekeeper has let enough newcomers in from your road today; try again tomorrow", 429);
+    }
     const r = await db.query<Player>(
       "insert into players (name, api_key_hash, class, news_seen_upto) values ($1,$2,$3,(select coalesce(max(id), 0) from news)) returning *",
       [body.name, hash(key), body.class]);
@@ -202,7 +250,7 @@ api.get("/public/realm", async (c) => {
     const yesterday = y.toISOString().slice(0, 10);
     const players = await db.query<{ n: string }>("select count(*)::text as n from players where not is_bot");
     const news = await db.query<{ day: string; kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
-      "select day::text, kind, actor, target, detail from news where day in ($1, $2) order by id desc limit 12", [today, yesterday]);
+      "select day::text, kind, actor, target, detail from news where day in ($1, $2) and kind <> 'join' order by id desc limit 12", [today, yesterday]);
     const top = await db.query("select name, class, level, is_bot as bot, dragon_kills from players order by level desc, exp desc limit 8");
     return {
       day: today,
@@ -213,7 +261,7 @@ api.get("/public/realm", async (c) => {
     };
   });
   c.header("access-control-allow-origin", "*");
-  c.header("cache-control", "public, max-age=60");
+  c.header("cache-control", "public, max-age=60, s-maxage=60, stale-while-revalidate=60");
   return c.json(out);
 });
 
@@ -237,8 +285,17 @@ api.get("/news", async (c) => {
     const day = new Date(ctx.day + "T00:00:00Z");
     day.setUTCDate(day.getUTCDate() + which);
     const d = day.toISOString().slice(0, 10);
+    // The last 40 happenings, with arrivals collapsed into one line so a flood of sign-ups can't bury the news.
     const r = await ctx.c.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown>; ts: string }>(
-      "select kind, actor, target, detail, ts from news where day = $1 order by id", [d]);
+      "select * from (select kind, actor, target, detail, ts, id from news where day = $1 and kind <> 'join' order by id desc limit 40) x order by id", [d]);
+    const joins = await ctx.c.query<{ n: string; names: string[] | null }>(
+      "select count(*)::text as n, (array_agg(actor order by id desc))[1:5] as names from news where day = $1 and kind = 'join'", [d]);
+    const joinCount = Number(joins.rows[0].n);
+    if (joinCount) {
+      const names = joins.rows[0].names ?? [];
+      const extra = joinCount - names.length;
+      r.rows.unshift({ kind: "joins", actor: null, target: null, detail: { names, count: joinCount, line: `${names.join(", ")}${extra > 0 ? ` and ${extra} other${extra === 1 ? "" : "s"}` : ""} entered the realm.` }, ts: "" });
+    }
     if (compact) {
       const unread = await ctx.c.query<{ n: string }>("select count(*)::text as n from messages where to_player = $1 and read_at is null", [ctx.p.id]);
       ctx.events.push({ kind: "news_compact", day: d, lines: r.rows.map(newsLine), unread_mail: Number(unread.rows[0].n) });
@@ -257,6 +314,7 @@ function aOrAn(item: string): string {
 
 function newsLine(n: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }): string {
   switch (n.kind) {
+    case "joins": return String(n.detail.line);
     case "join": return `${n.actor} has entered the realm.`;
     case "pvp_kill": return `${n.actor} slew ${n.target} in the fields and took ${n.detail.gold} gold.`;
     case "pvp_survived": return `${n.target} fought off an attack from ${n.actor}.`;
@@ -292,6 +350,7 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
   requireAlive(ctx);
   await requireNoEncounter(ctx);
   if (ctx.t.forest_fights <= 0) { ctx.events.push({ kind: "no_fights_left" }); return; }
+  await leaveInn(ctx);
   if (ctx.p.ground) {
     ctx.events.push({ kind: "left_behind", item: Bag.item(ctx.p.ground.slot, ctx.p.ground.item_id).name });
     await savePlayer(ctx, { ground: null });
@@ -330,7 +389,7 @@ api.post("/fight", async (c) => {
       const dmg = Math.max(0, roll(m.str) - roll(pf.def));
       await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
       ctx.events.push({ kind: "flee_failed", monster: m.name, damage: dmg, hp: ctx.p.hp });
-      if (ctx.p.hp <= 0) await die(ctx, enc.kind, m);
+      if (ctx.p.hp <= 0) { await ctx.c.query("delete from encounters where id = $1", [enc.id]); await lose(ctx, enc.kind, m); }
       return;
     }
 
@@ -355,7 +414,7 @@ api.post("/fight", async (c) => {
       await win(ctx, enc.kind, m);
     } else if (pf.hp <= 0) {
       await ctx.c.query("delete from encounters where id = $1", [enc.id]);
-      await die(ctx, enc.kind, m);
+      await lose(ctx, enc.kind, m);
     } else {
       await ctx.c.query("update encounters set monster = $2, round = round + 1, log = log || $3::jsonb where id = $1", [enc.id, m, JSON.stringify(evs)]);
     }
@@ -382,7 +441,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
         ctx.events.push({ kind: "loot", monster: m.name, item: drop.item, slot: drop.kind, weight: w, stored: false, upgrade, bag_used: usedNow, bag_capacity: cap });
       }
       await post(ctx, "loot", ctx.p.name, null, { item: drop.item, monster: m.name });
-      ctx.hint = "A rare drop. Give it a beat: what it looks like, how it feels. If stored is false the bag is full and it's lying on the ground: offer (E)quip it now, or make room (sell or drop something) and (T)ake it, or leave it. It's gone if they walk back into the forest.";
+      ctx.hint = "A rare drop. Give it a beat: what it looks like, how it feels. If stored is false the bag is full and it's lying on the ground: offer (E)quip it now, or make room (sell or drop something) and Ta(k)e it, or leave it. It's gone if they walk back into the forest.";
     }
     if (next !== null && ctx.p.exp >= next) ctx.events.push({ kind: "level_ready", level: ctx.p.level + 1 });
   } else if (kind === "master") {
@@ -399,12 +458,26 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     ctx.events.push({ kind: "level_up", level: lvl, max_hp: ctx.p.max_hp, str: ctx.p.str, def: ctx.p.def });
   } else if (kind === "dragon") {
     await savePlayer(ctx, { dragon_kills: ctx.p.dragon_kills + 1, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, weapon_id: 0, armor_id: 0, gold: 0, charm: ctx.p.charm + 10 });
-    await ctx.c.query("update realm set value = 'false' where key = 'dragon_alive'");
+    await ctx.c.query("insert into realm (key, value) values ('dragon_slain_day', $1::jsonb) on conflict (key) do update set value = excluded.value", [JSON.stringify(ctx.day)]);
     ctx.dragonAlive = false;
+    // A fresh start keeps the bank, not the bag: nobody begins again at level 1 in endgame gear.
+    await ctx.c.query("delete from inventory where player_id = $1", [ctx.p.id]);
+    await savePlayer(ctx, { ground: null });
     await post(ctx, "dragon", ctx.p.name, null, {});
     ctx.events.push({ kind: "dragon_slain", dragon_kills: ctx.p.dragon_kills });
-    ctx.hint = "This is the climax of the game. Go big, then explain they start over at level 1 with their dragon kill recorded.";
+    ctx.hint = "This is the climax of the game. Go big, then explain they start over at level 1 with their dragon kill recorded, their bank intact and their bag emptied. The dragon is gone for the rest of today and returns at the reset.";
   }
+}
+
+/** Losing to your master is a lesson, not a death: they send you off bruised, at 1 HP, with nothing taken. */
+async function lose(ctx: Ctx, kind: string, m: Monster) {
+  if (kind === "master") {
+    await savePlayer(ctx, { hp: 1 });
+    ctx.events.push({ kind: "master_won", master: m.name, hp: 1 });
+    ctx.hint = "The master beat them but it's a lesson, not a death. Nothing is lost; they're at 1 HP and can try again after healing.";
+    return;
+  }
+  await die(ctx, kind, m);
 }
 
 async function die(ctx: Ctx, kind: string, m: Monster) {
@@ -425,6 +498,7 @@ api.post("/train", async (c) => c.json(await withPlayer(c.req.header("authorizat
   const next = expForLevel(ctx.p.level + 1);
   if (next === null) { ctx.events.push({ kind: "max_level" }); return; }
   if (ctx.p.exp < next) { ctx.events.push({ kind: "not_ready", exp: ctx.p.exp, needed: next }); return; }
+  await leaveInn(ctx);
   const ms = master(ctx.p.level)!;
   const m: Monster = { name: ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 };
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'master',$2)", [ctx.p.id, m]);
@@ -438,6 +512,7 @@ api.post("/dragon", async (c) => c.json(await withPlayer(c.req.header("authoriza
   if (ctx.p.level < 12) { ctx.events.push({ kind: "too_weak", needed_level: 12 }); return; }
   if (!ctx.dragonAlive) { ctx.events.push({ kind: "dragon_dead" }); return; }
   if (ctx.t.forest_fights <= 0) { ctx.events.push({ kind: "no_fights_left" }); return; }
+  await leaveInn(ctx);
   await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
   const d = GAME.dragon;
   const m: Monster = { name: d.name, hp: d.hp, max_hp: d.hp, str: d.str, def: d.def, gold: 0, exp: 0 };
@@ -451,6 +526,7 @@ api.post("/healer", async (c) => {
   const body = z.object({ hp: z.union([z.literal("all"), z.number().int().positive()]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    await requireNoEncounter(ctx);
     const missing = ctx.p.max_hp - ctx.p.hp;
     const want = Math.min(missing, body.hp === "all" ? missing : body.hp);
     if (want <= 0) { ctx.events.push({ kind: "already_healthy" }); return; }
@@ -465,6 +541,7 @@ api.post("/buy", async (c) => {
   const body = z.object({ kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    await requireNoEncounter(ctx);
     if (body.kind === "bag") {
       const nb = Bag.bag(body.id);
       if (nb.id !== body.id) throw new GameError("no_such_item", "no such bag");
@@ -489,6 +566,7 @@ api.post("/bank", async (c) => {
   const body = z.object({ op: z.enum(["deposit", "withdraw"]), amount: z.union([z.literal("all"), z.number().int().positive()]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    await requireNoEncounter(ctx);
     if (ctx.t.bank_tx >= GAME.bankTxPerDay) { ctx.events.push({ kind: "bank_closed", reason: "daily transaction limit" }); return; }
     const from = body.op === "deposit" ? ctx.p.gold : ctx.p.bank;
     const amt = body.amount === "all" ? from : Math.min(from, body.amount);
@@ -550,8 +628,9 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
 }, { weather: true })));
 
 api.post("/tavern", async (c) => {
-  const body = z.object({ body: z.string().trim().min(1).max(280) }).parse(await c.req.json());
+  const body = z.object({ body: z.string().trim().min(1).max(280).transform(cleanText).pipe(z.string().min(1)) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    if (!seasoned(ctx, "post in the tavern")) return;
     if (ctx.t.tavern_posts >= GAME.tavernPostsPerDay) { ctx.events.push({ kind: "tavern_quiet", reason: "you've said enough for one day" }); return; }
     await ctx.c.query("insert into tavern (day, author, body) values ($1,$2,$3)", [ctx.day, ctx.p.name, body.body]);
     await saveTurns(ctx, { tavern_posts: ctx.t.tavern_posts + 1 });
@@ -649,13 +728,17 @@ api.post("/drop", async (c) => {
 // ---------- mail ----------
 
 api.post("/mail", async (c) => {
-  const body = z.object({ to: z.string().trim().min(1).max(40), body: z.string().trim().min(1).max(500) }).parse(await c.req.json());
+  const body = z.object({ to: z.string().trim().min(1).max(40), body: z.string().trim().min(1).max(500).transform(cleanText).pipe(z.string().min(1)) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    if (!seasoned(ctx, "send mail")) return;
     if (ctx.t.messages_sent >= GAME.messagesPerDay) { ctx.events.push({ kind: "mail_limit", per_day: GAME.messagesPerDay }); return; }
     const r = await ctx.c.query<{ id: string; name: string; is_bot: boolean }>("select id, name, is_bot from players where lower(name) = lower($1)", [body.to]);
     if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.to }); return; }
     const to = r.rows[0];
     if (to.id === ctx.p.id) { ctx.events.push({ kind: "mail_self" }); return; }
+    // Nobody's mailbag takes more than this many letters a day, however many senders there are.
+    const inbound = await ctx.c.query<{ n: string }>("select count(*)::text as n from messages where to_player = $1 and created_at > now() - interval '1 day'", [to.id]);
+    if (Number(inbound.rows[0].n) >= GAME.messagesPerDay) { ctx.events.push({ kind: "mailbag_full", to: to.name }); return; }
     await saveTurns(ctx, { messages_sent: ctx.t.messages_sent + 1 });
     // If they've muted you, it looks sent from your side but never arrives.
     const muted = await ctx.c.query("select 1 from mutes where player_id = $1 and muted_id = $2", [to.id, ctx.p.id]);
@@ -669,8 +752,10 @@ api.get("/mail", async (c) => c.json(await withPlayer(c.req.header("authorizatio
   const unread = await ctx.c.query<{ id: string; from_name: string; body: string; created_at: string }>(
     `update messages m set read_at = now()
      from players p
-     where m.to_player = $1 and m.read_at is null and p.id = m.from_player
+     where m.id in (select id from messages where to_player = $1 and read_at is null order by id limit 20)
+       and p.id = m.from_player
      returning m.id, p.name as from_name, m.body, m.created_at`, [ctx.p.id]);
+  const still = await ctx.c.query<{ n: string }>("select count(*)::text as n from messages where to_player = $1 and read_at is null", [ctx.p.id]);
   const r = await ctx.c.query<{ dir: string; other: string; body: string; created_at: string }>(
     `select case when m.to_player = $1 then 'in' else 'out' end as dir,
             case when m.to_player = $1 then f.name else t.name end as other,
@@ -683,6 +768,7 @@ api.get("/mail", async (c) => c.json(await withPlayer(c.req.header("authorizatio
     kind: "mail_inbox",
     unread: unread.rows.sort((a, b) => Number(a.id) - Number(b.id)).map((x) => ({ from: x.from_name, body: x.body, sent_at: x.created_at })),
     history: r.rows.reverse(),
+    still_unread: Number(still.rows[0].n),
     muted: muted.rows.map((x) => x.name),
   });
 })));
@@ -716,7 +802,7 @@ api.get("/mail/peek", async (c) => {
      group by p.id`, [hash(key)]);
   if (!r.rowCount) return c.json({ error: "unauthorized" }, 401);
   const row = r.rows[0];
-  return c.json({ unread: Number(row.unread), latest: row.latest ? Number(row.latest) : 0, from: (row.senders ?? []).filter(Boolean), news: Number(row.news) });
+  return c.json({ unread: Number(row.unread), latest: row.latest ? Number(row.latest) : 0, from: (row.senders ?? []).filter(Boolean).slice(0, 5), news: Number(row.news) });
 });
 
 // ---------- pvp ----------
@@ -727,6 +813,7 @@ api.post("/challenge", async (c) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
     if (ctx.t.player_fights <= 0) { ctx.events.push({ kind: "no_player_fights_left" }); return; }
+    if (!seasoned(ctx, "attack another player")) return;
     if (body.name.toLowerCase() === ctx.p.name.toLowerCase()) throw new GameError("self", "you cannot fight yourself");
     const r = await ctx.c.query<Player>("select * from players where lower(name) = lower($1) for update", [body.name]);
     if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.name }); return; }
@@ -736,6 +823,7 @@ api.post("/challenge", async (c) => {
     if (Math.abs(d.level - ctx.p.level) > 3) { ctx.events.push({ kind: "level_gap", name: d.name, their_level: d.level }); return; }
     const age = await ctx.c.query("select created_at < now() - interval '24 hours' as old from players where id = $1", [d.id]);
     if (!age.rows[0].old) { ctx.events.push({ kind: "newcomer_grace", name: d.name }); return; }
+    await leaveInn(ctx);
 
     await saveTurns(ctx, { player_fights: ctx.t.player_fights - 1 });
     const af = playerAsFighter(ctx.p);
@@ -753,13 +841,13 @@ api.post("/challenge", async (c) => {
       await post(ctx, "pvp_kill", ctx.p.name, d.name, { gold });
       ctx.events.push({ kind: "pvp_win", opponent: d.name, gold, exp });
     } else if (res.winner === "defender") {
-      const lost = ctx.p.gold;
-      await savePlayer(ctx, { hp: 0, alive: false, gold: 0, ground: null });
+      // A failed attack kills you, but your gold stays yours: losing on purpose can't funnel gold to a friend.
+      await savePlayer(ctx, { hp: 0, alive: false, ground: null });
       const myLost = await Bag.loseRandom(ctx.c, ctx.p.id);
-      await ctx.c.query("update players set hp = $2, gold = gold + $3 where id = $1", [d.id, df.hp, lost]);
-      await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "defended", against: ctx.p.name, gold_won: lost }]);
+      await ctx.c.query("update players set hp = $2 where id = $1", [d.id, df.hp]);
+      await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "defended", against: ctx.p.name }]);
       await post(ctx, "pvp_survived", ctx.p.name, d.name, {});
-      ctx.events.push({ kind: "pvp_loss", opponent: d.name, gold_lost: lost, item_lost: myLost });
+      ctx.events.push({ kind: "pvp_loss", opponent: d.name, item_lost: myLost });
     } else {
       await savePlayer(ctx, { hp: af.hp });
       await ctx.c.query("update players set hp = $2 where id = $1", [d.id, df.hp]);

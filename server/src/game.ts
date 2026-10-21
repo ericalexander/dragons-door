@@ -32,6 +32,7 @@ export interface Player {
   news_seen_upto: number;
   client: unknown;
   weather_off: boolean;
+  is_bot: boolean;
 }
 
 export interface Turns {

@@ -12,6 +12,7 @@
 import { Hono } from "hono";
 import { timingSafeEqual } from "node:crypto";
 import { api } from "./api.js";
+import { INTERNAL_TOKEN } from "./request.js";
 import { pool } from "./db.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
@@ -52,7 +53,7 @@ class Bot {
   async call(method: "GET" | "POST", path: string, body?: unknown): Promise<Envelope | { error: string; message?: string }> {
     const res = await api.request(path, {
       method,
-      headers: { "content-type": "application/json", authorization: `Bearer ${this.key}`, "x-dragons-door-app": "townsfolk" },
+      headers: { "content-type": "application/json", authorization: `Bearer ${this.key}`, "x-dragons-door-app": "townsfolk", "x-dragons-door-internal": INTERNAL_TOKEN },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     return (await res.json()) as Envelope | { error: string };
@@ -427,7 +428,7 @@ async function ensureRoster(): Promise<{ player_id: string; name: string; person
     if (have.has(spec.name)) continue;
     const res = await api.request("/register", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-dragons-door-internal": INTERNAL_TOKEN },
       body: JSON.stringify({ name: spec.name, class: spec.class }),
     });
     const j = (await res.json()) as { api_key?: string; error?: string };

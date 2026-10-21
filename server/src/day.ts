@@ -10,7 +10,9 @@ export function realmDay(resetHourUtc: number, now = new Date()): string {
 export async function realmSettings(c: Client): Promise<{ resetHourUtc: number; dragonAlive: boolean }> {
   const r = await c.query<{ key: string; value: unknown }>("select key, value from realm");
   const m = Object.fromEntries(r.rows.map((x) => [x.key, x.value]));
-  return { resetHourUtc: Number(m.reset_hour_utc ?? 5), dragonAlive: Boolean(m.dragon_alive ?? true) };
+  const resetHourUtc = Number(m.reset_hour_utc ?? 5);
+  // The dragon is dead for the rest of the realm day it was slain, and back at the next reset.
+  return { resetHourUtc, dragonAlive: String(m.dragon_slain_day ?? "").replace(/"/g, "") !== realmDay(resetHourUtc) };
 }
 
 /**

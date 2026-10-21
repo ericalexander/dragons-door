@@ -79,7 +79,7 @@ Every tool returns:
 
 ## What the realm knows about you
 
-Your character, which plugin version, app and operating system you last played from, and whether you've turned weather off. For weather, each request's rough location (from Vercel's IP geolocation, rounded to about 50 km) is used to look up the current sky at Open-Meteo and then dropped; it's never written down. Ask the narrator to turn weather off, or call the `weather` tool with `on: false`.
+Your character, which plugin version, app and operating system you last played from, and whether you've turned weather off. For weather, each request's rough location (from Vercel's IP geolocation, rounded to about 50 km) is used to look up the current sky at Open-Meteo and then dropped; it's never written down. Sign-ups are counted per address per day under a salted hash that changes daily and is deleted the next day; the address itself isn't kept. Ask the narrator to turn weather off, or call the `weather` tool with `on: false`.
 
 ## Keeping it honest
 

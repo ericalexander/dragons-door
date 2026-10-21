@@ -4,15 +4,21 @@
  * Set by middleware, read with current().
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomBytes } from "node:crypto";
+
+/** Known only inside this process: the bot runner passes it on its in-process calls. Can't be sent from outside. */
+export const INTERNAL_TOKEN = randomBytes(24).toString("hex");
 
 export interface RequestInfo {
   plugin?: string;        // plugin version, e.g. "0.2.8"
   app?: string;           // e.g. "claude-code 2.1.300"
   os?: string;            // e.g. "darwin"
-  townsfolk: boolean;     // the bot runner, calling in-process
+  townsfolk: boolean;     // the bot runner, calling in-process (proved by INTERNAL_TOKEN)
   lat?: number;
   lon?: number;
   tz?: string;
+  /** The caller's address as Vercel reports it. Used only to count sign-ups, hashed, never stored. */
+  addr?: string;
 }
 
 const store = new AsyncLocalStorage<RequestInfo>();
@@ -27,10 +33,11 @@ export function fromHeaders(h: (name: string) => string | undefined): RequestInf
     plugin: clip(h("x-dragons-door-version"), 20),
     app: clip(h("x-dragons-door-app")),
     os: clip(h("x-dragons-door-os"), 20),
-    townsfolk: h("x-dragons-door-app") === "townsfolk",
+    townsfolk: h("x-dragons-door-internal") === INTERNAL_TOKEN,
     lat: num(h("x-vercel-ip-latitude")),
     lon: num(h("x-vercel-ip-longitude")),
     tz: clip(h("x-vercel-ip-timezone"), 40),
+    addr: clip((h("x-vercel-forwarded-for") ?? h("x-real-ip") ?? h("x-forwarded-for") ?? "").split(",")[0].trim(), 64) || undefined,
   };
 }
 
