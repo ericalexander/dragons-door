@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.4.0",
+    "lore": "The square has people in it now. You'll catch the locals coming and going at their usual hours, other adventurers loitering by the well, and most days someone from out of town with a cart, a story, or a rumor they're dying to share.",
+    "plain": "The town square shows who's about right now and a visitor of the day. Talk t(o) them once a day for a rumor and, sometimes, a small gift."
+  },
+  {
     "version": "0.3.7",
     "lore": "The town has had a word with its more inventive citizens. The healer won't patch you up mid-swing anymore, a room at the inn only protects you while you're actually in it, masters now send you off bruised instead of dead, and the dragon, it turns out, comes back.",
     "plain": "Fairness fixes: no healing, shopping or banking mid-fight; leaving your room to fight ends its protection; losing to your master isn't fatal; the dragon returns at the daily reset; new characters can post, mail and attack from level 2."

@@ -133,6 +133,10 @@ server.tool("mute", "Stop (on: true) or resume (on: false) receiving mail from a
   { name: z.string().min(1), on: z.boolean().default(true) },
   async ({ name, on }) => text(await call("POST", "/v1/mute", { name, on })));
 
+server.tool("square", "Look around the town square: which townsfolk and players are about right now, where the others are, the time of day, and the day's visitor (if any). Call when the player arrives in Town.", {}, async () => text(await call("GET", "/v1/square")));
+
+server.tool("square_talk", "Talk to the day's visitor in the town square. Once a day. Returns a rumor built on real realm facts and sometimes a small gift.", {}, async () => text(await call("POST", "/v1/square/talk")));
+
 server.tool("bard", "Ask tonight's bard in the tavern for a song. Once a day. A different bard plays on different days; the song sometimes brings a small gift. The result is material for a song; you write and print four lines of lyrics.", {}, async () => text(await call("POST", "/v1/bard")));
 
 server.tool("flirt", "Flirt with Violet the barmaid. Once per day. Builds charm.", {}, async () => text(await call("POST", "/v1/flirt")));

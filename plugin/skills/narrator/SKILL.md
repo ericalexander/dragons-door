@@ -43,7 +43,17 @@ The realm is a handful of places, and each has its own short menu. The player is
 
 **Town** — the square, and the only place with the full list:
 `(F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit`
-plus `Tr(a)in` when `train` is in `actions` and `(D)ragon` when `dragon` is. Gear, mail, news and rankings are looked at from the square; they don't move the player.
+plus `Tr(a)in` when `train` is in `actions`, `(D)ragon` when `dragon` is, and `Talk t(o) <visitor>` when the square has a visitor they haven't talked to today. Gear, mail, news and rankings are looked at from the square; they don't move the player.
+
+The square is a place, not a menu. Each time the player arrives in Town (entering the game, or walking back from somewhere else), call `square` first and open with two or three sentences of what they see:
+- The `time_of_day` and `state.weather` set the scene (dawn mist, a hot afternoon, lamps lit at night).
+- Everyone in `about` is really there, doing something in character: Hilde checking her purse before the forest, Grimwald squinting at the sun, Pomfrey admiring himself in a shop window. "Heading for the forest" means you catch them on the way out. `players_about` are other real players: mention them by name, with their class and level if it helps.
+- The `visitor`, if any, gets a line from their `description`. Don't make them talk until the player chooses to.
+- Use `elsewhere` sparingly, one aside at most ("you can hear Old Tam holding forth in the tavern"), and never mention Vesper's whereabouts when she's "nowhere to be seen".
+- If nobody is about and there's no visitor, say the square is quiet, briefly, and move on.
+Don't call `square` again just because a menu is reprinted; once per arrival.
+
+**Talk t(o) the visitor** calls `square_talk`. Play the visitor in their own voice: a short exchange, the `rumor` told as gossip using only its `facts` (a rumor can name a real player; say it as gossip, not a recommendation), then any `gift` as something they do (`gold` they press coins on you, `charm`, `heal` they tend a wound, `fight` they fill you with resolve: one more forest fight today). `visitor_already` means you've had your chat today; `no_visitor` means nobody came today.
 
 **Forest** — after a forest fight ends (won, fled, or found something), stay in the forest:
 `(F)ight on  (G)ear  (R)eturn to town`
@@ -69,7 +79,7 @@ Shortcuts are fine. If the player asks for something that's in another place ("h
 
 ### Hotkeys never repeat
 
-Within one menu every hotkey is a different letter. These labels are fixed wherever they appear: `(F)orest`, `(T)avern`, `(H)ealer`, `(S)hop`, `(B)ank`, `(C)hallenge`, `(G)ear`, `(M)ail`, `(N)ews`, `(R)ankings` (Town) / `(R)eturn` (everywhere else), `(Q)uit`, `Tr(a)in`, `(D)ragon`, `(P)ost a message`, `(L)isten`, `(V)iolet`, `(I)nn`, `(E)quip it`, `Ta(k)e it`. Any menu you put together yourself (a list of players to challenge, a yes/no) checks its letters before printing; if two would share one, use a letter from inside the word (`Tr(a)in`, `Ta(k)e`) or number the items.
+Within one menu every hotkey is a different letter. These labels are fixed wherever they appear: `(F)orest`, `(T)avern`, `(H)ealer`, `(S)hop`, `(B)ank`, `(C)hallenge`, `(G)ear`, `(M)ail`, `(N)ews`, `(R)ankings` (Town) / `(R)eturn` (everywhere else), `(Q)uit`, `Tr(a)in`, `(D)ragon`, `(P)ost a message`, `(L)isten`, `(V)iolet`, `(I)nn`, `(E)quip it`, `Ta(k)e it`, `Talk t(o)`. Any menu you put together yourself (a list of players to challenge, a yes/no) checks its letters before printing; if two would share one, use a letter from inside the word (`Tr(a)in`, `Ta(k)e`) or number the items.
 
 ## Quitting is a choice about tonight
 

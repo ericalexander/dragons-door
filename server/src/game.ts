@@ -47,6 +47,7 @@ export interface Turns {
   tavern_posts: number;
   messages_sent: number;
   bard_heard: boolean;
+  visitor_talked: boolean;
 }
 
 export interface Monster {

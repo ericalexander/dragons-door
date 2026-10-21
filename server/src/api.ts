@@ -11,6 +11,8 @@ import * as Bag from "./bag.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
 import { weatherAt } from "./weather.js";
 import { bardFor, pickGift } from "./bards.js";
+import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
+import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
@@ -637,6 +639,86 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
   const bard = bardFor(ctx.day);
   ctx.events.push({ kind: "bard_playing", bard: bard.name, style: bard.style, heard_today: ctx.t.bard_heard });
   ctx.hint = "Improvise here: the bartender's gossip, the mood of the room. Keep it under the posted messages, which are other players' words.";
+}, { weather: true })));
+
+// ---------- the town square ----------
+
+/** Who's about in the square right now: townsfolk by their timetable, and real players seen in the last 15 minutes. */
+api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  const now = new Date();
+  const folk = await ctx.c.query<{ name: string; personality: Personality; alive: boolean }>(
+    "select p.name, b.personality, p.alive from bots b join players p on p.id = b.player_id order by p.name");
+  const about: { name: string; doing: string }[] = [];
+  const elsewhere: { name: string; where: string }[] = [];
+  for (const f of folk.rows) {
+    const w = whereabouts(f.personality, f.name, ctx.day, now, f.alive);
+    if (w.where === "square") about.push({ name: f.name, doing: "about the square" });
+    else if (w.where === "heading") about.push({ name: f.name, doing: `heading for the ${w.to}` });
+    else if (w.where === "asleep") elsewhere.push({ name: f.name, where: w.at === "inn" ? "asleep at the inn" : "asleep in the fields" });
+    else if (w.where === "dead") elsewhere.push({ name: f.name, where: "dead until morning" });
+    else if (w.where === "unseen") elsewhere.push({ name: f.name, where: "nowhere to be seen" });
+    else elsewhere.push({ name: f.name, where: w.where === "forest" ? "in the forest" : w.where === "tavern" ? "in the tavern" : w.where === "shop" ? "at the shop" : "out in the fields" });
+  }
+  const people = await ctx.c.query<{ name: string; class: string; level: number }>(
+    "select name, class, level from players where not is_bot and id <> $1 and alive and last_seen > now() - interval '15 minutes' order by last_seen desc limit 3", [ctx.p.id]);
+  const v = visitorFor(ctx.day);
+  const hour = realmHour(now);
+  ctx.events.push({
+    kind: "square",
+    time_of_day: timeOfDay(hour),
+    about,
+    players_about: people.rows,
+    elsewhere,
+    visitor: v ? { name: v.name, description: v.description, talked_today: ctx.t.visitor_talked } : null,
+  });
+}, { weather: true })));
+
+/** Facts behind a rumor, straight from the realm. Null when there's nothing to tell. */
+async function rumorFacts(ctx: Ctx, kind: Rumor): Promise<Record<string, unknown> | null> {
+  const one = async <T,>(sql: string, args: unknown[] = []) => (await ctx.c.query<T & Record<string, unknown>>(sql, args)).rows[0] ?? null;
+  switch (kind) {
+    case "next_bard": {
+      const d = new Date(ctx.day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + 1);
+      return { bard: bardFor(d.toISOString().slice(0, 10)).name, when: "tomorrow" };
+    }
+    case "top_player": return one("select name, class, level from players order by level desc, exp desc limit 1");
+    case "forest_danger": {
+      const m = await one<{ monster: string; n: string }>(
+        "select detail->>'monster' as monster, count(*)::text as n from news where kind = 'forest_death' and ts > now() - interval '2 days' group by 1 order by count(*) desc limit 1");
+      return m ? { monster: m.monster, deaths: Number(m.n), recently: true } : null;
+    }
+    case "heavy_purse": return one(
+      "select name, level from players where alive and location = 'fields' and gold > 0 and id <> $1 and created_at < now() - interval '24 hours' order by gold desc limit 1", [ctx.p.id]);
+    case "recent_loot": return one("select actor as name, detail->>'item' as item, detail->>'monster' as monster from news where kind = 'loot' order by id desc limit 1");
+    case "newest_arrival": return one("select actor as name from news where kind = 'join' order by id desc limit 1");
+    case "dragon": {
+      const last = await one<{ name: string }>("select actor as name from news where kind = 'dragon' order by id desc limit 1");
+      return { alive: ctx.dragonAlive, last_slayer: last?.name ?? null };
+    }
+  }
+}
+
+/** One chat a day with the day's visitor: a rumor built on real facts, and sometimes a small gift. */
+api.post("/square/talk", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAlive(ctx);
+  await requireNoEncounter(ctx);
+  const v = visitorFor(ctx.day);
+  if (!v) { ctx.events.push({ kind: "no_visitor" }); return; }
+  if (ctx.t.visitor_talked) { ctx.events.push({ kind: "visitor_already", visitor: v.name }); return; }
+  let rumor: { kind: Rumor; facts: Record<string, unknown> } | null = null;
+  for (const k of v.rumors) { const f = await rumorFacts(ctx, k); if (f) { rumor = { kind: k, facts: f }; break; } }
+  let gift = pickVisitorGift(v);
+  if (gift === "heal" && ctx.p.hp >= ctx.p.max_hp) gift = "charm";
+  let amount = 0;
+  const turns: Partial<Turns> = { visitor_talked: true };
+  if (gift === "gold") { amount = 15 * ctx.p.level; await savePlayer(ctx, { gold: ctx.p.gold + amount }); }
+  if (gift === "charm") { amount = 1; await savePlayer(ctx, { charm: ctx.p.charm + 1 }); }
+  if (gift === "heal") { amount = ctx.p.max_hp - ctx.p.hp; await savePlayer(ctx, { hp: ctx.p.max_hp }); }
+  if (gift === "fight") { amount = 1; turns.forest_fights = ctx.t.forest_fights + 1; }
+  await saveTurns(ctx, turns);
+  ctx.events.push({ kind: "visitor_talk", visitor: v.name, description: v.description, rumor, gift, amount });
+  ctx.hint = `Play ${v.name} in their own voice: a short exchange, then the rumor told as gossip using only the facts given, then the gift (if any) as something they do. Two to five sentences.`;
+  await logEvent(ctx, "visitor", { visitor: v.name, rumor: rumor?.kind ?? null, gift, amount });
 }, { weather: true })));
 
 // One song a day from whichever bard is playing. The server picks the gift; the narrator writes the song.

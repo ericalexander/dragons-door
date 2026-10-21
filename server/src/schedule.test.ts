@@ -30,3 +30,20 @@ test("the shift is stable for a given day and different across days", () => {
   const days = new Set(["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24"].map((d) => sessionTime(d, "12:00", "Hilde", 1).getUTCMinutes()));
   assert.ok(days.size > 1, "jitter should vary day to day");
 });
+
+test("every townsperson's steps line up with their timetable", async () => {
+  const { STEPS } = await import("./bots.js");
+  const { PLAN } = await import("./schedule.js");
+  for (const p of Object.keys(PLAN) as (keyof typeof PLAN)[]) assert.equal(STEPS[p].length, PLAN[p].length, p);
+});
+
+test("whereabouts follow the timetable", async () => {
+  const { whereabouts, sessionTime } = await import("./schedule.js");
+  const day = "2026-10-21";
+  const t0 = sessionTime(day, "07:00", "Hilde", 0);
+  assert.equal(whereabouts("banker", "Hilde", day, new Date(t0.getTime() - 3 * 3600_000), true).where, "asleep");
+  assert.equal(whereabouts("banker", "Hilde", day, new Date(t0.getTime() - 10 * 60_000), true).where, "heading");
+  assert.equal(whereabouts("banker", "Hilde", day, new Date(t0.getTime() + 10 * 60_000), true).where, "forest");
+  assert.equal(whereabouts("banker", "Hilde", day, new Date(t0.getTime() + 2 * 3600_000), true).where, "square");
+  assert.equal(whereabouts("banker", "Hilde", day, new Date(t0.getTime() + 2 * 3600_000), false).where, "dead");
+});

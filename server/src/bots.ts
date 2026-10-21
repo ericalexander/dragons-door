@@ -13,6 +13,8 @@ import { Hono } from "hono";
 import { timingSafeEqual } from "node:crypto";
 import { api } from "./api.js";
 import { INTERNAL_TOKEN } from "./request.js";
+import { PLAN, sessionTime, type Personality } from "./schedule.js";
+export { sessionTime } from "./schedule.js";
 import { pool } from "./db.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
@@ -21,7 +23,6 @@ import type { Envelope, Event } from "./game.js";
 
 export const bots = new Hono();
 
-type Personality = "banker" | "drunk" | "raider" | "gossip" | "pious" | "reckless" | "seer" | "braggart";
 
 const ROSTER: { name: string; class: "warrior" | "thief" | "mage"; personality: Personality }[] = [
   { name: "Hilde", class: "warrior", personality: "banker" },
@@ -374,11 +375,12 @@ async function sleepRough(b: Bot) {
 
 type Step = (b: Bot) => Promise<void>;
 interface Session { at: string; steps: Step[] }
+/** Steps per session; the times come from PLAN in schedule.ts, index for index. */
 const f = (n: number): Step => (b) => fights(b, n);
 const flirt: Step = async (b) => { await b.post("/flirt"); };
 const song: Step = async (b) => { await b.post("/bard"); };
 
-const SCHEDULE: Record<Personality, Session[]> = {
+export const STEPS: Record<Personality, Session[]> = {
   banker: [ // Hilde: steady all day, banks and beds down at dinner
     { at: "07:00", steps: [f(4)] },
     { at: "12:00", steps: [f(3)] },
@@ -419,33 +421,6 @@ const SCHEDULE: Record<Personality, Session[]> = {
   ],
 };
 
-const JITTER_MIN = 30;
-const TZ = "America/New_York";
-
-/** Stable per-day shift in minutes, in [-JITTER_MIN, +JITTER_MIN], so a rerun picks the same time. */
-function jitter(day: string, name: string, i: number): number {
-  const h = createHash("sha256").update(`${day}|${name}|${i}`).digest();
-  return (h.readUInt16BE(0) % (2 * JITTER_MIN + 1)) - JITTER_MIN;
-}
-
-/** Offset of TZ from UTC at instant t, in ms. */
-function tzOffset(t: number): number {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
-  }).formatToParts(new Date(t)).map((p) => [p.type, p.value]));
-  const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
-  return asUtc - t;
-}
-
-/** The instant a session happens on a given realm day: `at` Eastern on that calendar date, plus jitter. */
-export function sessionTime(day: string, at: string, name: string, i: number): Date {
-  const [y, m, d] = day.split("-").map(Number);
-  const [hh, mm] = at.split(":").map(Number);
-  const guess = Date.UTC(y, m - 1, d, hh, mm);
-  const utc = guess - tzOffset(guess);
-  return new Date(utc + jitter(day, name, i) * 60_000);
-}
-
 // ---------- seeding and running ----------
 
 async function ensureRoster(): Promise<{ player_id: string; name: string; personality: Personality; api_key: string }[]> {
@@ -479,7 +454,7 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
     const st = await pool.query<{ sessions: { day?: string; done?: number[] } }>("select sessions from bots where player_id = $1", [row.player_id]);
     const rec = st.rows[0]?.sessions ?? {};
     const done = new Set(rec.day === day ? rec.done ?? [] : []);
-    const plan = SCHEDULE[row.personality];
+    const plan = STEPS[row.personality].map((s, i) => ({ ...s, at: PLAN[row.personality][i]?.at ?? s.at }));
     const due = plan.map((s, i) => ({ s, i, at: sessionTime(day, s.at, row.name, i) })).filter((x) => !done.has(x.i) && x.at <= now);
     if (!due.length) continue;
     const b = new Bot(row.name, row.personality, row.api_key);
