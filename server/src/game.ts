@@ -43,6 +43,8 @@ export interface Player {
   trinket_id: number;
   pickaxe: boolean;
   cave_depth: number | null;
+  /** A wild event waiting for an answer, where it happened. */
+  pending_event: { id: string; x: number; y: number } | null;
 }
 
 export interface Turns {
@@ -63,6 +65,8 @@ export interface Turns {
   /** Who they've talked to today, and whether anyone's let slip a place yet. */
   talked: string[];
   gossip_heard: boolean;
+  /** Wild events turned up today. */
+  events_seen: number;
 }
 
 export interface Monster {
@@ -241,6 +245,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     }
     if (t.forest_fights > 0) w.unshift("forest", "move");
     if (tileAt(p.pos_x, p.pos_y!).poi === "cave") w.unshift("descend");
+    if (p.pending_event && p.pending_event.x === p.pos_x && p.pending_event.y === p.pos_y) w.unshift("event");
     return w;
   }
   const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop"];

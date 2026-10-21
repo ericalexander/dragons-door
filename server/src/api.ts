@@ -16,6 +16,7 @@ import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { DIRS, LEGEND, renderMap, tileAt, type Dir, type Tile } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
+import { EVENTS_PER_DAY, EVENT_CHANCE, eventById, eventsFor, rollOutcome } from "./events.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
@@ -158,7 +159,7 @@ async function savePlayer(ctx: Ctx, patch: Partial<Player>) {
   const keys = Object.keys(patch) as (keyof Player)[];
   if (!keys.length) return;
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
-  const r = await ctx.c.query<Player>(`update players set ${sets} where id = $1 returning *`, [ctx.p.id, ...keys.map((k) => (k === "ground" && patch[k] !== null ? JSON.stringify(patch[k]) : patch[k]))]);
+  const r = await ctx.c.query<Player>(`update players set ${sets} where id = $1 returning *`, [ctx.p.id, ...keys.map((k) => ((k === "ground" || k === "pending_event") && patch[k] !== null ? JSON.stringify(patch[k]) : patch[k]))]);
   ctx.p = numify(r.rows[0]);
 }
 
@@ -404,6 +405,7 @@ api.get("/shop", async (c) => {
 api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
   await requireNoEncounter(ctx);
+  await dropEvent(ctx);
   if (ctx.t.forest_fights <= 0) { ctx.events.push({ kind: "no_fights_left" }); return; }
   await leaveInn(ctx);
   if (ctx.p.ground) {
@@ -693,6 +695,25 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
 
 // ---------- the wild ----------
 
+/** A wild event left unanswered lapses when you do anything else. */
+async function dropEvent(ctx: Ctx) {
+  if (ctx.p.pending_event) await savePlayer(ctx, { pending_event: null });
+}
+
+/** Sometimes a step turns up something besides a fight. Players only, a few a day. */
+async function maybeEvent(ctx: Ctx, x: number, y: number) {
+  if (ctx.p.role !== "player" || (ctx.t.events_seen ?? 0) >= EVENTS_PER_DAY || Math.random() >= EVENT_CHANCE) return;
+  const t = tileAt(x, y);
+  const options = eventsFor(t.terrain);
+  if (!options.length) return;
+  const e = options[Math.floor(Math.random() * options.length)];
+  await saveTurns(ctx, { events_seen: (ctx.t.events_seen ?? 0) + 1 });
+  await savePlayer(ctx, { pending_event: { id: e.id, x, y } });
+  ctx.events.push({ kind: "wild_event", event: e.id, place: t.name, terrain: t.terrain, description: e.description,
+    choices: e.choices.map((c, i) => ({ n: i + 1, id: c.id, label: c.label, ...(c.cost ? { costs_gold: c.cost * t.level } : {}) })) });
+  ctx.hint = "Something besides a fight. Describe it in two or three sentences from `description`, then offer its choices numbered (1), (2)… with their labels (and any gold cost), plus the usual Wild menu below. Call `event` with the choice id only when they pick one; anything else they do walks away from it.";
+}
+
 /** Whatever's lying on the ground stays where it is when you walk off. */
 async function leaveGround(ctx: Ctx) {
   if (!ctx.p.ground) return;
@@ -770,6 +791,7 @@ api.post("/move", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
+    await dropEvent(ctx);
     const [x0, y0] = inWild(ctx.p) ? [ctx.p.pos_x!, ctx.p.pos_y!] : [0, 0];
     const [x, y] = [x0 + DIRS[body.dir][0], y0 + DIRS[body.dir][1]];
     if (x === 0 && y === 0) {
@@ -799,6 +821,7 @@ api.post("/move", async (c) => {
     ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: firstForYou, first_ever: firstEver,
       ...(others.length ? { others_here: others } : {}),
       ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
+    await maybeEvent(ctx, x, y);
   }));
 });
 
@@ -808,6 +831,7 @@ api.post("/travel", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
+    await dropEvent(ctx);
     if ("to" in body || (body.x === 0 && body.y === 0)) {
       await leaveGround(ctx);
       await savePlayer(ctx, { pos_x: null, pos_y: null, cave_depth: null });
@@ -829,6 +853,49 @@ api.post("/travel", async (c) => {
   }));
 });
 
+// ---------- wild events ----------
+
+/** Answer the event in front of you. The server rolls what comes of it. */
+api.post("/event", async (c) => {
+  const body = z.object({ choice: z.string().trim().min(1).max(40) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    const pe = ctx.p.pending_event;
+    if (!pe || !inWild(ctx.p) || pe.x !== ctx.p.pos_x || pe.y !== ctx.p.pos_y) { ctx.events.push({ kind: "no_event" }); return; }
+    const e = eventById(pe.id);
+    const choice = e?.choices.find((x) => x.id === body.choice || x.label.toLowerCase() === body.choice.toLowerCase() || String(e.choices.indexOf(x) + 1) === body.choice);
+    if (!e || !choice) { ctx.events.push({ kind: "no_such_choice", choices: e?.choices.map((x) => x.id) ?? [] }); return; }
+    const t = tileAt(pe.x, pe.y);
+    const lvl = Math.max(1, t.level);
+    const cost = (choice.cost ?? 0) * lvl;
+    if (cost > ctx.p.gold) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, note: "the event is still there; pick something else or walk on" }); return; }
+    await savePlayer(ctx, { pending_event: null, ...(cost ? { gold: ctx.p.gold - cost } : {}) });
+    const out = rollOutcome(choice);
+    const got: Record<string, unknown> = {};
+    let monster: Monster | null = null;
+    for (const fx of out.effects) {
+      if ("gold" in fx) { const g = fx.gold * lvl; await savePlayer(ctx, { gold: Math.max(0, ctx.p.gold + g) }); got.gold = g; }
+      else if ("lose_gold_pct" in fx) { const g = Math.floor(ctx.p.gold * fx.lose_gold_pct / 100); await savePlayer(ctx, { gold: ctx.p.gold - g }); got.gold_lost = g; }
+      else if ("heal_pct" in fx) { const h = Math.min(ctx.p.max_hp - ctx.p.hp, Math.ceil(ctx.p.max_hp * fx.heal_pct / 100)); await savePlayer(ctx, { hp: ctx.p.hp + h }); got.healed = h; }
+      else if ("hurt_pct" in fx) { const h = Math.min(ctx.p.hp - 1, Math.ceil(ctx.p.max_hp * fx.hurt_pct / 100)); await savePlayer(ctx, { hp: ctx.p.hp - Math.max(0, h) }); got.hurt = Math.max(0, h); }
+      else if ("charm" in fx) { const n = Math.max(-ctx.p.charm, fx.charm); await savePlayer(ctx, { charm: ctx.p.charm + n }); got.charm = n; }
+      else if ("gem" in fx) { await savePlayer(ctx, { gems: ctx.p.gems + fx.gem }); got.gems = fx.gem; }
+      else if ("fights" in fx) { const n = Math.max(-ctx.t.forest_fights, fx.fights); await saveTurns(ctx, { forest_fights: ctx.t.forest_fights + n }); got.forest_fights = n; }
+      else if ("exp" in fx) { const n = fx.exp * lvl; await savePlayer(ctx, { exp: ctx.p.exp + n }); got.exp = n; }
+      else if ("map" in fx) { const marked = await sketchNearby(ctx, e.id === "hermit" ? "a hermit" : "what you saw", fx.map, [pe.x, pe.y]); got.marked = marked; }
+      else if ("monster" in fx) { monster = pickMonster(t.level + fx.monster); }
+    }
+    ctx.events.push({ kind: "event_outcome", event: e.id, choice: choice.id, outcome: out.key, ...(cost ? { paid: cost } : {}), got });
+    if (monster) {
+      await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, monster]);
+      ctx.events.push({ kind: "encounter", monster, place: t.name, terrain: t.terrain, from_event: e.id });
+    }
+    ctx.hint = `Tell what happened in two to four sentences: the outcome '${out.key}' of choosing '${choice.label}', in the scene of ${e.description}. Give the real numbers in got (gold, healing, hurt, charm, gems, fights, exp, places marked on the map).${monster ? " Then it's a fight: show the fight menu." : " Then the Wild menu."}`;
+    await logEvent(ctx, "wild_event", { event: e.id, choice: choice.id, outcome: out.key, level: t.level, ...got, marked: undefined });
+  }));
+});
+
 // ---------- caves ----------
 
 function requireCave(ctx: Ctx) {
@@ -842,6 +909,7 @@ api.post("/cave", async (c) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
     if (!inWild(ctx.p)) throw new GameError("not_in_cave", "there are no caves in town; find one out in the hills", 409);
+    await dropEvent(ctx);
     const t = tileAt(ctx.p.pos_x!, ctx.p.pos_y!);
     const depth = ctx.p.cave_depth ?? 0;
     if (body.op === "climb") {
@@ -1152,19 +1220,21 @@ api.post("/talk", async (c) => {
 });
 
 /** The Cartographer's gift: a few places just past the edge of what you know, sketched into your map. A cave if one's near. */
-async function sketchNearby(ctx: Ctx, from: string, n: number) {
+async function sketchNearby(ctx: Ctx, from: string, n: number, around?: [number, number]) {
   const ex = await exploredSet(ctx);
   const heard = await heardSet(ctx);
   const far = Math.max(1, ...[...ex].map((k) => { const [a, b] = k.split(",").map(Number); return Math.max(Math.abs(a), Math.abs(b)); }));
-  const reach = far + 2;
+  // From town: just past the edge of what they know. From a spot in the wild: the land within a few steps.
+  const [cx, cy, reach] = around ? [around[0], around[1], 3] : [0, 0, far + 2];
   const pool: Tile[] = [];
-  for (let yy = -reach; yy <= reach; yy++) for (let xx = -reach; xx <= reach; xx++) {
+  for (let yy = cy - reach; yy <= cy + reach; yy++) for (let xx = cx - reach; xx <= cx + reach; xx++) {
     if (!xx && !yy) continue;
     const k = `${xx},${yy}`;
     if (ex.has(k) || heard.has(k)) continue;
     pool.push(tileAt(xx, yy));
   }
-  pool.sort((a, z) => (a.poi ? -10 : 0) - (z.poi ? -10 : 0) || a.ring - z.ring || Math.random() - 0.5);
+  const dist = (t: Tile) => around ? Math.abs(t.x - cx) + Math.abs(t.y - cy) : t.ring;
+  pool.sort((a, z) => (a.poi ? -10 : 0) - (z.poi ? -10 : 0) || dist(a) - dist(z) || Math.random() - 0.5);
   const out: { name: string; terrain: string; poi: string | null; where: string }[] = [];
   for (const t of pool) {
     if (out.length >= n) break;

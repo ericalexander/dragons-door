@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.7.0",
+    "lore": "The wild isn't only teeth and claws anymore. Out past the gate you might find a traveler bleeding by a rock, a shrine with coins gone green in the bowl, a troll under a bridge with a riddle and a grudge, or a ring of mushrooms humming in the grass. What you do about it is up to you. What comes of it isn't.",
+    "plain": "Exploring now turns up events besides fights, a few a day: pick a choice, and see what happens (gold, healing, charm, gems, an extra fight, places marked on your map, or trouble)."
+  },
+  {
     "version": "0.6.2",
     "lore": "The town has learned to write. Leave a letter for Hilde, or Violet, or Odile at her bench, and sooner or later a reply turns up in your mailbag, in their own hand. Sir Pomfrey's arrive sealed in wax.",
     "plain": "Townsfolk and characters now answer your mail, usually within an hour or two. One reply a day from each, covering everything you sent them."

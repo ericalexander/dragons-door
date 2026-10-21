@@ -21816,6 +21816,12 @@ server.tool(
   async ({ to, x, y }) => text(await call("POST", "/v1/travel", to === "town" || x === void 0 || y === void 0 ? { to: "town" } : { x, y }))
 );
 server.tool(
+  "event",
+  "Answer something the player came upon in the wild (a wild_event): pick one of its choices by id or number. The server rolls what comes of it. Doing anything else walks away from it.",
+  { choice: external_exports.string().min(1).max(40) },
+  async ({ choice }) => text(await call("POST", "/v1/event", { choice }))
+);
+server.tool(
   "cave",
   "Caves, from a cave mouth in the wild. descend: go in (free). deeper: down a level, darker and richer (costs a forest fight; three levels). climb: back out to the surface (free).",
   { op: external_exports.enum(["descend", "deeper", "climb"]) },

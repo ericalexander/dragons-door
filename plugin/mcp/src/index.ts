@@ -85,6 +85,10 @@ server.tool("travel", "Go straight to town, or back out to a place the player ha
   { to: z.literal("town").optional(), x: z.number().int().optional(), y: z.number().int().optional() },
   async ({ to, x, y }) => text(await call("POST", "/v1/travel", to === "town" || x === undefined || y === undefined ? { to: "town" } : { x, y })));
 
+server.tool("event", "Answer something the player came upon in the wild (a wild_event): pick one of its choices by id or number. The server rolls what comes of it. Doing anything else walks away from it.",
+  { choice: z.string().min(1).max(40) },
+  async ({ choice }) => text(await call("POST", "/v1/event", { choice })));
+
 server.tool("cave", "Caves, from a cave mouth in the wild. descend: go in (free). deeper: down a level, darker and richer (costs a forest fight; three levels). climb: back out to the surface (free).",
   { op: z.enum(["descend", "deeper", "climb"]) },
   async ({ op }) => text(await call("POST", "/v1/cave", { op })));
