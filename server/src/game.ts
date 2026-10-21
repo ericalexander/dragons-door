@@ -45,6 +45,9 @@ export interface Player {
   cave_depth: number | null;
   /** A wild event waiting for an answer, where it happened. */
   pending_event: { id: string; x: number; y: number } | null;
+  /** Can make test characters; and whether this one is a test character (kept out of everything public). */
+  admin: boolean;
+  is_test: boolean;
 }
 
 export interface Turns {

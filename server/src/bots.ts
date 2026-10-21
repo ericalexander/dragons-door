@@ -236,7 +236,7 @@ async function raid(b: Bot) {
   await b.post("/healer", { hp: "all" });
   const target = await pool.query<{ name: string }>(
     `select name from players
-     where role <> 'npc' and alive and location = 'fields' and gold > 0 and name <> $1
+     where role <> 'npc' and not is_test and alive and location = 'fields' and gold > 0 and name <> $1
        and abs(level - $2) <= 3 and created_at < now() - interval '24 hours'
      order by gold desc, level desc limit 1`,
     [b.name, me.state.level],
@@ -363,9 +363,9 @@ async function brag(b: Bot) {
 async function fortune(b: Bot) {
   // Madam Orsolya reads the cards for whoever sleeps richest in the fields. Vesper reads the same cards.
   const r = await pool.query<{ name: string; gold: string }>(
-    `select name, gold::text from players where role <> 'npc' and alive and location = 'fields' and gold > 0 and name <> $1
+    `select name, gold::text from players where role <> 'npc' and not is_test and alive and location = 'fields' and gold > 0 and name <> $1
      order by gold desc limit 1`, [b.name]);
-  const top = await pool.query<{ name: string }>("select name from players where role <> 'npc' and name <> $1 order by level desc, exp desc limit 1", [b.name]);
+  const top = await pool.query<{ name: string }>("select name from players where role <> 'npc' and not is_test and name <> $1 order by level desc, exp desc limit 1", [b.name]);
   if (r.rowCount && roll(99) < 70) {
     const t = r.rows[0].name;
     await say(b, pick([

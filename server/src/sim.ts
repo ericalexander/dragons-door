@@ -105,7 +105,7 @@ const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, numb
 type Cls = "warrior" | "thief" | "mage";
 
 function fresh(cls: Cls): Player {
-  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null, trinket_id: 0, pickaxe: false, cave_depth: null, pending_event: null };
+  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null, trinket_id: 0, pickaxe: false, cave_depth: null, pending_event: null, admin: false, is_test: false };
 }
 
 function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number): "won" | "fled" | "died" {

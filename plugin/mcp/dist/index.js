@@ -21533,6 +21533,31 @@ async function loadConfig() {
     name: stored.name
   };
 }
+async function otherCharacters() {
+  try {
+    return Object.keys(JSON.parse(await readFile(CONFIG_FILE, "utf8")).characters ?? {});
+  } catch {
+    return [];
+  }
+}
+async function switchCharacter(name, key) {
+  let stored = {};
+  try {
+    stored = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
+  } catch {
+  }
+  const roster = { ...stored.characters ?? {} };
+  if (stored.api_key && stored.name) roster[stored.name] = stored.api_key;
+  const match = Object.keys(roster).find((n) => n.toLowerCase() === name.toLowerCase());
+  const nextKey = key ?? (match ? roster[match] : void 0);
+  if (!nextKey) return false;
+  const nextName = key ? name : match;
+  delete roster[nextName];
+  const next = { ...stored, api_key: nextKey, name: nextName, characters: roster };
+  await mkdir(CONFIG_DIR, { recursive: true, mode: 448 });
+  await writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 384 });
+  return true;
+}
 async function saveConfig(cfg) {
   let stored = {};
   try {
@@ -21784,6 +21809,27 @@ server.tool(
     return text(r);
   }
 );
+if (process.env.DRAGONS_DOOR_DEV === "1") {
+  server.tool(
+    "characters",
+    "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active).",
+    { op: external_exports.enum(["list", "switch", "new"]), name: external_exports.string().min(2).max(20).optional(), class: external_exports.enum(["warrior", "thief", "mage"]).optional() },
+    async ({ op, name, class: cls }) => {
+      const cfg = await loadConfig();
+      if (op === "list") return text({ active: cfg.name ?? null, others: await otherCharacters() });
+      if (!name) return text({ error: "name_required" });
+      if (op === "switch") {
+        const ok = await switchCharacter(name);
+        return text(ok ? { switched_to: (await loadConfig()).name, others: await otherCharacters() } : { error: "no_such_character", others: await otherCharacters() });
+      }
+      if (!cfg.api_key) return text({ error: "not_registered", message: "Register your main character first." });
+      const r = await call("POST", "/v1/register", { name, class: cls ?? "warrior" });
+      if (!r.api_key) return text(r);
+      await switchCharacter(r.name ?? name, r.api_key);
+      return text({ created: r.name, test: Boolean(r.test), switched_to: r.name, others: await otherCharacters() });
+    }
+  );
+}
 server.tool(
   "status",
   "Your character's current state and what you can do next. Also reports the plugin version (client.version) and whether an update is out (client.update_available), and what's new since they last played (client.whats_new).",

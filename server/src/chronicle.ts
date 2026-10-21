@@ -44,12 +44,12 @@ async function gather(day: string): Promise<DayFacts> {
     "select kind, actor, target, detail from news where day = $1 order by id", [day])).rows;
   const tavern = (await pool.query<{ author: string; body: string; townsfolk: boolean }>(
     `select t.author, t.body, coalesce(p.role = 'townsfolk', false) as townsfolk
-     from tavern t left join players p on p.name = t.author where t.day = $1 order by t.id limit 40`, [day])).rows;
+     from tavern t left join players p on p.name = t.author where t.day = $1 and not coalesce(p.is_test, false) order by t.id limit 40`, [day])).rows;
   const folk = (await pool.query<{ name: string; personality: Personality; mind: Mind }>(
     "select p.name, b.personality, b.mind from bots b join players p on p.id = b.player_id")).rows;
   const goals = folk.filter((f) => f.mind?.goal).map((f) => ({ name: f.name, goal: goalLabel(f.name, f.personality, f.mind.goal!) }));
   const top = (await pool.query<{ name: string; level: number; townsfolk: boolean; class: string }>(
-    "select name, level, role = 'townsfolk' as townsfolk, class from players where role <> 'npc' order by level desc, exp desc limit 5")).rows;
+    "select name, level, role = 'townsfolk' as townsfolk, class from players where role <> 'npc' and not is_test order by level desc, exp desc limit 5")).rows;
   const c = await pool.connect();
   let dragon = true;
   try { dragon = (await realmSettings(c)).dragonAlive; } finally { c.release(); }

@@ -24,6 +24,8 @@ export interface Config {
 interface StoredConfig {
   api_key?: string;
   name?: string;
+  /** Other characters on this machine, by name (a maintainer's test characters). The active one is api_key/name. */
+  characters?: Record<string, string>;
   /** Only present if the player put it there by hand to point at a different realm. Never written by us. */
   api_url?: string;
 }
@@ -48,6 +50,31 @@ export async function loadConfig(): Promise<Config> {
 }
 
 /** Persists only the character identity. The realm URL is not remembered unless the player wrote it themselves. */
+/** The other characters kept on this machine, if any (names only). */
+export async function otherCharacters(): Promise<string[]> {
+  try { return Object.keys((JSON.parse(await readFile(CONFIG_FILE, "utf8")) as StoredConfig).characters ?? {}); } catch { return []; }
+}
+
+/**
+ * Switch the active character. The current one is kept in the roster; `key` adds a new one.
+ * Returns false if there's no such character.
+ */
+export async function switchCharacter(name: string, key?: string): Promise<boolean> {
+  let stored: StoredConfig = {};
+  try { stored = JSON.parse(await readFile(CONFIG_FILE, "utf8")) as StoredConfig; } catch { /* fresh */ }
+  const roster = { ...(stored.characters ?? {}) };
+  if (stored.api_key && stored.name) roster[stored.name] = stored.api_key;
+  const match = Object.keys(roster).find((n) => n.toLowerCase() === name.toLowerCase());
+  const nextKey = key ?? (match ? roster[match] : undefined);
+  if (!nextKey) return false;
+  const nextName = key ? name : match!;
+  delete roster[nextName];
+  const next: StoredConfig = { ...stored, api_key: nextKey, name: nextName, characters: roster };
+  await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  await writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
+  return true;
+}
+
 export async function saveConfig(cfg: Config): Promise<void> {
   let stored: StoredConfig = {};
   try {

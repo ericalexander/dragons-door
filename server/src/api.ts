@@ -172,6 +172,8 @@ async function saveTurns(ctx: Ctx, patch: Partial<Turns>) {
 }
 
 async function post(ctx: Ctx, kind: string, actor: string | null, target: string | null, detail: Record<string, unknown> = {}) {
+  // Test characters leave no mark on the paper.
+  if (ctx.p.is_test) return;
   await ctx.c.query("insert into news (day, kind, actor, target, detail) values ($1,$2,$3,$4,$5)", [ctx.day, kind, actor, target, detail]);
 }
 
@@ -208,6 +210,7 @@ const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
 
 /** One line in the game event log: game facts only, for balance checks. Never names or player-written text. */
 async function logEvent(ctx: Ctx, kind: string, data: Record<string, unknown> = {}) {
+  if (ctx.p.is_test) return; // keeps the balance numbers about real play
   await ctx.c.query(
     "insert into game_events (day, player_id, class, level, is_bot, plugin, model, kind, data) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     [ctx.day, ctx.p.id, ctx.p.class, ctx.p.level, Boolean(ctx.p.is_bot), current()?.plugin ?? null, current()?.model ?? null, kind, JSON.stringify(data)]);
@@ -260,12 +263,18 @@ api.post("/register", async (c) => {
     if (!ok) throw new GameError("invite_required", "this realm is invite-only; ask whoever runs it for the word", 403);
   }
   const info = current();
+  // An admin making a test character: sign in with their own key. Test characters skip the sign-up limit
+  // and stay out of rankings, news, the chronicle and the balance log.
+  const auth = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  const maker = auth ? (await pool.query<{ admin: boolean }>("select admin from players where api_key_hash = $1", [hash(auth)])).rows[0] : undefined;
+  const testChar = Boolean(maker?.admin);
+  if (auth && !testChar) throw new GameError("already_registered", "you already have a character", 409);
   if (!info?.townsfolk && reservedName(body.name)) throw new GameError("name_taken", "that name belongs to someone in town already", 409);
   const key = "door_" + randomBytes(24).toString("base64url");
   const out = await tx(async (db) => {
     const dup = await db.query("select 1 from players where lower(name) = lower($1)", [body.name]);
     if (dup.rowCount) throw new GameError("name_taken", "that name is taken", 409);
-    if (info?.addr && !info.townsfolk) {
+    if (info?.addr && !info.townsfolk && !testChar) {
       const today = realmDay((await realmSettings(db)).resetHourUtc);
       const salt = process.env.SIGNUP_SALT ?? process.env.CRON_SECRET ?? "dragons-door";
       const addrHash = createHash("sha256").update(`${today}|${salt}|${info.addr}`).digest("hex");
@@ -276,14 +285,14 @@ api.post("/register", async (c) => {
       if (n.rows[0].n > SIGNUPS_PER_ADDRESS_PER_DAY) throw new GameError("too_many_signups", "the gatekeeper has let enough newcomers in from your road today; try again tomorrow", 429);
     }
     const r = await db.query<Player>(
-      "insert into players (name, api_key_hash, class, news_seen_upto) values ($1,$2,$3,(select coalesce(max(id), 0) from news)) returning *",
-      [body.name, hash(key), body.class]);
+      "insert into players (name, api_key_hash, class, news_seen_upto, is_test) values ($1,$2,$3,(select coalesce(max(id), 0) from news),$4) returning *",
+      [body.name, hash(key), body.class, testChar]);
     const settings = await realmSettings(db);
     const day = realmDay(settings.resetHourUtc);
-    await db.query("insert into news (day, kind, actor) values ($1,'join',$2)", [day, body.name]);
+    if (!testChar) await db.query("insert into news (day, kind, actor) values ($1,'join',$2)", [day, body.name]);
     return r.rows[0];
   });
-  return c.json({ api_key: key, name: out.name, class: out.class, events: [{ kind: "joined", name: out.name, class: out.class }] });
+  return c.json({ api_key: key, name: out.name, class: out.class, ...(testChar ? { test: true } : {}), events: [{ kind: "joined", name: out.name, class: out.class }] });
 });
 
 // ---------- public (no auth) ----------
@@ -295,10 +304,10 @@ api.get("/public/realm", async (c) => {
     const today = realmDay(settings.resetHourUtc);
     const y = new Date(today + "T00:00:00Z"); y.setUTCDate(y.getUTCDate() - 1);
     const yesterday = y.toISOString().slice(0, 10);
-    const players = await db.query<{ n: string }>("select count(*)::text as n from players where role = 'player'");
+    const players = await db.query<{ n: string }>("select count(*)::text as n from players where role = 'player' and not is_test");
     const news = await db.query<{ day: string; kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
       "select day::text, kind, actor, target, detail from news where day in ($1, $2) and kind <> 'join' order by id desc limit 12", [today, yesterday]);
-    const top = await db.query("select name, class, level, is_bot as bot, dragon_kills from players where role <> 'npc' order by level desc, exp desc limit 8");
+    const top = await db.query("select name, class, level, is_bot as bot, dragon_kills from players where role <> 'npc' and not is_test order by level desc, exp desc limit 8");
     return {
       day: today,
       dragon_alive: settings.dragonAlive,
@@ -385,7 +394,7 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
 }
 
 api.get("/rankings", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  const r = await ctx.c.query("select name, class, level, exp, alive, dragon_kills, is_bot as bot from players where role <> 'npc' order by level desc, exp desc limit 20");
+  const r = await ctx.c.query("select name, class, level, exp, alive, dragon_kills, is_bot as bot from players where role <> 'npc' and not is_test order by level desc, exp desc limit 20");
   ctx.events.push({ kind: "rankings", players: r.rows });
 })));
 
@@ -812,7 +821,7 @@ api.post("/move", async (c) => {
     const t = tileAt(x, y);
     const mine = await ctx.c.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing returning 1", [ctx.p.id, x, y]);
     const firstForYou = Boolean(mine.rowCount);
-    const anyone = await ctx.c.query(
+    const anyone = ctx.p.is_test ? { rowCount: 0 } : await ctx.c.query(
       "insert into discoveries (x, y, name, terrain, poi, found_by) values ($1,$2,$3,$4,$5,$6) on conflict do nothing returning 1",
       [x, y, t.name, t.terrain, t.poi, ctx.p.id]);
     const firstEver = Boolean(anyone.rowCount);
@@ -1100,7 +1109,7 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
     else elsewhere.push({ name: f.name, where: w.where === "forest" ? "out hunting" : w.where === "tavern" ? "in the tavern" : w.where === "shop" ? "at the shop" : "out in the fields", on_mind });
   }
   const people = await ctx.c.query<{ name: string; class: string; level: number }>(
-    "select name, class, level from players where not is_bot and id <> $1 and alive and pos_x is null and last_seen > now() - interval '15 minutes' order by last_seen desc limit 3", [ctx.p.id]);
+    "select name, class, level from players where not is_bot and not is_test and id <> $1 and alive and pos_x is null and last_seen > now() - interval '15 minutes' order by last_seen desc limit 3", [ctx.p.id]);
   const v = visitorFor(ctx.day);
   const hour = realmHour(now);
   ctx.events.push({
@@ -1121,14 +1130,14 @@ async function rumorFacts(ctx: Ctx, kind: Rumor): Promise<Record<string, unknown
       const d = new Date(ctx.day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + 1);
       return { bard: bardFor(d.toISOString().slice(0, 10)).name, when: "tomorrow" };
     }
-    case "top_player": return one("select name, class, level from players where role <> 'npc' order by level desc, exp desc limit 1");
+    case "top_player": return one("select name, class, level from players where role <> 'npc' and not is_test order by level desc, exp desc limit 1");
     case "forest_danger": {
       const m = await one<{ monster: string; n: string }>(
         "select detail->>'monster' as monster, count(*)::text as n from news where kind = 'forest_death' and ts > now() - interval '2 days' group by 1 order by count(*) desc limit 1");
       return m ? { monster: m.monster, deaths: Number(m.n), recently: true } : null;
     }
     case "heavy_purse": return one(
-      "select name, level from players where role <> 'npc' and alive and location = 'fields' and gold > 0 and id <> $1 and created_at < now() - interval '24 hours' order by gold desc limit 1", [ctx.p.id]);
+      "select name, level from players where role <> 'npc' and not is_test and alive and location = 'fields' and gold > 0 and id <> $1 and created_at < now() - interval '24 hours' order by gold desc limit 1", [ctx.p.id]);
     case "recent_loot": return one("select actor as name, detail->>'item' as item, detail->>'monster' as monster from news where kind = 'loot' order by id desc limit 1");
     case "newest_arrival": return one("select actor as name from news where kind = 'join' order by id desc limit 1");
     case "dragon": {

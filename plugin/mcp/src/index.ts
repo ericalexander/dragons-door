@@ -8,7 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR, loadConfig, saveConfig } from "./config.js";
+import { CONFIG_DIR, loadConfig, otherCharacters, saveConfig, switchCharacter } from "./config.js";
 import { clientInfo, VERSION } from "./version.js";
 import { installStatusline, noteUnread, refreshInstalledScript, uninstallStatusline } from "./statusline.js";
 
@@ -59,6 +59,28 @@ server.tool("register", "Create your character. Run once. Stores your API key lo
     }
     return text(r);
   });
+
+// For whoever runs the realm: test characters, switched between on this machine. Only offered when
+// DRAGONS_DOOR_DEV=1 is set in the environment, so players never see it.
+if (process.env.DRAGONS_DOOR_DEV === "1") {
+  server.tool("characters", "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active).",
+    { op: z.enum(["list", "switch", "new"]), name: z.string().min(2).max(20).optional(), class: z.enum(["warrior", "thief", "mage"]).optional() },
+    async ({ op, name, class: cls }) => {
+      const cfg = await loadConfig();
+      if (op === "list") return text({ active: cfg.name ?? null, others: await otherCharacters() });
+      if (!name) return text({ error: "name_required" });
+      if (op === "switch") {
+        const ok = await switchCharacter(name);
+        return text(ok ? { switched_to: (await loadConfig()).name, others: await otherCharacters() } : { error: "no_such_character", others: await otherCharacters() });
+      }
+      if (!cfg.api_key) return text({ error: "not_registered", message: "Register your main character first." });
+      // Registering while signed in as an admin makes a test character.
+      const r = (await call("POST", "/v1/register", { name, class: cls ?? "warrior" })) as { api_key?: string; name?: string; test?: boolean; error?: string };
+      if (!r.api_key) return text(r);
+      await switchCharacter(r.name ?? name, r.api_key);
+      return text({ created: r.name, test: Boolean(r.test), switched_to: r.name, others: await otherCharacters() });
+    });
+}
 
 server.tool("status", "Your character's current state and what you can do next. Also reports the plugin version (client.version) and whether an update is out (client.update_available), and what's new since they last played (client.whats_new).", {},
   async () => {
