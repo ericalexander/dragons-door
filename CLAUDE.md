@@ -6,3 +6,7 @@
 - If `plugin/mcp/src` changed, rebuild and commit `plugin/mcp/dist/index.js` (`cd plugin/mcp && npm run build`).
 - Server schema changes go in `server/migrations/NNN_*.sql` and are applied to prod before the server code that needs them ships.
 - If a release breaks older plugins (a tool's request or response changed shape), set `MIN_PLUGIN_VERSION` on the API's Vercel project to that version. Players below it are turned away with the update steps. Leave it unset otherwise.
+
+## Checking balance against real play
+- `select * from balance_by_class;` on the realm database summarizes real players (townsfolk excluded) by class: fights, win rate, deaths, crits, loot, level-ups.
+- Raw rows are in `game_events` (kinds: day_start, fight_end, death, level_up, loot, pvp, song, spend, dragon_slain). Compare against `npx tsx src/sim.ts <class>`.

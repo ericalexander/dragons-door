@@ -68,6 +68,7 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     }
     if (loaded.rolled) {
       ctx.events.push({ kind: "new_day", day });
+      await logEvent(ctx, "day_start", { hp: ctx.p.hp, max_hp: ctx.p.max_hp, gold: ctx.p.gold, bank: ctx.p.bank, exp: ctx.p.exp });
       if (ctx.p.ground) await savePlayer(ctx, { ground: null });
     }
     // A quiet call (the session-start news line) reads only; it must not consume mail or robbery reports.
@@ -184,6 +185,26 @@ export function reservedName(n: string): boolean {
 }
 
 const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
+
+/** One line in the game event log: game facts only, for balance checks. Never names or player-written text. */
+async function logEvent(ctx: Ctx, kind: string, data: Record<string, unknown> = {}) {
+  await ctx.c.query(
+    "insert into game_events (day, player_id, class, level, is_bot, plugin, kind, data) values ($1,$2,$3,$4,$5,$6,$7,$8)",
+    [ctx.day, ctx.p.id, ctx.p.class, ctx.p.level, Boolean(ctx.p.is_bot), current()?.plugin ?? null, kind, JSON.stringify(data)]);
+}
+
+/** Totals for a finished fight, from its saved rounds plus the last one. */
+function fightSummary(log: Event[], last: Event[], me: string) {
+  const all = [...log, ...last];
+  const mine = all.filter((e) => e.attacker === me && (e.kind === "hit" || e.kind === "miss"));
+  return {
+    rounds: mine.length,
+    crits: all.filter((e) => e.attacker === me && e.crit).length,
+    crits_taken: all.filter((e) => e.defender === me && e.crit).length,
+    specials: mine.filter((e) => e.special).length,
+    dodges: all.filter((e) => e.kind === "dodged" && e.defender === me).length,
+  };
+}
 
 /** Going out to fight means leaving your room: you're back in the fields and fair game tonight. */
 async function leaveInn(ctx: Ctx) {
@@ -372,7 +393,7 @@ api.post("/fight", async (c) => {
   const body = z.object({ action: z.enum(["attack", "special", "run"]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    const r = await ctx.c.query<{ id: string; kind: string; monster: Monster; round: number }>("select id, kind, monster, round from encounters where player_id = $1", [ctx.p.id]);
+    const r = await ctx.c.query<{ id: string; kind: string; monster: Monster; round: number; log: Event[] }>("select id, kind, monster, round, log from encounters where player_id = $1", [ctx.p.id]);
     if (!r.rowCount) throw new GameError("no_encounter", "you are not in a fight");
     const enc = r.rows[0];
     const m = enc.monster;
@@ -382,6 +403,7 @@ api.post("/fight", async (c) => {
       if (fleeSucceeds(ctx.p)) {
         await ctx.c.query("delete from encounters where id = $1", [enc.id]);
         ctx.events.push({ kind: "fled", monster: m.name });
+        await logEvent(ctx, "fight_end", { encounter: enc.kind, monster: m.name, monster_level: m.level ?? null, outcome: "fled", hp_left: ctx.p.hp, max_hp: ctx.p.max_hp, ...fightSummary(enc.log ?? [], [], ctx.p.name) });
         return;
       }
       // failed to flee: monster gets a free swing
@@ -389,7 +411,11 @@ api.post("/fight", async (c) => {
       const dmg = Math.max(0, roll(m.str) - roll(pf.def));
       await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
       ctx.events.push({ kind: "flee_failed", monster: m.name, damage: dmg, hp: ctx.p.hp });
-      if (ctx.p.hp <= 0) { await ctx.c.query("delete from encounters where id = $1", [enc.id]); await lose(ctx, enc.kind, m); }
+      if (ctx.p.hp <= 0) {
+        await ctx.c.query("delete from encounters where id = $1", [enc.id]);
+        await logEvent(ctx, "fight_end", { encounter: enc.kind, monster: m.name, monster_level: m.level ?? null, outcome: enc.kind === "master" ? "master_won" : "died", while: "fleeing", hp_left: 0, max_hp: ctx.p.max_hp, ...fightSummary(enc.log ?? [], [], ctx.p.name) });
+        await lose(ctx, enc.kind, m);
+      }
       return;
     }
 
@@ -409,11 +435,14 @@ api.post("/fight", async (c) => {
     m.hp = mf.hp;
     await savePlayer(ctx, { hp: pf.hp });
 
+    const ended = (outcome: string) => logEvent(ctx, "fight_end", { encounter: enc.kind, monster: m.name, monster_level: m.level ?? null, outcome, hp_left: pf.hp, max_hp: ctx.p.max_hp, ...fightSummary(enc.log ?? [], evs, ctx.p.name) });
     if (mf.hp <= 0) {
       await ctx.c.query("delete from encounters where id = $1", [enc.id]);
+      await ended("won");
       await win(ctx, enc.kind, m);
     } else if (pf.hp <= 0) {
       await ctx.c.query("delete from encounters where id = $1", [enc.id]);
+      await ended(enc.kind === "master" ? "master_won" : "died");
       await lose(ctx, enc.kind, m);
     } else {
       await ctx.c.query("update encounters set monster = $2, round = round + 1, log = log || $3::jsonb where id = $1", [enc.id, m, JSON.stringify(evs)]);
@@ -441,6 +470,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
         ctx.events.push({ kind: "loot", monster: m.name, item: drop.item, slot: drop.kind, weight: w, stored: false, upgrade, bag_used: usedNow, bag_capacity: cap });
       }
       await post(ctx, "loot", ctx.p.name, null, { item: drop.item, monster: m.name });
+      await logEvent(ctx, "loot", { item: drop.item, slot: drop.kind, tier: drop.tier, monster_level: m.level ?? null, stored: usedNow + w <= cap, upgrade });
       ctx.hint = "A rare drop. Give it a beat: what it looks like, how it feels. If stored is false the bag is full and it's lying on the ground: offer (E)quip it now, or make room (sell or drop something) and Ta(k)e it, or leave it. It's gone if they walk back into the forest.";
     }
     if (next !== null && ctx.p.exp >= next) ctx.events.push({ kind: "level_ready", level: ctx.p.level + 1 });
@@ -455,6 +485,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
       def: ctx.p.def + g.def,
     });
     await post(ctx, "level_up", ctx.p.name, null, { level: lvl });
+    await logEvent(ctx, "level_up", { to: lvl, exp: ctx.p.exp });
     ctx.events.push({ kind: "level_up", level: lvl, max_hp: ctx.p.max_hp, str: ctx.p.str, def: ctx.p.def });
   } else if (kind === "dragon") {
     await savePlayer(ctx, { dragon_kills: ctx.p.dragon_kills + 1, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, weapon_id: 0, armor_id: 0, gold: 0, charm: ctx.p.charm + 10 });
@@ -464,6 +495,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     await ctx.c.query("delete from inventory where player_id = $1", [ctx.p.id]);
     await savePlayer(ctx, { ground: null });
     await post(ctx, "dragon", ctx.p.name, null, {});
+    await logEvent(ctx, "dragon_slain", { kills: ctx.p.dragon_kills });
     ctx.events.push({ kind: "dragon_slain", dragon_kills: ctx.p.dragon_kills });
     ctx.hint = "This is the climax of the game. Go big, then explain they start over at level 1 with their dragon kill recorded, their bank intact and their bag emptied. The dragon is gone for the rest of today and returns at the reset.";
   }
@@ -488,6 +520,7 @@ async function die(ctx: Ctx, kind: string, m: Monster) {
   if (kind === "dragon") await post(ctx, "dragon_death", ctx.p.name, null, {});
   else await post(ctx, "forest_death", ctx.p.name, null, { monster: m.name });
   ctx.events.push({ kind: "player_died", killer: m.name, gold_lost: lost, exp_lost: expLoss, item_lost: itemLost });
+  await logEvent(ctx, "death", { by: kind, monster: m.name, gold_lost: lost, exp_lost: expLoss, item_lost: Boolean(itemLost) });
 }
 
 // ---------- train / dragon ----------
@@ -534,6 +567,7 @@ api.post("/healer", async (c) => {
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold }); return; }
     await savePlayer(ctx, { hp: ctx.p.hp + want, gold: ctx.p.gold - cost });
     ctx.events.push({ kind: "healed", hp: want, cost });
+    await logEvent(ctx, "spend", { on: "healer", gold: cost, hp: want });
   }));
 });
 
@@ -549,6 +583,7 @@ api.post("/buy", async (c) => {
       if (ctx.p.gold < nb.cost) { ctx.events.push({ kind: "too_poor", cost: nb.cost, gold: ctx.p.gold }); return; }
       await savePlayer(ctx, { gold: ctx.p.gold - nb.cost, bag_id: nb.id });
       ctx.events.push({ kind: "bought", shop: "bag", item: nb.name, cost: nb.cost, capacity: nb.capacity });
+      await logEvent(ctx, "spend", { on: "bag", item: nb.name, gold: nb.cost });
       return;
     }
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
@@ -559,6 +594,7 @@ api.post("/buy", async (c) => {
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
     await savePlayer(ctx, { gold: ctx.p.gold - cost, ...(body.kind === "weapon" ? { weapon_id: item.id } : { armor_id: item.id }) });
     ctx.events.push({ kind: "bought", shop: body.kind, item: item.name, cost, trade_in: tradeIn });
+    await logEvent(ctx, "spend", { on: body.kind, item: item.name, tier: item.id, gold: cost });
   }));
 });
 
@@ -587,6 +623,7 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
   await savePlayer(ctx, { gold: ctx.p.gold - cost, location: "inn" });
   await saveTurns(ctx, { inn_used: true });
   ctx.events.push({ kind: "inn_sleep", cost });
+  await logEvent(ctx, "spend", { on: "inn", gold: cost });
   ctx.hint = "They are safe from other players until the realm resets, and will wake fully healed.";
 })));
 
@@ -624,6 +661,7 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
   const headline = n.rowCount ? n.rows[roll(n.rowCount - 1)] : null;
   const you = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, exp: ctx.p.exp, weapon: weapon(ctx.p.weapon_id).name, armor: armor(ctx.p.armor_id).name, gold: ctx.p.gold, charm: ctx.p.charm };
   ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, leans_toward: bard.sings_about, you, headline, gift, amount });
+  await logEvent(ctx, "song", { bard: bard.name, gift, amount });
   ctx.hint = `Write the song: exactly four lines of original lyrics in ${bard.name}'s voice, printed one per line in italics, using at least one real detail from you/headline/weather. Print the lyrics themselves; don't summarize or describe the song. Then the gift.`;
 }, { weather: true })));
 
@@ -840,6 +878,7 @@ api.post("/challenge", async (c) => {
       await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "killed_by_player", by: ctx.p.name, gold_lost: gold, item_lost: theirLost }]);
       await post(ctx, "pvp_kill", ctx.p.name, d.name, { gold });
       ctx.events.push({ kind: "pvp_win", opponent: d.name, gold, exp });
+      await logEvent(ctx, "pvp", { outcome: "won", opponent_class: d.class, opponent_level: d.level, opponent_bot: Boolean(d.is_bot), gold, rounds: res.log.filter((e) => e.attacker === ctx.p.name).length });
     } else if (res.winner === "defender") {
       // A failed attack kills you, but your gold stays yours: losing on purpose can't funnel gold to a friend.
       await savePlayer(ctx, { hp: 0, alive: false, ground: null });
@@ -848,10 +887,12 @@ api.post("/challenge", async (c) => {
       await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "defended", against: ctx.p.name }]);
       await post(ctx, "pvp_survived", ctx.p.name, d.name, {});
       ctx.events.push({ kind: "pvp_loss", opponent: d.name, item_lost: myLost });
+      await logEvent(ctx, "pvp", { outcome: "lost", opponent_class: d.class, opponent_level: d.level, opponent_bot: Boolean(d.is_bot), rounds: res.log.filter((e) => e.attacker === ctx.p.name).length });
     } else {
       await savePlayer(ctx, { hp: af.hp });
       await ctx.c.query("update players set hp = $2 where id = $1", [d.id, df.hp]);
       ctx.events.push({ kind: "pvp_draw", opponent: d.name });
+      await logEvent(ctx, "pvp", { outcome: "draw", opponent_class: d.class, opponent_level: d.level, opponent_bot: Boolean(d.is_bot) });
     }
   }));
 });
