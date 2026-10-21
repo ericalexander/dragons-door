@@ -358,7 +358,7 @@ function aOrAn(item: string): string {
   return (/^[AEIOU]/i.test(item) ? "an " : "a ") + item;
 }
 
-function newsLine(n: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }): string {
+export function newsLine(n: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }): string {
   switch (n.kind) {
     case "joins": return String(n.detail.line);
     case "discovery": return `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;

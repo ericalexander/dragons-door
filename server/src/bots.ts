@@ -16,6 +16,7 @@ import { INTERNAL_TOKEN } from "./request.js";
 import { PLAN, sessionTime, type Personality } from "./schedule.js";
 export { sessionTime } from "./schedule.js";
 import { pool } from "./db.js";
+import { catchUp, writeEntry } from "./chronicle.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { realmDay, realmSettings } from "./day.js";
@@ -790,11 +791,23 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
   return { day, now: now.toISOString(), results };
 }
 
+// Rewrite one day's chronicle entry by hand (e.g. after adding the API key): POST /v1/internal/chronicle/write?day=YYYY-MM-DD
+bots.post("/chronicle/write", async (c) => {
+  if (!authorized(c.req.header("authorization"))) return c.json({ error: "forbidden" }, 403);
+  const day = c.req.query("day") ?? "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return c.json({ error: "day=YYYY-MM-DD" }, 400);
+  return c.json({ written: await writeEntry(day, true) });
+});
+
 // Vercel Cron sends GET with "Authorization: Bearer $CRON_SECRET". Manual runs can POST the same header.
 bots.on(["GET", "POST"], "/bots/run", async (c) => {
   if (!authorized(c.req.header("authorization"))) return c.json({ error: "forbidden" }, 403);
   // A fake clock is for local testing only.
   const fake = (process.env.DRAGONS_DOOR_ALLOW_FAKE_CLOCK ?? process.env.LORD_ALLOW_FAKE_CLOCK) ? c.req.query("now") : undefined;
-  const out = await runBots(fake ? new Date(fake) : new Date());
-  return c.json(out);
+  const when = fake ? new Date(fake) : new Date();
+  const out = await runBots(when);
+  // Yesterday's chronicle, once the day is over. Never lets a failure stop the townsfolk.
+  let chronicle: string[] = [];
+  try { chronicle = await catchUp(when); } catch (e) { chronicle = [`error: ${(e as Error).message}`]; }
+  return c.json({ ...out, chronicle });
 });

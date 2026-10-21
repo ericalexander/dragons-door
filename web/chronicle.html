@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Chronicle · Dragon's Door</title>
+<meta name="description" content="What happened in Dragon's Door, day by day: deaths, robberies, weddings and the slow ambitions of the townsfolk.">
+<meta property="og:title" content="The Chronicle of Dragon's Door">
+<meta property="og:description" content="What happened in the realm, day by day.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23000'/><text x='2' y='13' font-family='monospace' font-size='12' fill='%23ff5555'>▲</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000000; --fg: #aaaaaa; --hi: #ffffff; --dim: #555555;
+    --red-hi: #ff5555; --yel: #ffff55; --cyan: #55ffff; --cyan-lo: #00aaaa; --blue: #0000aa;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body { margin: 0; color: var(--fg); background: var(--bg); font-family: var(--mono); font-size: 15px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover, a:focus-visible { color: var(--hi); text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--yel); outline-offset: 2px; }
+  ::selection { background: var(--blue); color: var(--hi); }
+  .screen { max-width: 84ch; margin: 0 auto; padding: 24px 20px 64px; }
+  .bar { background: var(--blue); color: var(--hi); padding: 2px 10px; display: flex; gap: 2ch; justify-content: space-between; }
+  .bar b { color: var(--yel); font-weight: 400; }
+  .bar a { color: var(--hi); margin-left: 1ch; }
+  .bar a:hover { text-decoration: none; background: var(--cyan-lo); }
+  h1 { font-weight: 400; font-size: 22px; color: var(--red-hi); margin: 40px 0 4px; letter-spacing: .04em; }
+  .sub { color: var(--cyan); margin: 0 0 8px; }
+  h2 { font-weight: 400; font-size: 15px; color: var(--cyan); margin: 44px 0 12px; white-space: nowrap; overflow: hidden; }
+  h2::before { content: "══ "; color: var(--cyan-lo); }
+  h2::after { content: " ════════════════════════════════════════════════════════════════════════════"; color: var(--cyan-lo); }
+  h2 .date { color: var(--dim); }
+  .entry p { margin: 0 0 14px; color: var(--fg); }
+  .entry p:first-child::first-letter { color: var(--hi); }
+  .draft h2 { color: var(--yel); }
+  .draft .note { color: var(--dim); font-style: italic; margin: -4px 0 12px; }
+  .quiet { color: var(--dim); }
+  footer { margin-top: 56px; color: var(--dim); }
+  @media (max-width: 720px) {
+    body { font-size: 14px; }
+    h2 { white-space: normal; }
+    h2::after { content: none; }
+    .bar span:first-child { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="bar" role="presentation">
+    <span><b>Dragon's Door</b> BBS</span>
+    <span><a href="/"><b>H</b>ome</a> <a href="/chronicle"><b>C</b>hronicle</a> <a href="https://github.com/ericalexander/dragons-door"><b>S</b>ource</a></span>
+  </div>
+
+  <h1>THE CHRONICLE</h1>
+  <p class="sub" id="season">What happened in the realm, day by day.</p>
+
+  <section class="draft" id="today" hidden aria-labelledby="today-h">
+    <h2 id="today-h"></h2>
+    <p class="note">The day isn't over. This is the rough draft; the storyteller writes it up properly after the reset.</p>
+    <div class="entry" id="today-body"></div>
+  </section>
+
+  <div id="entries"><p class="quiet">Fetching the chronicle…</p></div>
+
+  <footer>
+    <p>Written from what really happened in the game: the news, the tavern board, and what the townsfolk are after. Names are characters in the realm. <a href="/">Play Dragon's Door</a> in Claude Code.</p>
+  </footer>
+</div>
+
+<script>
+  const API = "https://dragons-door-api.vercel.app";
+  const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  const fmt = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
+  const paras = (body) => String(body).split(/\n\s*\n/).map((p) => `<p>${esc(p.trim())}</p>`).join("");
+  fetch(API + "/v1/public/chronicle?limit=60").then((r) => r.json()).then((d) => {
+    document.getElementById("season").textContent = `Season ${Number(d.season) || 1}. What happened in the realm, day by day.`;
+    if (d.today && d.today.so_far) {
+      document.getElementById("today-h").innerHTML = `Day ${Number(d.today.number)}, so far <span class="date">· ${esc(fmt(d.today.day))}</span>`;
+      document.getElementById("today-body").innerHTML = paras(d.today.so_far);
+      document.getElementById("today").hidden = false;
+    }
+    const box = document.getElementById("entries");
+    if (!d.entries.length) { box.innerHTML = '<p class="quiet">Nothing written yet. The first entry appears after the first day ends.</p>'; return; }
+    box.innerHTML = d.entries.map((e) => `<section aria-labelledby="d${esc(e.day)}"><h2 id="d${esc(e.day)}">Day ${Number(e.number)} <span class="date">· ${esc(fmt(e.day))}</span></h2><div class="entry">${paras(e.body)}</div></section>`).join("");
+  }).catch(() => { document.getElementById("entries").innerHTML = '<p class="quiet">The chronicle isn\'t answering right now. It\'ll be back.</p>'; });
+</script>
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>
