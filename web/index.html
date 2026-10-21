@@ -299,7 +299,7 @@
   const changes = document.getElementById("realm-changes");
   const card = (c) => `<div class="change"><div class="v">v${esc(c.version)}</div><p class="lore">${esc(c.lore)}</p><p class="plain">${esc(c.plain)}</p></div>`;
   fetch("https://raw.githubusercontent.com/ericalexander/dragons-door/main/plugin/changelog.json").then(r => r.json()).then(list => {
-    const recent = list.slice(0, 4), older = list.slice(4);
+    const recent = list.slice(0, 2), older = list.slice(2);
     changes.innerHTML = recent.map(card).join("") +
       (older.length ? `<details><summary>Older changes (${older.length})</summary><div class="changes">${older.map(card).join("")}</div></details>` : "");
   }).catch(() => { changes.innerHTML = '<p class="quiet">The notice board is being repainted. Check back soon.</p>'; });
