@@ -131,6 +131,13 @@
   .realm li::before { content: "— "; color: var(--rule); }
   .realm .status .alive { color: var(--wax); font-weight: 700; }
   .realm .status .dead { color: var(--ink-faint); }
+  .realm .changes { display: flex; flex-direction: column; gap: 16px; }
+  .realm .change { border-left: 2px solid var(--rule); padding-left: 14px; }
+  .realm .change .v { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; color: var(--ink-faint); }
+  .realm .change .lore { margin: 2px 0 4px; color: var(--ink); }
+  .realm .change .plain { font-size: 15px; color: var(--ink-faint); }
+  .realm details summary { cursor: pointer; color: var(--wax); }
+  .realm details .changes { margin-top: 14px; }
   .realm table { border-collapse: collapse; width: 100%; max-width: 420px; font-size: 16px; }
   .realm th { text-align: left; font-weight: 500; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); padding: 0 0 6px; border-bottom: 1px solid var(--rule); }
   .realm td { padding: 7px 0; border-bottom: 1px solid #ddd0b3; color: var(--ink-soft); }
@@ -165,7 +172,7 @@
 <header class="mast wrap">
   <div class="name">Dragon's Door</div>
   <nav aria-label="Site">
-    <a href="#fromrealm">News</a>
+    <a href="#changes">Changes</a>
     <a href="/chronicle">Chronicle</a>
     <a href="#fromrealm">Rankings</a>
     <a href="https://github.com/ericalexander/dragons-door">Source</a>
@@ -252,11 +259,11 @@
 </section>
 
 <section class="realm wrap" id="fromrealm" aria-labelledby="realm-h">
-  <div>
+  <div id="changes">
     <div class="kicker">From the realm</div>
-    <h3 id="realm-h">Today's paper</h3>
-    <p class="status" id="realm-status">Fetching the morning paper…</p>
-    <ul id="realm-news"></ul>
+    <h3 id="realm-h">What's changed</h3>
+    <p class="status" id="realm-status">Asking at the tavern…</p>
+    <div class="changes" id="realm-changes"></div>
     <p><a href="/chronicle">Read the Chronicle</a>: the story of the realm, day by day.</p>
   </div>
   <div>
@@ -287,20 +294,25 @@
     });
   }
 
-  // Live feed from the realm. Fails quietly into a static line.
+  // The realm's changelog, in the narrator's voice, straight from the plugin's changelog.json on GitHub.
+  const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  const changes = document.getElementById("realm-changes");
+  const card = (c) => `<div class="change"><div class="v">v${esc(c.version)}</div><p class="lore">${esc(c.lore)}</p><p class="plain">${esc(c.plain)}</p></div>`;
+  fetch("https://raw.githubusercontent.com/ericalexander/dragons-door/main/plugin/changelog.json").then(r => r.json()).then(list => {
+    const recent = list.slice(0, 4), older = list.slice(4);
+    changes.innerHTML = recent.map(card).join("") +
+      (older.length ? `<details><summary>Older changes (${older.length})</summary><div class="changes">${older.map(card).join("")}</div></details>` : "");
+  }).catch(() => { changes.innerHTML = '<p class="quiet">The notice board is being repainted. Check back soon.</p>'; });
+
+  // Live status and the board. Fails quietly into a static line.
   const API = (document.currentScript && document.currentScript.dataset.api) || "https://dragons-door-api.vercel.app";
   const status = document.getElementById("realm-status");
-  const list = document.getElementById("realm-news");
   const board = document.getElementById("realm-board");
   fetch(API + "/v1/public/realm").then(r => r.json()).then(d => {
     const dragon = d.dragon_alive
       ? '<span class="alive">The Red Dragon is alive.</span>'
       : '<span class="dead">The Red Dragon is dead, for now.</span>';
     status.innerHTML = `${Number(d.players)} player${d.players === 1 ? "" : "s"} in the realm. ${dragon}`;
-    const lines = d.news.filter(n => !/has entered the realm/.test(n.line)).slice(0, 6);
-    if (!lines.length) list.innerHTML = '<li class="quiet">A quiet day. Somebody go poke the forest.</li>';
-    else for (const n of lines) { const li = document.createElement("li"); li.textContent = n.line; list.appendChild(li); }
-    const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
     const top = d.top.slice(0, 5);
     if (!top.length) { board.innerHTML = '<p class="quiet">Nobody on the board yet.</p>'; return; }
     const rows = top.map((p, i) => `<tr><td class="rank">${i + 1}</td><td class="name">${esc(p.name)}${p.bot ? "<i>†</i>" : ""}</td><td class="lvl">L${Number(p.level)}</td></tr>`).join("");
