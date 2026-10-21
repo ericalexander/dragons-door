@@ -96,7 +96,9 @@ async function forestFight(b: Bot, opts: { runBelow?: number; useSpecial?: boole
 }
 
 async function trainIfReady(b: Bot, r: Envelope | null) {
-  if (!r || !r.actions.includes("train")) return;
+  if (!r || !r.state.alive || r.state.exp_next === null || r.state.exp < r.state.exp_next) return;
+  // Masters live in town, like everyone's.
+  if (r.state.place) await b.post("/travel", { to: "town" });
   const t = await b.post("/train");
   if (isErr(t) || !kinds(t).includes("master_challenge")) return;
   for (let i = 0; i < 80; i++) {
@@ -107,7 +109,49 @@ async function trainIfReady(b: Bot, r: Envelope | null) {
 
 async function healIfNeeded(b: Bot, r: Envelope | null, below: number) {
   if (!r || !r.state.alive) return;
-  if (r.state.hp / r.state.max_hp < below) await b.post("/healer", { hp: "all" });
+  if (r.state.hp / r.state.max_hp >= below) return;
+  // The healer is in town. Walking home is free, and so is walking back to a place you know.
+  const back = r.state.place ? { x: r.state.place.x, y: r.state.place.y } : null;
+  if (back) await b.post("/travel", { to: "town" });
+  await b.post("/healer", { hp: "all" });
+  if (back) await b.post("/travel", back);
+}
+
+/**
+ * Get to land that suits them, by the same rules as anyone: free to a place they know, a forest fight
+ * a step into land they don't. Aims for a tile at or a level under their own (a bold one goes a level
+ * over). Returns how many fights the walk cost.
+ */
+async function toHuntingGround(b: Bot, row: Row, mind: Mind, budget: number): Promise<number> {
+  const me = await b.get("/status");
+  if (isErr(me) || !me.state.alive) return 0;
+  const level = me.state.level;
+  const want = Math.max(1, level + ((mind.mood ?? 0) > 0 || row.personality === "reckless" ? 1 : 0));
+  const ok = (l: number) => l >= Math.max(1, level - 1) && l <= want;
+  if (me.state.place && ok(me.state.place.level)) return 0;
+  const known = (await pool.query<{ x: number; y: number }>("select x, y from explored where player_id = $1", [row.player_id])).rows
+    .map((t) => tileAt(t.x, t.y)).filter((t) => t.level <= want).sort((a, z) => z.level - a.level || Math.random() - 0.5);
+  const best = known[0];
+  if (best && ok(best.level)) { await b.post("/travel", { x: best.x, y: best.y }); return 0; }
+  // Nowhere known is right: start from the best they know and walk out.
+  if (best) await b.post("/travel", { x: best.x, y: best.y });
+  const seen = new Set(known.map((t) => `${t.x},${t.y}`));
+  let used = 0;
+  for (; used < budget; ) {
+    const s = await b.get("/status");
+    if (isErr(s) || !s.state.alive || s.state.forest_fights <= 0) break;
+    const [x, y] = s.state.place ? [s.state.place.x, s.state.place.y] : [0, 0];
+    if (s.state.place && ok(s.state.place.level)) break;
+    const steps = (Object.keys(DIRS) as Dir[]).map((d) => ({ d, t: tileAt(x + DIRS[d][0], y + DIRS[d][1]) }))
+      .filter((o) => !(o.t.x === 0 && o.t.y === 0) && o.t.level <= want)
+      .sort((a, z) => z.t.level - a.t.level || Number(seen.has(`${a.t.x},${a.t.y}`)) - Number(seen.has(`${z.t.x},${z.t.y}`)) || Math.random() - 0.5);
+    if (!steps.length) break;
+    const m = await b.post("/move", { dir: steps[0].d });
+    if (isErr(m) || m.events.some((e) => e.kind === "no_fights_left")) break;
+    used++;
+    seen.add(`${steps[0].t.x},${steps[0].t.y}`);
+  }
+  return used;
 }
 
 /** Townsfolk aren't sentimental: wear anything better, sell the rest, grab what's on the ground if it's better. */
@@ -139,9 +183,10 @@ const STYLE: Record<Personality, FightStyle> = {
   braggart: { runBelow: 0.45, healBelow: 0.7 },                  // brave in the tavern, quick in the forest
 };
 
-async function fights(b: Bot, n: number) {
+async function fights(b: Bot, n: number, row?: Row, mind?: Mind) {
   const st = STYLE[b.personality];
   let done = 0;
+  if (row) n -= await toHuntingGround(b, row, mind ?? {}, Math.max(0, n - 1));
   for (let i = 0; i < n; i++) {
     const r = await forestFight(b, st);
     if (!r) break;
@@ -149,9 +194,13 @@ async function fights(b: Bot, n: number) {
     done++;
     if (!r.state.alive) { b.log.push("died in the forest"); return; }
     await healIfNeeded(b, r, st.healBelow);
+    const before = r.state.place;
     await trainIfReady(b, r);
+    // Back out to the same spot after a trip to their master.
+    if (before) { const now = await b.get("/status"); if (!isErr(now) && !now.state.place && now.state.alive) await b.post("/travel", { x: before.x, y: before.y }); }
   }
-  b.log.push(`${done} forest fight${done === 1 ? "" : "s"}`);
+  const where = await b.get("/status");
+  b.log.push(`${done} fight${done === 1 ? "" : "s"}${!isErr(where) && where.state.place ? ` near ${where.state.place.name}` : ""}`);
 }
 
 async function bedInn(b: Bot) {
@@ -699,7 +748,7 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
   const share = last ? s.forest_fights : Math.max(1, Math.min(s.forest_fights, (FIGHTS[row.personality][i] ?? 3) + Math.floor(Math.random() * 3) - 1));
   for (const a of acts) {
     switch (a) {
-      case "hunt": await fights(b, share); break;
+      case "hunt": await fights(b, share, row, mind); break;
       case "explore": await exploreTrip(b, row, mind, share, day); break;
       case "tavern": await home(b); f = await gatherFacts(row, mind); await tavernTalk(b, row, mind, f); break;
       case "shop": await home(b); await shop(b); break;

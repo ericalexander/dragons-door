@@ -250,8 +250,8 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
   }
   const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop"];
   if (p.ground) a.unshift("take", "equip ground");
-  // Players head out into the world; townsfolk (who don't explore) still use the old forest.
-  if (p.role === "player") { a.unshift("explore"); } else if (t.forest_fights > 0) a.unshift("forest");
+  // Everyone heads out into the world to hunt.
+  a.unshift("explore");
   if (t.player_fights > 0) a.push("challenge");
   if (!t.flirted) a.push("flirt");
   if (!t.inn_used) a.push("inn");

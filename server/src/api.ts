@@ -413,10 +413,11 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
     await savePlayer(ctx, { ground: null });
   }
   // Out in the wild, what you meet depends on where you stand. In town, players head out first;
-  // townsfolk and plugins from before exploration still get the old forest at their own level.
+  // Only plugins from before exploration still get the old forest at their own level; everyone else,
+  // townsfolk included, hunts out in the wild.
   const here = inWild(ctx.p) ? tileAt(ctx.p.pos_x!, ctx.p.pos_y!) : null;
   const plugin = current()?.plugin;
-  if (!here && ctx.p.role === "player" && plugin && !older(plugin, "0.5.0")) {
+  if (!here && (ctx.p.role !== "player" || (plugin && !older(plugin, "0.5.0")))) {
     throw new GameError("in_town", "the wild starts at the town gate: explore first", 409);
   }
   const depth = here ? ctx.p.cave_depth ?? 0 : 0;
