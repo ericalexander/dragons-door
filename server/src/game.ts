@@ -33,6 +33,8 @@ export interface Player {
   client: unknown;
   weather_off: boolean;
   is_bot: boolean;
+  role: "player" | "townsfolk" | "npc";
+  spouse_id: string | null;
 }
 
 export interface Turns {
@@ -103,6 +105,8 @@ export interface PublicState {
   /** What things cost right now, so the narrator can quote before the player commits. */
   prices: { inn: number; heal_per_hp: number; heal_all: number };
   bank_trips_left: number;
+  /** Who they're married to, if anyone. */
+  spouse: string | null;
   /** The sky over the player, roughly. Only on status, forest and news, and only if they haven't turned it off. */
   weather?: import("./weather.js").Weather;
 }
@@ -136,7 +140,12 @@ export function effective(p: Player) {
   return { str: p.str + weapon(p.weapon_id).str, def: p.def + armor(p.armor_id).def };
 }
 
-export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0): PublicState {
+/** A room costs 100 a level; half that for anyone married to Violet, who keeps one aside. */
+export function innCost(p: Player): number {
+  return Math.floor(GAME.innCostPerLevel * p.level * (p.spouse_id ? 0.5 : 1));
+}
+
+export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0, spouse: string | null = null): PublicState {
   const b = GAME.bags.find((x) => x.id === p.bag_id) ?? GAME.bags[0];
   return {
     name: p.name,
@@ -168,11 +177,12 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     unread_mail: unreadMail,
     unread_news: unreadNews,
     prices: {
-      inn: GAME.innCostPerLevel * p.level,
+      inn: innCost(p),
       heal_per_hp: GAME.healerCostPerHpPerLevel * p.level,
       heal_all: (p.max_hp - p.hp) * GAME.healerCostPerHpPerLevel * p.level,
     },
     bank_trips_left: Math.max(0, GAME.bankTxPerDay - t.bank_tx),
+    spouse,
   };
 }
 

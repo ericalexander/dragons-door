@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState,
+  GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState, innCost,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -85,9 +85,10 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const bagUsed = await Bag.used(c, ctx.p.id);
     const unreadMail = await unreadCount(ctx);
     const newsUnread = await unreadNews(ctx);
+    const spouse = ctx.p.spouse_id ? (await c.query<{ name: string }>("select name from players where id = $1", [ctx.p.spouse_id])).rows[0]?.name ?? null : null;
     return {
       events: ctx.events,
-      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread),
+      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, spouse),
       actions: legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive),
       ...(ctx.hint ? { hint: ctx.hint } : {}),
     };
@@ -271,10 +272,10 @@ api.get("/public/realm", async (c) => {
     const today = realmDay(settings.resetHourUtc);
     const y = new Date(today + "T00:00:00Z"); y.setUTCDate(y.getUTCDate() - 1);
     const yesterday = y.toISOString().slice(0, 10);
-    const players = await db.query<{ n: string }>("select count(*)::text as n from players where not is_bot");
+    const players = await db.query<{ n: string }>("select count(*)::text as n from players where role = 'player'");
     const news = await db.query<{ day: string; kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
       "select day::text, kind, actor, target, detail from news where day in ($1, $2) and kind <> 'join' order by id desc limit 12", [today, yesterday]);
-    const top = await db.query("select name, class, level, is_bot as bot, dragon_kills from players order by level desc, exp desc limit 8");
+    const top = await db.query("select name, class, level, is_bot as bot, dragon_kills from players where role <> 'npc' order by level desc, exp desc limit 8");
     return {
       day: today,
       dragon_alive: settings.dragonAlive,
@@ -345,14 +346,14 @@ function newsLine(n: { kind: string; actor: string | null; target: string | null
     case "level_up": return `${n.actor} reached level ${n.detail.level}.`;
     case "dragon": return `${n.actor} slew the Red Dragon!`;
     case "dragon_death": return `${n.actor} was eaten by the Red Dragon.`;
-    case "married": return `${n.actor} married Violet.`;
+    case "married": return n.detail?.stole_from ? `${n.actor} won Violet's heart from ${n.detail.stole_from}.` : `${n.actor} married ${n.target ?? "Violet"}.`;
     case "loot": return `${n.actor} pried ${aOrAn(String(n.detail.item))} off a dead ${n.detail.monster}.`;
     default: return `${n.actor ?? "Someone"} did something (${n.kind}).`;
   }
 }
 
 api.get("/rankings", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  const r = await ctx.c.query("select name, class, level, exp, alive, dragon_kills, is_bot as bot from players order by level desc, exp desc limit 20");
+  const r = await ctx.c.query("select name, class, level, exp, alive, dragon_kills, is_bot as bot from players where role <> 'npc' order by level desc, exp desc limit 20");
   ctx.events.push({ kind: "rankings", players: r.rows });
 })));
 
@@ -620,7 +621,7 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
   requireAlive(ctx);
   await requireNoEncounter(ctx);
   if (ctx.t.inn_used) { ctx.events.push({ kind: "already_at_inn" }); return; }
-  const cost = GAME.innCostPerLevel * ctx.p.level;
+  const cost = innCost(ctx.p);
   if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold }); return; }
   await savePlayer(ctx, { gold: ctx.p.gold - cost, location: "inn" });
   await saveTurns(ctx, { inn_used: true });
@@ -633,7 +634,7 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
 
 api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   const r = await ctx.c.query("select author, body, ts from tavern where day = $1 order by id desc limit 20", [ctx.day]);
-  const online = await ctx.c.query("select name from players where last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
+  const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
   ctx.events.push({ kind: "bartender", recently_seen: online.rows.map((x) => x.name), gem_price: 100 * ctx.p.level, flirted_today: ctx.t.flirted });
   const bard = bardFor(ctx.day);
@@ -681,14 +682,14 @@ async function rumorFacts(ctx: Ctx, kind: Rumor): Promise<Record<string, unknown
       const d = new Date(ctx.day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + 1);
       return { bard: bardFor(d.toISOString().slice(0, 10)).name, when: "tomorrow" };
     }
-    case "top_player": return one("select name, class, level from players order by level desc, exp desc limit 1");
+    case "top_player": return one("select name, class, level from players where role <> 'npc' order by level desc, exp desc limit 1");
     case "forest_danger": {
       const m = await one<{ monster: string; n: string }>(
         "select detail->>'monster' as monster, count(*)::text as n from news where kind = 'forest_death' and ts > now() - interval '2 days' group by 1 order by count(*) desc limit 1");
       return m ? { monster: m.monster, deaths: Number(m.n), recently: true } : null;
     }
     case "heavy_purse": return one(
-      "select name, level from players where alive and location = 'fields' and gold > 0 and id <> $1 and created_at < now() - interval '24 hours' order by gold desc limit 1", [ctx.p.id]);
+      "select name, level from players where role <> 'npc' and alive and location = 'fields' and gold > 0 and id <> $1 and created_at < now() - interval '24 hours' order by gold desc limit 1", [ctx.p.id]);
     case "recent_loot": return one("select actor as name, detail->>'item' as item, detail->>'monster' as monster from news where kind = 'loot' order by id desc limit 1");
     case "newest_arrival": return one("select actor as name from news where kind = 'join' order by id desc limit 1");
     case "dragon": {
@@ -762,14 +763,37 @@ api.post("/flirt", async (c) => c.json(await withPlayer(c.req.header("authorizat
   requireAlive(ctx);
   if (ctx.t.flirted) { ctx.events.push({ kind: "already_flirted" }); return; }
   await saveTurns(ctx, { flirted: true });
+  const violet = (await ctx.c.query<{ id: string }>("select id from players where role = 'npc' and name = 'Violet'")).rows[0];
+  // Already hers: no second wedding, just a good evening.
+  if (violet && ctx.p.spouse_id === violet.id) {
+    await savePlayer(ctx, { charm: ctx.p.charm + 1 });
+    ctx.events.push({ kind: "flirt", outcome: "spouse", charm_delta: 1, charm: ctx.p.charm });
+    return;
+  }
   const r = roll(99) + ctx.p.charm;
   let outcome: string; let delta = 0;
+  let stoleFrom: string | null = null;
   if (r < 30) { outcome = "ignored"; }
   else if (r < 70) { outcome = "smile"; delta = 1; }
   else if (r < 95) { outcome = "kiss"; delta = 2; }
-  else { outcome = "married"; delta = 5; await post(ctx, "married", ctx.p.name, null, {}); }
+  else {
+    outcome = "married"; delta = 5;
+    if (violet) {
+      // Violet is married to one person at a time. Winning her heart takes her from whoever had it.
+      const prev = await ctx.c.query<{ id: string; name: string }>("select id, name from players where spouse_id = $1 for update", [violet.id]);
+      if (prev.rowCount && prev.rows[0].id !== ctx.p.id) {
+        stoleFrom = prev.rows[0].name;
+        await ctx.c.query("update players set spouse_id = null where id = $1", [prev.rows[0].id]);
+        await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [prev.rows[0].id, { kind: "spouse_stolen", spouse: "Violet", by: ctx.p.name }]);
+      }
+      if (ctx.p.spouse_id && ctx.p.spouse_id !== violet.id) await savePlayer(ctx, { spouse_id: null });
+      await savePlayer(ctx, { spouse_id: violet.id });
+    }
+    await post(ctx, "married", ctx.p.name, "Violet", stoleFrom ? { stole_from: stoleFrom } : {});
+    await logEvent(ctx, "married", { spouse: "Violet", stole: Boolean(stoleFrom) });
+  }
   await savePlayer(ctx, { charm: ctx.p.charm + delta });
-  ctx.events.push({ kind: "flirt", outcome, charm_delta: delta, charm: ctx.p.charm });
+  ctx.events.push({ kind: "flirt", outcome, charm_delta: delta, charm: ctx.p.charm, ...(stoleFrom ? { stole_from: stoleFrom } : {}) });
 })));
 
 // ---------- bag ----------
@@ -852,7 +876,7 @@ api.post("/mail", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     if (!seasoned(ctx, "send mail")) return;
     if (ctx.t.messages_sent >= GAME.messagesPerDay) { ctx.events.push({ kind: "mail_limit", per_day: GAME.messagesPerDay }); return; }
-    const r = await ctx.c.query<{ id: string; name: string; is_bot: boolean }>("select id, name, is_bot from players where lower(name) = lower($1)", [body.to]);
+    const r = await ctx.c.query<{ id: string; name: string; is_bot: boolean; role: string }>("select id, name, is_bot, role from players where lower(name) = lower($1)", [body.to]);
     if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.to }); return; }
     const to = r.rows[0];
     if (to.id === ctx.p.id) { ctx.events.push({ kind: "mail_self" }); return; }
@@ -863,7 +887,7 @@ api.post("/mail", async (c) => {
     // If they've muted you, it looks sent from your side but never arrives.
     const muted = await ctx.c.query("select 1 from mutes where player_id = $1 and muted_id = $2", [to.id, ctx.p.id]);
     if (!muted.rowCount) await ctx.c.query("insert into messages (from_player, to_player, body) values ($1,$2,$3)", [ctx.p.id, to.id, body.body]);
-    ctx.events.push({ kind: "mail_sent", to: to.name, townsfolk: to.is_bot, sent_left: GAME.messagesPerDay - ctx.t.messages_sent });
+    ctx.events.push({ kind: "mail_sent", to: to.name, townsfolk: to.role === "townsfolk", character: to.role === "npc", sent_left: GAME.messagesPerDay - ctx.t.messages_sent });
   }));
 });
 
@@ -938,6 +962,7 @@ api.post("/challenge", async (c) => {
     const r = await ctx.c.query<Player>("select * from players where lower(name) = lower($1) for update", [body.name]);
     if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.name }); return; }
     const d = numify(r.rows[0]);
+    if (d.role === "npc") { ctx.events.push({ kind: "cannot_challenge", name: d.name, reason: "not a fighter" }); return; }
     if (!d.alive) { ctx.events.push({ kind: "target_dead", name: d.name }); return; }
     if (d.location === "inn") { ctx.events.push({ kind: "target_at_inn", name: d.name }); return; }
     if (Math.abs(d.level - ctx.p.level) > 3) { ctx.events.push({ kind: "level_gap", name: d.name, their_level: d.level }); return; }

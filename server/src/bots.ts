@@ -178,7 +178,7 @@ async function raid(b: Bot) {
   await b.post("/healer", { hp: "all" });
   const target = await pool.query<{ name: string }>(
     `select name from players
-     where alive and location = 'fields' and gold > 0 and name <> $1
+     where role <> 'npc' and alive and location = 'fields' and gold > 0 and name <> $1
        and abs(level - $2) <= 3 and created_at < now() - interval '24 hours'
      order by gold desc, level desc limit 1`,
     [b.name, me.state.level],
@@ -305,9 +305,9 @@ async function brag(b: Bot) {
 async function fortune(b: Bot) {
   // Madam Orsolya reads the cards for whoever sleeps richest in the fields. Vesper reads the same cards.
   const r = await pool.query<{ name: string; gold: string }>(
-    `select name, gold::text from players where alive and location = 'fields' and gold > 0 and name <> $1
+    `select name, gold::text from players where role <> 'npc' and alive and location = 'fields' and gold > 0 and name <> $1
      order by gold desc limit 1`, [b.name]);
-  const top = await pool.query<{ name: string }>("select name from players where name <> $1 order by level desc, exp desc limit 1", [b.name]);
+  const top = await pool.query<{ name: string }>("select name from players where role <> 'npc' and name <> $1 order by level desc, exp desc limit 1", [b.name]);
   if (r.rowCount && roll(99) < 70) {
     const t = r.rows[0].name;
     await say(b, pick([
@@ -437,7 +437,7 @@ async function ensureRoster(): Promise<{ player_id: string; name: string; person
     });
     const j = (await res.json()) as { api_key?: string; error?: string };
     if (!j.api_key) continue; // name taken by a human, or similar; skip rather than fight over it
-    const p = await pool.query<{ id: string }>("update players set is_bot = true where name = $1 returning id", [spec.name]);
+    const p = await pool.query<{ id: string }>("update players set is_bot = true, role = 'townsfolk' where name = $1 returning id", [spec.name]);
     await pool.query("insert into bots (player_id, personality, api_key) values ($1,$2,$3)", [p.rows[0].id, spec.personality, j.api_key]);
     existing.rows.push({ player_id: p.rows[0].id, name: spec.name, personality: spec.personality, api_key: j.api_key });
   }
