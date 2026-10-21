@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.6.1",
+    "lore": "People in this town talk, if you let them. Stop and pass the time with whoever's about. Odile at her bench, Violet behind the bar, Pip in the square. You never know what someone will let slip. And if the Cartographer is in town, she might take a pencil to your map.",
+    "plain": "You can talk to townsfolk and characters who are around (just ask the narrator to talk to them). The Cartographer, when she visits, may mark nearby places on your map."
+  },
+  {
     "version": "0.6.0",
     "lore": "A new sign hangs off the square: ODILE, GEMCUTTER, burned into the wood. She has a loupe screwed into one eye and opinions about your ore. She'll sell you a pickaxe, and the caves in the hills, cold and dripping and three levels deep, will give a little to anyone who swings one. Not too much a day. Things live down there too.",
     "plain": "Caves are open: (D)escend at a cave mouth, then (M)ine with a pickaxe (6 swings a day, apart from forest fights) or go (D)eeper. Take ore and gems to Odile's (W)orkshop in town to have jewelry made: one piece worn, adding strength, defense or charm."

@@ -14,7 +14,7 @@ import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
-import { DIRS, LEGEND, renderMap, tileAt, type Dir } from "./world.js";
+import { DIRS, LEGEND, renderMap, tileAt, type Dir, type Tile } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
@@ -721,15 +721,47 @@ async function othersHere(ctx: Ctx, x: number, y: number) {
     ...(o.personality && o.mind?.goal ? { on_mind: goalLabel(o.name, o.personality, o.mind.goal) } : {}) }));
 }
 
-/** The map around you, where each way leads, and the places you know. */
+/** Places they've heard of but not yet been: drawn on the map, but they still have to walk there. */
+async function heardSet(ctx: Ctx): Promise<Map<string, string | null>> {
+  const r = await ctx.c.query<{ x: number; y: number; heard_from: string | null }>("select x, y, heard_from from rumors where player_id = $1", [ctx.p.id]);
+  return new Map(r.rows.map((t) => [`${t.x},${t.y}`, t.heard_from]));
+}
+
+/** "3 east and 1 north of town". */
+export function directions(x: number, y: number): string {
+  const parts = [x ? `${Math.abs(x)} ${x > 0 ? "east" : "west"}` : "", y ? `${Math.abs(y)} ${y > 0 ? "south" : "north"}` : ""].filter(Boolean);
+  return parts.length ? `${parts.join(" and ")} of town` : "town";
+}
+
+/** Mark a place on their map as heard of. Returns false if they already knew it. */
+async function hearOf(ctx: Ctx, x: number, y: number, from: string): Promise<boolean> {
+  if (x === 0 && y === 0) return false;
+  const known = await ctx.c.query("select 1 from explored where player_id = $1 and x = $2 and y = $3", [ctx.p.id, x, y]);
+  if (known.rowCount) return false;
+  const r = await ctx.c.query("insert into rumors (player_id, x, y, heard_from) values ($1,$2,$3,$4) on conflict do nothing returning 1", [ctx.p.id, x, y, from]);
+  return Boolean(r.rowCount);
+}
+
+/** The map around you, where each way leads, and the places you know or have heard of. */
 api.get("/map", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   const ex = await exploredSet(ctx);
+  const heard = await heardSet(ctx);
+  const seen = new Set([...ex, ...heard.keys()]);
   const [x, y] = inWild(ctx.p) ? [ctx.p.pos_x!, ctx.p.pos_y!] : [0, 0];
-  const ways = Object.fromEntries((Object.keys(DIRS) as Dir[]).map((d) => [d, describeTile(x + DIRS[d][0], y + DIRS[d][1], ex)]));
+  const ways = Object.fromEntries((Object.keys(DIRS) as Dir[]).map((d) => {
+    const t = describeTile(x + DIRS[d][0], y + DIRS[d][1], seen);
+    const k = `${x + DIRS[d][0]},${y + DIRS[d][1]}`;
+    return [d, heard.has(k) && !ex.has(k) ? { ...t, heard_of: true } : t];
+  }));
   const known = await ctx.c.query<{ x: number; y: number }>(
     "select e.x, e.y from explored e where e.player_id = $1 order by abs(e.x) + abs(e.y), e.at limit 40", [ctx.p.id]);
   const places = known.rows.map((t) => { const k = tileAt(t.x, t.y); return { x: t.x, y: t.y, name: k.name, terrain: k.terrain, level: k.level, poi: k.poi }; });
-  ctx.events.push({ kind: "map", here: describeTile(x, y, new Set([...ex, `${x},${y}`])), ways, map: renderMap(x, y, ex), legend: LEGEND, known_places: places });
+  const heardOf = [...heard.entries()].filter(([k]) => !ex.has(k)).slice(0, 12).map(([k, from]) => {
+    const [hx, hy] = k.split(",").map(Number);
+    const t = tileAt(hx, hy);
+    return { x: hx, y: hy, name: t.name, terrain: t.terrain, poi: t.poi, where: directions(hx, hy), heard_from: from };
+  });
+  ctx.events.push({ kind: "map", here: describeTile(x, y, new Set([...seen, `${x},${y}`])), ways, map: renderMap(x, y, seen), legend: LEGEND, known_places: places, heard_of: heardOf });
 })));
 
 /** One step north, south, east or west. A step into the wild costs a fight; walking into town is free. */
@@ -783,7 +815,11 @@ api.post("/travel", async (c) => {
       return;
     }
     const known = await ctx.c.query("select 1 from explored where player_id = $1 and x = $2 and y = $3", [ctx.p.id, body.x, body.y]);
-    if (!known.rowCount) { ctx.events.push({ kind: "unknown_place", x: body.x, y: body.y }); return; }
+    if (!known.rowCount) {
+      const heard = await ctx.c.query("select 1 from rumors where player_id = $1 and x = $2 and y = $3", [ctx.p.id, body.x, body.y]);
+      ctx.events.push({ kind: "unknown_place", x: body.x, y: body.y, ...(heard.rowCount ? { heard_of: true, why: "you've only heard of it; walk there the first time" } : {}) });
+      return;
+    }
     await leaveInn(ctx);
     await leaveGround(ctx);
     await savePlayer(ctx, { pos_x: body.x, pos_y: body.y, cave_depth: null });
@@ -1033,6 +1069,110 @@ async function rumorFacts(ctx: Ctx, kind: Rumor): Promise<Record<string, unknown
   }
 }
 
+/**
+ * Talk to someone who's about: a townsperson in the square, the tavern or the same spot in the wild,
+ * or one of the fixed characters where they keep. The narrator plays the conversation. Now and then
+ * (at most once a day) they let slip a place someone found, and it's marked on your map.
+ */
+api.post("/talk", async (c) => {
+  const body = z.object({ to: z.string().trim().min(1).max(40) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    const r = await ctx.c.query<{ id: string; name: string; role: string; class: string; level: number; alive: boolean; pos_x: number | null; pos_y: number | null; location: "inn" | "fields"; personality: Personality | null; mind: Mind | null }>(
+      `select p.id, p.name, p.role, p.class, p.level, p.alive, p.pos_x, p.pos_y, p.location, b.personality, b.mind
+       from players p left join bots b on b.player_id = p.id where lower(p.name) = lower($1) and p.role in ('townsfolk', 'npc')`, [body.to]);
+    const who = r.rows[0];
+    if (!who) { ctx.events.push({ kind: "no_such_person", name: body.to, note: "only townsfolk and the realm's characters can be talked to this way; players get mail" }); return; }
+
+    // Are they here?
+    let where = "";
+    if (who.role === "townsfolk") {
+      if (inWild(ctx.p)) {
+        if (who.pos_x !== ctx.p.pos_x || who.pos_y !== ctx.p.pos_y) { ctx.events.push({ kind: "not_around", name: who.name, where: "not out here" }); return; }
+        where = "here in the wild";
+      } else {
+        const today = who.mind?.today?.day === ctx.day ? who.mind.today.sessions : undefined;
+        const w = whereabouts(who.personality!, who.name, ctx.day, new Date(), who.alive, {
+          sessions: today, away: awayToday(ctx.day, who.name, who.personality!),
+          wild: who.pos_x === null ? null : tileAt(who.pos_x, who.pos_y!).name, sleeps: who.location,
+        });
+        if (!["square", "heading", "tavern"].includes(w.where)) {
+          const said = w.where === "asleep" ? "asleep" : w.where === "dead" ? "dead until morning" : w.where === "away" ? `away for the day: ${w.why}` : w.where === "wild" ? "out in the wild" : w.where === "unseen" ? "nowhere to be seen" : `busy (${w.where})`;
+          ctx.events.push({ kind: "not_around", name: who.name, where: said }); return;
+        }
+        where = w.where === "tavern" ? "the tavern" : "the square";
+      }
+    } else {
+      requireInTown(ctx, who.name);
+      const s = suitor(who.name);
+      if (s && !available(s)) { ctx.events.push({ kind: "not_around", name: who.name, hours: s.hours ?? null, days: s.days ?? null }); return; }
+      const bardNames = ["Fennick Reed", "Dunstan the Unfinished", "Corwin Lark", "Wren"];
+      if (bardNames.includes(who.name) && bardFor(ctx.day).name !== who.name) { ctx.events.push({ kind: "not_around", name: who.name, where: "not playing tonight" }); return; }
+      where = who.name === "Odile" ? "her workshop" : s ? s.where : "the tavern";
+    }
+
+    const talked = (ctx.t.talked ?? []) as string[];
+    const again = talked.includes(who.name);
+    if (!again) await saveTurns(ctx, { talked: [...talked, who.name] });
+
+    // A little gossip, now and then: a place someone found, preferably one they found themselves.
+    let gossip: Record<string, unknown> | null = null;
+    if (!again && !ctx.t.gossip_heard && roll(99) < 30) {
+      const ex = await exploredSet(ctx);
+      const far = Math.max(2, ...[...ex].map((k) => { const [a, b] = k.split(",").map(Number); return Math.max(Math.abs(a), Math.abs(b)); }));
+      const g = (await ctx.c.query<{ x: number; y: number; name: string; terrain: string; poi: string | null; found_by: string | null }>(
+        `select d.x, d.y, d.name, d.terrain, d.poi, p.name as found_by
+         from discoveries d left join players p on p.id = d.found_by
+         where not exists (select 1 from explored e where e.player_id = $1 and e.x = d.x and e.y = d.y)
+           and not exists (select 1 from rumors r where r.player_id = $1 and r.x = d.x and r.y = d.y)
+           and greatest(abs(d.x), abs(d.y)) <= $2
+         order by (d.found_by = $3) desc nulls last, (d.poi is not null) desc, random() limit 1`, [ctx.p.id, far + 3, who.id])).rows[0];
+      if (g && await hearOf(ctx, g.x, g.y, who.name)) {
+        await saveTurns(ctx, { gossip_heard: true });
+        gossip = { place: g.name, terrain: g.terrain, poi: g.poi, where: directions(g.x, g.y), found_by: g.found_by, they_found_it: g.found_by === who.name };
+        await logEvent(ctx, "gossip", { from: who.name, x: g.x, y: g.y, poi: g.poi });
+      }
+    }
+
+    const mind = who.mind ?? {};
+    ctx.events.push({
+      kind: "talk", name: who.name, where, again,
+      ...(who.role === "townsfolk" ? {
+        townsfolk: true, class: who.class, level: who.level,
+        ...(mind.goal && who.personality ? { on_mind: goalLabel(who.name, who.personality, mind.goal) } : {}),
+        mood: (mind.mood ?? 0) > 0 ? "in good spirits" : (mind.mood ?? 0) < 0 ? "out of sorts" : "as usual",
+        ...(mind.grudge?.name.toLowerCase() === ctx.p.name.toLowerCase() ? { grudge_against_you: true } : {}),
+        ...(mind.done?.[0] ? { last_achievement: mind.done[0].line } : {}),
+      } : { character: true }),
+      ...(gossip ? { gossip } : {}),
+    });
+    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${again ? " You've already talked today; keep it brief." : ""}`;
+  }));
+});
+
+/** The Cartographer's gift: a few places just past the edge of what you know, sketched into your map. A cave if one's near. */
+async function sketchNearby(ctx: Ctx, from: string, n: number) {
+  const ex = await exploredSet(ctx);
+  const heard = await heardSet(ctx);
+  const far = Math.max(1, ...[...ex].map((k) => { const [a, b] = k.split(",").map(Number); return Math.max(Math.abs(a), Math.abs(b)); }));
+  const reach = far + 2;
+  const pool: Tile[] = [];
+  for (let yy = -reach; yy <= reach; yy++) for (let xx = -reach; xx <= reach; xx++) {
+    if (!xx && !yy) continue;
+    const k = `${xx},${yy}`;
+    if (ex.has(k) || heard.has(k)) continue;
+    pool.push(tileAt(xx, yy));
+  }
+  pool.sort((a, z) => (a.poi ? -10 : 0) - (z.poi ? -10 : 0) || a.ring - z.ring || Math.random() - 0.5);
+  const out: { name: string; terrain: string; poi: string | null; where: string }[] = [];
+  for (const t of pool) {
+    if (out.length >= n) break;
+    if (await hearOf(ctx, t.x, t.y, from)) out.push({ name: t.name, terrain: t.terrain, poi: t.poi, where: directions(t.x, t.y) });
+  }
+  return out;
+}
+
 /** One chat a day with the day's visitor: a rumor built on real facts, and sometimes a small gift. */
 api.post("/square/talk", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
@@ -1053,8 +1193,14 @@ api.post("/square/talk", async (c) => c.json(await withPlayer(c.req.header("auth
   if (gift === "charm") { amount = 1; await savePlayer(ctx, { charm: ctx.p.charm + 1 }); }
   if (gift === "heal") { amount = ctx.p.max_hp - ctx.p.hp; await savePlayer(ctx, { hp: ctx.p.max_hp }); }
   if (gift === "fight") { amount = 1; turns.forest_fights = ctx.t.forest_fights + 1; }
+  let sketched: { name: string; terrain: string; poi: string | null; where: string }[] = [];
+  if (gift === "map") {
+    sketched = await sketchNearby(ctx, v.name, 3);
+    amount = sketched.length;
+    if (!amount) gift = "nothing";
+  }
   await saveTurns(ctx, turns);
-  ctx.events.push({ kind: "visitor_talk", visitor: v.name, description: v.description, rumor, gift, amount, ...(lucky ? { charm_luck: true } : {}) });
+  ctx.events.push({ kind: "visitor_talk", visitor: v.name, description: v.description, rumor, gift, amount, ...(sketched.length ? { sketched } : {}), ...(lucky ? { charm_luck: true } : {}) });
   ctx.hint = `Play ${v.name} in their own voice: a short exchange, then the rumor told as gossip using only the facts given, then the gift (if any) as something they do. Two to five sentences.`;
   await logEvent(ctx, "visitor", { visitor: v.name, rumor: rumor?.kind ?? null, gift, amount });
 }, { weather: true })));

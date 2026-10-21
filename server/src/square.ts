@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { roll } from "./combat.js";
 
 export type Rumor = "next_bard" | "top_player" | "forest_danger" | "heavy_purse" | "recent_loot" | "newest_arrival" | "dragon";
-export type VisitorGift = "nothing" | "gold" | "charm" | "heal" | "fight";
+export type VisitorGift = "nothing" | "gold" | "charm" | "heal" | "fight" | "map";
 
 export interface Visitor {
   name: string;
@@ -26,7 +26,7 @@ export const VISITORS: Visitor[] = [
   { name: "Bram the Lost", description: "a merchant who took a wrong turn three towns ago and is too proud to admit it; pays well for directions",
     rumors: ["newest_arrival", "top_player"], gifts: [["gold", 45], ["nothing", 25]] },
   { name: "The Cartographer", description: "a thin woman sketching the roads in a leather book, asking everyone what lies past the forest",
-    rumors: ["forest_danger", "dragon"], gifts: [["nothing", 60], ["fight", 10]] },
+    rumors: ["forest_danger", "dragon"], gifts: [["map", 50], ["nothing", 20], ["fight", 10]] },
   { name: "Old Kell", description: "a retired adventurer with one eye and a hundred war stories, most of them true; makes you want to go and do something",
     rumors: ["dragon", "top_player", "forest_danger"], gifts: [["fight", 25], ["nothing", 45]] },
   { name: "The Herald of Ashford", description: "a herald in faded livery from a town down the road, reading proclamations nobody asked for",

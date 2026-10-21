@@ -60,6 +60,9 @@ export interface Turns {
   visitor_talked: boolean;
   /** Swings of the pick taken today. */
   swings: number;
+  /** Who they've talked to today, and whether anyone's let slip a place yet. */
+  talked: string[];
+  gossip_heard: boolean;
 }
 
 export interface Monster {

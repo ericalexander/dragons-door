@@ -21913,6 +21913,12 @@ server.tool(
   async ({ name, on }) => text(await call("POST", "/v1/mute", { name, on }))
 );
 server.tool("square", "Look around the town square: which townsfolk and players are about right now, where the others are, the time of day, and the day's visitor (if any). Call when the player arrives in Town.", {}, async () => text(await call("GET", "/v1/square")));
+server.tool(
+  "talk",
+  "Talk to someone who's about: a townsperson in the square or tavern (or camped where the player stands in the wild), or one of the realm's characters where they keep (Odile at her workshop, Violet in the tavern, Rowan, Mara, Jory, tonight's bard). Returns who they are and what's on their mind; now and then they let slip a place, which is marked on the player's map.",
+  { to: external_exports.string().min(1).max(40) },
+  async ({ to }) => text(await call("POST", "/v1/talk", { to }))
+);
 server.tool("square_talk", "Talk to the day's visitor in the town square. Once a day. Returns a rumor built on real realm facts and sometimes a small gift.", {}, async () => text(await call("POST", "/v1/square/talk")));
 server.tool("bard", "Ask tonight's bard in the tavern for a song. Once a day. A different bard plays on different days; the song sometimes brings a small gift. The result is material for a song; you write and print four lines of lyrics.", {}, async () => text(await call("POST", "/v1/bard")));
 server.tool(
