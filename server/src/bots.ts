@@ -188,38 +188,67 @@ async function raid(b: Bot) {
 }
 
 async function gossip(b: Bot) {
-  // Reads yesterday's paper and leaves a line about it.
+  // Old Tam reads yesterday's paper and has something to say about it. Never the same line twice in a row of five.
   const news = await b.get("/news?day=yesterday");
-  let line = "Quiet night. Too quiet. Somebody go poke the forest.";
-  if (!isErr(news)) {
-    type NewsEvent = Event & { what: string; actor?: string; target?: string; detail: Record<string, unknown> };
-    const items = news.events.filter((e) => e.kind === "news") as NewsEvent[];
-    const kills = items.filter((e) => e.what === "pvp_kill");
-    const deaths = items.filter((e) => e.what === "forest_death");
-    const levels = items.filter((e) => e.what === "level_up");
-    const loot = items.filter((e) => e.what === "loot");
-    const pick = <T,>(a: T[]) => a[roll(a.length - 1)];
-    if (kills.length) {
-      const k = pick(kills);
-      line = pick([
-        `Heard ${k.actor} found ${k.target} asleep in the fields. ${k.detail.gold} gold lighter this morning. Bank it, children.`,
-        `${k.target} owes me a drink and now can't pay. Thank ${k.actor} for that.`,
-      ]);
-    } else if (deaths.length) {
-      const d = pick(deaths);
-      line = pick([
-        `A ${d.detail.monster} got ${d.actor}. The ${d.detail.monster}. I've shooed worse off my porch.`,
-        `Pour one out for ${d.actor}. Then pour one for the ${d.detail.monster}, it earned it.`,
-      ]);
-    } else if (loot.length) {
-      const l = pick(loot);
-      line = `${l.actor} is walking around with a ${l.detail.item} off a dead ${l.detail.monster} like they forged it themselves.`;
-    } else if (levels.length) {
-      const l = pick(levels);
-      line = `${l.actor} made level ${l.detail.level}. Don't let it go to your head, I remember when you fought a mosquito.`;
-    }
-  }
-  await b.post("/tavern", { body: line.slice(0, 280) });
+  type NewsEvent = Event & { what: string; actor?: string; target?: string; detail: Record<string, unknown> };
+  const items = isErr(news) ? [] : (news.events.filter((e) => e.kind === "news") as NewsEvent[]);
+  const of = (what: string) => items.filter((e) => e.what === what);
+  const pick = <T,>(a: T[]) => a[roll(a.length - 1)];
+  const candidates: string[] = [];
+  const add = (lines: string[]) => candidates.push(...lines);
+  const a = (item: unknown) => { const t = String(item); return /'s |(Armor|Mail|Protection)$/.test(t) ? t : (/^[AEIOU]/i.test(t) ? "an " : "a ") + t; };
+
+  for (const k of of("pvp_kill")) add([
+    `Heard ${k.actor} found ${k.target} asleep in the fields. ${k.detail.gold} gold lighter this morning. Bank it, children.`,
+    `${k.target} owes me a drink and now can't pay. Thank ${k.actor} for that.`,
+    `${k.actor} walked off with ${k.detail.gold} of ${k.target}'s gold last night. In my day we at least said good evening first.`,
+    `If you're wondering why ${k.target} is limping, ask ${k.actor}. Actually, don't. Just sleep at the inn.`,
+  ]);
+  for (const k of of("pvp_survived")) add([
+    `${k.actor} went after ${k.target} in the night and came home flat on a plank. Good for ${k.target}.`,
+    `Somebody tell ${k.actor} that ${k.target} sleeps with one eye open. Too late, I suppose.`,
+  ]);
+  for (const d of of("forest_death")) add([
+    `A ${d.detail.monster} got ${d.actor}. The ${d.detail.monster}. I've shooed worse off my porch.`,
+    `Pour one out for ${d.actor}. Then pour one for the ${d.detail.monster}, it earned it.`,
+    `${d.actor} went into the woods with a plan. The ${d.detail.monster} had a better one.`,
+    `They'll be back tomorrow, ${d.actor} will. They always are. The ${d.detail.monster} should be worried.`,
+  ]);
+  for (const m of of("married")) add([
+    `${m.actor} married Violet. Again, someone. Every week it's someone. She's never once mentioned it to me.`,
+    `Congratulations to ${m.actor} and Violet. I give it until the next pretty face walks in.`,
+  ]);
+  for (const l of of("loot")) add([
+    `${l.actor} is walking around with ${a(l.detail.item)} off a dead ${l.detail.monster} like they forged it themselves.`,
+    `${l.actor} pried ${a(l.detail.item)} off a ${l.detail.monster}. Washed it first, I hope.`,
+  ]);
+  for (const l of of("level_up")) add([
+    `${l.actor} made level ${l.detail.level}. Don't let it go to your head, I remember when you fought a mosquito.`,
+    `Level ${l.detail.level}, ${l.actor}. Your master must be getting soft.`,
+    `${l.actor} came back from their master with a new swagger and a black eye. Level ${l.detail.level}, they tell me.`,
+  ]);
+  for (const d of of("dragon")) add([
+    `${d.actor} killed the dragon. THE dragon. I'm going to need a minute, and a drink.`,
+    `The dragon's dead and ${d.actor} did it. It'll be back by morning, mind. They always come back.`,
+  ]);
+  for (const d of of("dragon_death")) add([
+    `${d.actor} went to see the dragon. The dragon saw them first.`,
+  ]);
+  if (!candidates.length) add([
+    "Quiet night. Too quiet. Somebody go poke the forest.",
+    "Nothing in the paper. Either everyone's behaving or the paper's lying. I know which I'd bet on.",
+    "Not a single robbery last night. I'm almost disappointed in you all.",
+    "Slow day yesterday. I spent most of it watching Grimwald try to find his other boot.",
+    "No news is good news, my mother said. She never lived here.",
+    "I've been in this chair since before the dragon had teeth, and I've never seen a duller day than yesterday.",
+  ]);
+
+  // Don't repeat any of his last five posts.
+  const recent = await pool.query<{ body: string }>("select body from tavern where author = $1 order by id desc limit 5", [b.name]);
+  const said = new Set(recent.rows.map((r) => r.body));
+  const fresh = candidates.map((l) => l.slice(0, 280)).filter((l) => !said.has(l));
+  const line = pick(fresh.length ? fresh : candidates).slice(0, 280);
+  await b.post("/tavern", { body: line });
   b.log.push("posted in the tavern");
 }
 
