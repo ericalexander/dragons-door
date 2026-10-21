@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.7.3",
+    "lore": "The town clerk, who has never once been in the forest, has decided it's misleading to count your day in forest fights when most of it is spent walking. From now on it's simply turns: a hunt is a turn, a step into the wild is a turn.",
+    "plain": "\"Forest\" on the status line is now \"Turns\". Nothing else changed: hunting and each step into the wild still use one."
+  },
+  {
     "version": "0.7.0",
     "lore": "The wild isn't only teeth and claws anymore. Out past the gate you might find a traveler bleeding by a rock, a shrine with coins gone green in the bowl, a troll under a bridge with a riddle and a grudge, or a ring of mushrooms humming in the grass. What you do about it is up to you. What comes of it isn't.",
     "plain": "Exploring now turns up events besides fights, a few a day: pick a choice, and see what happens (gold, healing, charm, gems, an extra fight, places marked on your map, or trouble)."

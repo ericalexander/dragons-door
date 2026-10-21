@@ -21882,11 +21882,11 @@ server.tool(
   async ({ day }) => text(await call("GET", `/v1/news?day=${day}`))
 );
 server.tool("rankings", "Top 20 players by level and experience.", {}, async () => text(await call("GET", "/v1/rankings")));
-server.tool("forest", "Hunt where you stand in the wild (what you meet depends on the place). Uses one forest fight. Starts an encounter. In town, explore first.", {}, async () => text(await call("POST", "/v1/forest")));
+server.tool("forest", "Hunt where you stand in the wild (what you meet depends on the place). Uses one turn. Starts an encounter. In town, explore first.", {}, async () => text(await call("POST", "/v1/forest")));
 server.tool("map", "The map around the player: where they stand, what lies each way, an ASCII map of what they've explored, and the places they know.", {}, async () => text(await call("GET", "/v1/map")));
 server.tool(
   "move",
-  "Take one step north, south, east or west. A step into the wild costs a forest fight; stepping into town is free. Reveals new land the first time.",
+  "Take one step north, south, east or west. A step into the wild costs a turn; stepping into town is free. Reveals new land the first time.",
   { dir: external_exports.enum(["north", "south", "east", "west"]) },
   async ({ dir }) => text(await call("POST", "/v1/move", { dir }))
 );
@@ -21904,13 +21904,13 @@ server.tool(
 );
 server.tool(
   "cave",
-  "Caves, from a cave mouth in the wild. descend: go in (free). deeper: down a level, darker and richer (costs a forest fight; three levels). climb: back out to the surface (free).",
+  "Caves, from a cave mouth in the wild. descend: go in (free). deeper: down a level, darker and richer (costs a turn; three levels). climb: back out to the surface (free).",
   { op: external_exports.enum(["descend", "deeper", "climb"]) },
   async ({ op }) => text(await call("POST", "/v1/cave", { op }))
 );
 server.tool(
   "mine",
-  "Swing a pickaxe inside a cave. A few swings a day, apart from forest fights. Ore goes in the bag (heavy), gems in the pouch; sometimes something in the dark attacks. Each cave gives up only so much a day.",
+  "Swing a pickaxe inside a cave. A few swings a day, apart from turns. Ore goes in the bag (heavy), gems in the pouch; sometimes something in the dark attacks. Each cave gives up only so much a day.",
   {},
   async () => text(await call("POST", "/v1/mine"))
 );
@@ -21933,7 +21933,7 @@ server.tool(
   async ({ action }) => text(await call("POST", "/v1/fight", { action }))
 );
 server.tool("train", "Challenge your master to advance a level. Only when you have enough experience.", {}, async () => text(await call("POST", "/v1/train")));
-server.tool("dragon", "Seek the Red Dragon. Level 12 only. Uses a forest fight.", {}, async () => text(await call("POST", "/v1/dragon")));
+server.tool("dragon", "Seek the Red Dragon. Level 12 only. Uses a turn.", {}, async () => text(await call("POST", "/v1/dragon")));
 server.tool(
   "healer",
   "Pay the healer to restore hit points. Cost scales with level.",
