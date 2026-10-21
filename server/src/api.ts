@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState, innCost,
+  GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -13,6 +13,7 @@ import { weatherAt } from "./weather.js";
 import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
+import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
@@ -36,6 +37,8 @@ interface Ctx {
   dragonAlive: boolean;
   events: Event[];
   hint?: string;
+  /** Name of who they're married to, if anyone. */
+  spouse: string | null;
 }
 
 /** Authenticate, lock the player row, roll the day if needed, run the handler, build the envelope. */
@@ -58,7 +61,8 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const settings = await realmSettings(c);
     const day = realmDay(settings.resetHourUtc);
     const loaded = await loadTurns(c, r.rows[0], day);
-    const ctx: Ctx = { c, p: numify(loaded.player), t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [] };
+    const ctx: Ctx = { c, p: numify(loaded.player), t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [], spouse: null };
+    if (ctx.p.spouse_id) ctx.spouse = (await c.query<{ name: string }>("select name from players where id = $1", [ctx.p.spouse_id])).rows[0]?.name ?? null;
     weatherOff = ctx.p.weather_off;
     if (info && !info.townsfolk && info.plugin) {
       const prev = ctx.p.client as { plugin?: string; app?: string; os?: string; model?: string } | null;
@@ -70,6 +74,10 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     }
     if (loaded.rolled) {
       ctx.events.push({ kind: "new_day", day });
+      if (spousePerk(ctx.spouse) === "charm") {
+        await savePlayer(ctx, { charm: ctx.p.charm + 1 });
+        ctx.events.push({ kind: "spouse_gift", spouse: ctx.spouse, charm: 1 });
+      }
       await logEvent(ctx, "day_start", { hp: ctx.p.hp, max_hp: ctx.p.max_hp, gold: ctx.p.gold, bank: ctx.p.bank, exp: ctx.p.exp });
       if (ctx.p.ground) await savePlayer(ctx, { ground: null });
     }
@@ -85,10 +93,9 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const bagUsed = await Bag.used(c, ctx.p.id);
     const unreadMail = await unreadCount(ctx);
     const newsUnread = await unreadNews(ctx);
-    const spouse = ctx.p.spouse_id ? (await c.query<{ name: string }>("select name from players where id = $1", [ctx.p.spouse_id])).rows[0]?.name ?? null : null;
     return {
       events: ctx.events,
-      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, spouse),
+      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, where: x.where }))),
       actions: legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive),
       ...(ctx.hint ? { hint: ctx.hint } : {}),
     };
@@ -177,7 +184,7 @@ function seasoned(ctx: Ctx, what: string): boolean {
 
 /** Names that would pass for a local. Compared after folding lookalike characters. */
 const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
-  "violet", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
+  "violet", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
   "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic"];
 // i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
 const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
@@ -346,7 +353,12 @@ function newsLine(n: { kind: string; actor: string | null; target: string | null
     case "level_up": return `${n.actor} reached level ${n.detail.level}.`;
     case "dragon": return `${n.actor} slew the Red Dragon!`;
     case "dragon_death": return `${n.actor} was eaten by the Red Dragon.`;
-    case "married": return n.detail?.stole_from ? `${n.actor} won Violet's heart from ${n.detail.stole_from}.` : `${n.actor} married ${n.target ?? "Violet"}.`;
+    case "married": {
+      const to = n.target ?? "Violet";
+      if (n.detail?.stole_from) return `${n.actor} won ${to}'s heart from ${n.detail.stole_from}.`;
+      if (n.detail?.left) return `${n.actor} left ${n.detail.left} for ${to}.`;
+      return `${n.actor} married ${to}.`;
+    }
     case "loot": return `${n.actor} pried ${aOrAn(String(n.detail.item))} off a dead ${n.detail.monster}.`;
     default: return `${n.actor ?? "Someone"} did something (${n.kind}).`;
   }
@@ -361,10 +373,10 @@ api.get("/shop", async (c) => {
   const q = c.req.query("kind");
   const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", owned: ctx.p.bag_id, items: GAME.bags }); return; }
+    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(ctx.p.charm) * 100) }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
-    ctx.events.push({ kind: "catalog", shop: kind, owned, items });
+    ctx.events.push({ kind: "catalog", shop: kind, owned, items, charm_discount_pct: Math.round(charmDiscount(ctx.p.charm) * 100) });
   }));
 });
 
@@ -566,7 +578,7 @@ api.post("/healer", async (c) => {
     const missing = ctx.p.max_hp - ctx.p.hp;
     const want = Math.min(missing, body.hp === "all" ? missing : body.hp);
     if (want <= 0) { ctx.events.push({ kind: "already_healthy" }); return; }
-    const cost = want * GAME.healerCostPerHpPerLevel * ctx.p.level;
+    const cost = healCost(ctx.p, want, ctx.spouse);
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold }); return; }
     await savePlayer(ctx, { hp: ctx.p.hp + want, gold: ctx.p.gold - cost });
     ctx.events.push({ kind: "healed", hp: want, cost });
@@ -583,20 +595,22 @@ api.post("/buy", async (c) => {
       const nb = Bag.bag(body.id);
       if (nb.id !== body.id) throw new GameError("no_such_item", "no such bag");
       if (nb.id <= ctx.p.bag_id) { ctx.events.push({ kind: "already_have_bigger", bag: Bag.bag(ctx.p.bag_id).name }); return; }
-      if (ctx.p.gold < nb.cost) { ctx.events.push({ kind: "too_poor", cost: nb.cost, gold: ctx.p.gold }); return; }
-      await savePlayer(ctx, { gold: ctx.p.gold - nb.cost, bag_id: nb.id });
-      ctx.events.push({ kind: "bought", shop: "bag", item: nb.name, cost: nb.cost, capacity: nb.capacity });
-      await logEvent(ctx, "spend", { on: "bag", item: nb.name, gold: nb.cost });
+      const bagCost = Math.ceil(nb.cost * (1 - charmDiscount(ctx.p.charm)));
+      if (ctx.p.gold < bagCost) { ctx.events.push({ kind: "too_poor", cost: bagCost, gold: ctx.p.gold }); return; }
+      await savePlayer(ctx, { gold: ctx.p.gold - bagCost, bag_id: nb.id });
+      ctx.events.push({ kind: "bought", shop: "bag", item: nb.name, cost: bagCost, capacity: nb.capacity });
+      await logEvent(ctx, "spend", { on: "bag", item: nb.name, gold: bagCost });
       return;
     }
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
     const tradeIn = Math.floor(current.cost / 2);
-    const cost = item.cost - tradeIn;
+    const discount = charmDiscount(ctx.p.charm);
+    const cost = Math.ceil((item.cost - tradeIn) * (1 - discount));
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
     await savePlayer(ctx, { gold: ctx.p.gold - cost, ...(body.kind === "weapon" ? { weapon_id: item.id } : { armor_id: item.id }) });
-    ctx.events.push({ kind: "bought", shop: body.kind, item: item.name, cost, trade_in: tradeIn });
+    ctx.events.push({ kind: "bought", shop: body.kind, item: item.name, cost, trade_in: tradeIn, ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
     await logEvent(ctx, "spend", { on: body.kind, item: item.name, tier: item.id, gold: cost });
   }));
 });
@@ -621,7 +635,7 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
   requireAlive(ctx);
   await requireNoEncounter(ctx);
   if (ctx.t.inn_used) { ctx.events.push({ kind: "already_at_inn" }); return; }
-  const cost = innCost(ctx.p);
+  const cost = innCost(ctx.p, ctx.spouse);
   if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold }); return; }
   await savePlayer(ctx, { gold: ctx.p.gold - cost, location: "inn" });
   await saveTurns(ctx, { inn_used: true });
@@ -709,6 +723,8 @@ api.post("/square/talk", async (c) => c.json(await withPlayer(c.req.header("auth
   let rumor: { kind: Rumor; facts: Record<string, unknown> } | null = null;
   for (const k of v.rumors) { const f = await rumorFacts(ctx, k); if (f) { rumor = { kind: k, facts: f }; break; } }
   let gift = pickVisitorGift(v);
+  const lucky = gift === "nothing" && charmLucky(ctx.p.charm);
+  if (lucky) gift = pickVisitorGift(v);
   if (gift === "heal" && ctx.p.hp >= ctx.p.max_hp) gift = "charm";
   let amount = 0;
   const turns: Partial<Turns> = { visitor_talked: true };
@@ -717,7 +733,7 @@ api.post("/square/talk", async (c) => c.json(await withPlayer(c.req.header("auth
   if (gift === "heal") { amount = ctx.p.max_hp - ctx.p.hp; await savePlayer(ctx, { hp: ctx.p.max_hp }); }
   if (gift === "fight") { amount = 1; turns.forest_fights = ctx.t.forest_fights + 1; }
   await saveTurns(ctx, turns);
-  ctx.events.push({ kind: "visitor_talk", visitor: v.name, description: v.description, rumor, gift, amount });
+  ctx.events.push({ kind: "visitor_talk", visitor: v.name, description: v.description, rumor, gift, amount, ...(lucky ? { charm_luck: true } : {}) });
   ctx.hint = `Play ${v.name} in their own voice: a short exchange, then the rumor told as gossip using only the facts given, then the gift (if any) as something they do. Two to five sentences.`;
   await logEvent(ctx, "visitor", { visitor: v.name, rumor: rumor?.kind ?? null, gift, amount });
 }, { weather: true })));
@@ -729,6 +745,8 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
   const bard = bardFor(ctx.day);
   if (ctx.t.bard_heard) { ctx.events.push({ kind: "bard_already", bard: bard.name }); return; }
   let gift = pickGift(bard);
+  const lucky = gift === "nothing" && charmLucky(ctx.p.charm);
+  if (lucky) gift = pickGift(bard);
   if (gift === "heal" && ctx.p.hp >= ctx.p.max_hp) gift = "charm"; // nothing to mend; he flatters you instead
   let amount = 0;
   const turns: Partial<Turns> = { bard_heard: true };
@@ -743,7 +761,7 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
     "select kind, actor, target, detail from news order by id desc limit 15");
   const headline = n.rowCount ? n.rows[roll(n.rowCount - 1)] : null;
   const you = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, exp: ctx.p.exp, weapon: weapon(ctx.p.weapon_id).name, armor: armor(ctx.p.armor_id).name, gold: ctx.p.gold, charm: ctx.p.charm };
-  ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, leans_toward: bard.sings_about, you, headline, gift, amount });
+  ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, leans_toward: bard.sings_about, you, headline, gift, amount, ...(lucky ? { charm_luck: true } : {}) });
   await logEvent(ctx, "song", { bard: bard.name, gift, amount });
   ctx.hint = `Write the song: exactly four lines of original lyrics in ${bard.name}'s voice, printed one per line in italics, using at least one real detail from you/headline/weather. Print the lyrics themselves; don't summarize or describe the song. Then the gift.`;
 }, { weather: true })));
@@ -759,42 +777,51 @@ api.post("/tavern", async (c) => {
   }));
 });
 
-api.post("/flirt", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  requireAlive(ctx);
-  if (ctx.t.flirted) { ctx.events.push({ kind: "already_flirted" }); return; }
-  await saveTurns(ctx, { flirted: true });
-  const violet = (await ctx.c.query<{ id: string }>("select id from players where role = 'npc' and name = 'Violet'")).rows[0];
-  // Already hers: no second wedding, just a good evening.
-  if (violet && ctx.p.spouse_id === violet.id) {
-    await savePlayer(ctx, { charm: ctx.p.charm + 1 });
-    ctx.events.push({ kind: "flirt", outcome: "spouse", charm_delta: 1, charm: ctx.p.charm });
-    return;
-  }
-  const r = roll(99) + ctx.p.charm;
-  let outcome: string; let delta = 0;
-  let stoleFrom: string | null = null;
-  if (r < 30) { outcome = "ignored"; }
-  else if (r < 70) { outcome = "smile"; delta = 1; }
-  else if (r < 95) { outcome = "kiss"; delta = 2; }
-  else {
-    outcome = "married"; delta = 5;
-    if (violet) {
-      // Violet is married to one person at a time. Winning her heart takes her from whoever had it.
-      const prev = await ctx.c.query<{ id: string; name: string }>("select id, name from players where spouse_id = $1 for update", [violet.id]);
+api.post("/flirt", async (c) => {
+  const body = z.object({ with: z.string().trim().max(40).optional() }).parse(await c.req.json().catch(() => ({})));
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    const who = suitor(body.with ?? "Violet");
+    if (!who) { ctx.events.push({ kind: "no_such_suitor", name: body.with }); return; }
+    if (!available(who)) {
+      ctx.events.push({ kind: "not_around", name: who.name, hours: who.hours ?? null, days: who.days ?? null });
+      return;
+    }
+    if (ctx.t.flirted) { ctx.events.push({ kind: "already_flirted" }); return; }
+    await saveTurns(ctx, { flirted: true });
+    const row = (await ctx.c.query<{ id: string }>("select id from players where role = 'npc' and name = $1", [who.name])).rows[0];
+    // Already theirs: no second wedding, just a good evening together.
+    if (row && ctx.p.spouse_id === row.id) {
+      await savePlayer(ctx, { charm: ctx.p.charm + 1 });
+      ctx.events.push({ kind: "flirt", with: who.name, outcome: "spouse", charm_delta: 1, charm: ctx.p.charm });
+      return;
+    }
+    const rolled = flirtOutcome(ctx.p.charm, who.coy);
+    // Townsfolk court but don't marry, for now: their hearts aren't in play against real players.
+    const { outcome, delta } = rolled.outcome === "married" && ctx.p.role !== "player" ? { outcome: "kiss" as const, delta: 2 } : rolled;
+    let stoleFrom: string | null = null;
+    let left: string | null = null;
+    if (outcome === "married" && row) {
+      // Each of them is married to one person at a time. Winning a heart takes it from whoever had it.
+      const prev = await ctx.c.query<{ id: string; name: string }>("select id, name from players where spouse_id = $1 for update", [row.id]);
       if (prev.rowCount && prev.rows[0].id !== ctx.p.id) {
         stoleFrom = prev.rows[0].name;
         await ctx.c.query("update players set spouse_id = null where id = $1", [prev.rows[0].id]);
-        await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [prev.rows[0].id, { kind: "spouse_stolen", spouse: "Violet", by: ctx.p.name }]);
+        await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [prev.rows[0].id, { kind: "spouse_stolen", spouse: who.name, by: ctx.p.name }]);
       }
-      if (ctx.p.spouse_id && ctx.p.spouse_id !== violet.id) await savePlayer(ctx, { spouse_id: null });
-      await savePlayer(ctx, { spouse_id: violet.id });
+      // And you can only be married to one of them: a new wedding means leaving the old spouse.
+      if (ctx.p.spouse_id && ctx.p.spouse_id !== row.id) { left = ctx.spouse; await savePlayer(ctx, { spouse_id: null }); }
+      await savePlayer(ctx, { spouse_id: row.id });
+      ctx.spouse = who.name;
+      await post(ctx, "married", ctx.p.name, who.name, { ...(stoleFrom ? { stole_from: stoleFrom } : {}), ...(left ? { left } : {}) });
+      await logEvent(ctx, "married", { spouse: who.name, stole: Boolean(stoleFrom), left: Boolean(left) });
     }
-    await post(ctx, "married", ctx.p.name, "Violet", stoleFrom ? { stole_from: stoleFrom } : {});
-    await logEvent(ctx, "married", { spouse: "Violet", stole: Boolean(stoleFrom) });
-  }
-  await savePlayer(ctx, { charm: ctx.p.charm + delta });
-  ctx.events.push({ kind: "flirt", outcome, charm_delta: delta, charm: ctx.p.charm, ...(stoleFrom ? { stole_from: stoleFrom } : {}) });
-})));
+    await savePlayer(ctx, { charm: ctx.p.charm + delta });
+    ctx.events.push({ kind: "flirt", with: who.name, outcome, charm_delta: delta, charm: ctx.p.charm,
+      ...(stoleFrom ? { stole_from: stoleFrom } : {}), ...(left ? { left } : {}),
+      ...(outcome === "married" ? { perk: who.perkText } : {}) });
+  }));
+});
 
 // ---------- bag ----------
 
@@ -977,14 +1004,17 @@ api.post("/challenge", async (c) => {
     ctx.events.push({ kind: "pvp_log", opponent: d.name, rounds: res.log });
 
     if (res.winner === "attacker") {
-      const gold = d.gold;
+      // Married to Mara, the lamplighter: she gets you out of the fields with half your purse still on you.
+      const theirSpouse = d.spouse_id ? (await ctx.c.query<{ name: string }>("select name from players where id = $1", [d.spouse_id])).rows[0]?.name ?? null : null;
+      const guarded = spousePerk(theirSpouse) === "guard";
+      const gold = guarded ? Math.floor(d.gold / 2) : d.gold;
       const exp = Math.floor(expForLevel(d.level + 1) ?? 1000) / 20 | 0;
       await savePlayer(ctx, { hp: af.hp, gold: ctx.p.gold + gold, exp: ctx.p.exp + exp });
-      await ctx.c.query("update players set alive = false, hp = 0, gold = 0, ground = null where id = $1", [d.id]);
+      await ctx.c.query("update players set alive = false, hp = 0, gold = gold - $2, ground = null where id = $1", [d.id, gold]);
       const theirLost = await Bag.loseRandom(ctx.c, d.id);
       await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "killed_by_player", by: ctx.p.name, gold_lost: gold, item_lost: theirLost }]);
       await post(ctx, "pvp_kill", ctx.p.name, d.name, { gold });
-      ctx.events.push({ kind: "pvp_win", opponent: d.name, gold, exp });
+      ctx.events.push({ kind: "pvp_win", opponent: d.name, gold, exp, ...(guarded ? { guarded_by: theirSpouse } : {}) });
       await logEvent(ctx, "pvp", { outcome: "won", opponent_class: d.class, opponent_level: d.level, opponent_bot: Boolean(d.is_bot), gold, rounds: res.log.filter((e) => e.attacker === ctx.p.name).length });
     } else if (res.winner === "defender") {
       // A failed attack kills you, but your gold stays yours: losing on purpose can't funnel gold to a friend.

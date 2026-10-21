@@ -107,6 +107,8 @@ export interface PublicState {
   bank_trips_left: number;
   /** Who they're married to, if anyone. */
   spouse: string | null;
+  /** People you could court who are around right now, and where. */
+  suitors_around: { name: string; where: string }[];
   /** The sky over the player, roughly. Only on status, forest and news, and only if they haven't turned it off. */
   weather?: import("./weather.js").Weather;
 }
@@ -141,11 +143,16 @@ export function effective(p: Player) {
 }
 
 /** A room costs 100 a level; half that for anyone married to Violet, who keeps one aside. */
-export function innCost(p: Player): number {
-  return Math.floor(GAME.innCostPerLevel * p.level * (p.spouse_id ? 0.5 : 1));
+export function innCost(p: Player, spouse: string | null = null): number {
+  return Math.floor(GAME.innCostPerLevel * p.level * (spouse === "Violet" ? 0.5 : 1));
 }
 
-export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0, spouse: string | null = null): PublicState {
+/** Healing costs a little per HP per level; a quarter less for anyone married to Rosalind. */
+export function healCost(p: Player, hp: number, spouse: string | null = null): number {
+  return Math.ceil(hp * GAME.healerCostPerHpPerLevel * p.level * (spouse === "Rosalind" ? 0.75 : 1));
+}
+
+export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0, spouse: string | null = null, suitorsAround: { name: string; where: string }[] = []): PublicState {
   const b = GAME.bags.find((x) => x.id === p.bag_id) ?? GAME.bags[0];
   return {
     name: p.name,
@@ -177,12 +184,13 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     unread_mail: unreadMail,
     unread_news: unreadNews,
     prices: {
-      inn: innCost(p),
-      heal_per_hp: GAME.healerCostPerHpPerLevel * p.level,
-      heal_all: (p.max_hp - p.hp) * GAME.healerCostPerHpPerLevel * p.level,
+      inn: innCost(p, spouse),
+      heal_per_hp: healCost(p, 1, spouse),
+      heal_all: healCost(p, p.max_hp - p.hp, spouse),
     },
     bank_trips_left: Math.max(0, GAME.bankTxPerDay - t.bank_tx),
     spouse,
+    suitors_around: suitorsAround,
   };
 }
 

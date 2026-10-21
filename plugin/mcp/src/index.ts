@@ -139,7 +139,9 @@ server.tool("square_talk", "Talk to the day's visitor in the town square. Once a
 
 server.tool("bard", "Ask tonight's bard in the tavern for a song. Once a day. A different bard plays on different days; the song sometimes brings a small gift. The result is material for a song; you write and print four lines of lyrics.", {}, async () => text(await call("POST", "/v1/bard")));
 
-server.tool("flirt", "Flirt with Violet the barmaid. Once per day. Builds charm.", {}, async () => text(await call("POST", "/v1/flirt")));
+server.tool("flirt", "Flirt with someone: Violet (tavern), Rosalind (healer's, by day), Mara (the square, at night) or Jory (the square, weekends). One flirt a day in total. Builds charm, and sometimes ends in a wedding.",
+  { with: z.string().min(1).max(40).default("Violet") },
+  async (args) => text(await call("POST", "/v1/flirt", { with: args.with })));
 
 server.tool("challenge", "Attack another player in the fields. Resolves the whole fight at once. Uses one player fight.",
   { name: z.string().min(1) },

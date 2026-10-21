@@ -5,6 +5,9 @@
  * Uses the real combat functions and data. Run: npx tsx src/sim.ts [class] [trials]
  */
 import { GAME, armor, weapon, expForLevel, master, levelGains, type Player, type Monster } from "./game.js";
+import { bardFor, pickGift } from "./bards.js";
+import { visitorFor, pickVisitorGift } from "./square.js";
+import { charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 
@@ -43,6 +46,51 @@ for (const m of GAME.monsters) { m.str = Math.round(m.str * K.mstr); m.hp = Math
 for (const m of GAME.masters) { m.str = Math.round(m.str * K.mstr); m.hp = Math.round(m.hp * K.mhp); }
 for (const c of Object.values(GAME.classes)) { c.strPerLevel = Math.round(c.strPerLevel * K.pstr); c.hpPerLevel = Math.round(c.hpPerLevel * K.phpk); c.defPerLevel = Math.round(c.defPerLevel * K.pdef); }
 
+// The daily extras a real player gets: a flirt, a bard's song, a word with the visitor. EXTRAS=0 turns them off.
+const EXTRAS = process.env.EXTRAS !== "0";
+// ROMANCE=1: charm discounts and luck, plus the chosen suitor's marriage perk. SUITOR picks who the player courts.
+const ROMANCE = process.env.ROMANCE === "1";
+const SUITOR = process.env.SUITOR ?? "Violet";
+const CHARM = { total: 0, married: 0, marriedDay: 0 };
+const simDate = (day: number) => new Date(Date.UTC(2026, 9, 1) + day * 86_400_000).toISOString().slice(0, 10);
+type SimPlayer = Player & { spouse?: string };
+const perkOf = (p: SimPlayer) => (p.spouse ? spousePerk(p.spouse) : null);
+const healCost = (p: SimPlayer, hp: number) => Math.ceil(hp * GAME.healerCostPerHpPerLevel * p.level * (ROMANCE && perkOf(p) === "healer" ? 0.75 : 1));
+const innCostSim = (p: SimPlayer) => Math.floor(GAME.innCostPerLevel * p.level * (perkOf(p) === "inn" ? 0.5 : 1));
+const shopPrice = (p: SimPlayer, price: number) => (ROMANCE ? Math.ceil(price * (1 - charmDiscount(p.charm))) : price);
+
+function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
+  if (!EXTRAS) return;
+  // flirt
+  if (p.spouse === SUITOR) p.charm += 1;
+  else {
+    const s = suitor(SUITOR)!;
+    const f = flirtOutcome(p.charm, ROMANCE ? s.coy : 0);
+    p.charm += f.delta;
+    if (f.outcome === "married") { p.spouse = ROMANCE ? SUITOR : "Violet"; CHARM.married++; CHARM.marriedDay += day; }
+  }
+  if (ROMANCE && perkOf(p) === "charm") p.charm += 1;
+  const apply = (gift: string, fightAmt: number) => {
+    if (gift === "gold") p.gold += 25 * p.level;
+    if (gift === "charm") p.charm += 1;
+    if (gift === "gem") p.gems += 1;
+    if (gift === "heal") p.hp = p.max_hp;
+    if (gift === "fight") fights.n += fightAmt;
+  };
+  // the bard
+  const bard = bardFor(simDate(day));
+  let g: string = pickGift(bard);
+  if (ROMANCE && g === "nothing" && charmLucky(p.charm)) g = pickGift(bard);
+  apply(g, bard.fights);
+  // the visitor
+  const v = visitorFor(simDate(day));
+  if (v) {
+    let vg: string = pickVisitorGift(v);
+    if (ROMANCE && vg === "nothing" && charmLucky(p.charm)) vg = pickVisitorGift(v);
+    if (vg === "gold") p.gold += 15 * p.level; else apply(vg, 1);
+  }
+}
+
 const DROPS = { n: 0, equipped: 0 };
 const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, number> = {}; const DEATH_L: Record<number, number> = {};
 type Cls = "warrior" | "thief" | "mage";
@@ -76,16 +124,16 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number)
   return "fled";
 }
 
-function shop(p: Player) {
+function shop(p: SimPlayer) {
   // Buy the best weapon we can afford out of gold+bank, then armor. Withdraw only what the purchase costs.
   const reserve = GAME.innCostPerLevel * p.level + 50;
   for (const kind of ["weapon", "armor"] as const) {
     const list = kind === "weapon" ? GAME.weapons : GAME.armor;
     const cur = kind === "weapon" ? weapon(p.weapon_id) : armor(p.armor_id);
     let best = cur;
-    for (const it of list) if (it.id > cur.id && it.cost - Math.floor(cur.cost / 2) <= p.gold + p.bank - reserve) best = it;
+    for (const it of list) if (it.id > cur.id && shopPrice(p, it.cost - Math.floor(cur.cost / 2)) <= p.gold + p.bank - reserve) best = it;
     if (best.id !== cur.id) {
-      const price = best.cost - Math.floor(cur.cost / 2);
+      const price = shopPrice(p, best.cost - Math.floor(cur.cost / 2));
       if (p.gold < price) { p.bank -= price - p.gold; p.gold = price; }
       p.gold -= price;
       if (kind === "weapon") p.weapon_id = best.id; else p.armor_id = best.id;
@@ -94,7 +142,7 @@ function shop(p: Player) {
 }
 
 function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; killedDragon: boolean; level?: number } {
-  const p = fresh(cls);
+  const p: SimPlayer = fresh(cls);
   let deaths = 0;
   for (let day = 1; day <= maxDays; day++) {
     // morning: inn heal (we always sleep at the inn if we could afford it)
@@ -102,7 +150,10 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
     p.alive = true;
     p.gold += 0; // bank -> withdraw happens below
     const specials = { n: GAME.classes[p.class].specialsPerDay };
-    let fights = 10;
+    const extra = { n: 0 };
+    dailyExtras(p, day, extra);
+    let fights = 10 + extra.n;
+    CHARM.total += p.charm;
 
     shop(p);
 
@@ -111,7 +162,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       const next = expForLevel(p.level + 1);
       if (next !== null && p.exp >= next) {
         const ms = master(p.level)!;
-        { const want = p.max_hp - p.hp; const cost = want * GAME.healerCostPerHpPerLevel * p.level; const avail = p.gold + p.bank; if (avail >= cost) { if (p.gold < cost) { p.gold += p.bank; p.bank = 0; } p.gold -= cost; p.hp = p.max_hp; } }
+        { const want = p.max_hp - p.hp; const cost = healCost(p, want); const avail = p.gold + p.bank; if (avail >= cost) { if (p.gold < cost) { p.gold += p.bank; p.bank = 0; } p.gold -= cost; p.hp = p.max_hp; } }
         const res = fight(p, { name: ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 }, specials, 0);
         if (res === "won") {
           const g = levelGains(p.class, p.level + 1);
@@ -160,7 +211,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       // heal if under 80%
       if (p.hp / p.max_hp < 0.8) {
         const want = p.max_hp - p.hp;
-        const cost = want * GAME.healerCostPerHpPerLevel * p.level;
+        const cost = healCost(p, want);
         if (p.gold >= cost) { p.gold -= cost; p.hp = p.max_hp; }
       }
       // bank what we don't need to carry (a careful player does this every couple of fights)
@@ -168,7 +219,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       if (p.gold > keep) { p.bank += p.gold - keep; p.gold = keep; }
     }
     // night: inn if affordable, bank the rest
-    const inn = GAME.innCostPerLevel * p.level;
+    const inn = innCostSim(p);
     if (p.alive && p.gold >= inn) { p.gold -= inn; p.location = "inn"; } else p.location = "fields";
     p.bank += p.gold; p.gold = 0;
   }
@@ -193,3 +244,4 @@ if (process.env.BREAKDOWN) {
 }
 
 console.log(`  drops per run: ${(DROPS.n / trials).toFixed(1)} (${(DROPS.equipped / trials).toFixed(1)} equipped)`);
+if (EXTRAS) console.log(`  married ${CHARM.married}/${trials} runs (avg day ${CHARM.married ? (CHARM.marriedDay / CHARM.married).toFixed(0) : "-"}); avg charm across days ${(CHARM.total / runs.reduce((a, r) => a + r.days, 0)).toFixed(0)}`);

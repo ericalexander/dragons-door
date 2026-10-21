@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.4.2",
+    "lore": "Violet has competition. The healer has taken on an apprentice with ink on her fingers, the lamplighter walks the square after dark, and a juggler comes through at the weekends. And charm, at last, buys you something: shopkeepers knock a little off, and bards seem to sing a bit more kindly.",
+    "plain": "Court Rosalind (healer, by day), Mara (square, at night) or Jory (square, weekends), each with their own marriage perk. Charm now gives shop discounts and better luck with bards and visitors."
+  },
+  {
     "version": "0.4.1",
     "lore": "Violet remembers now. A wedding is a wedding: she won't marry you twice, she'll keep a room aside for you at half the price, and if someone else catches her eye, the whole town will hear about it before you do.",
     "plain": "Marriages to Violet last, she can only be married to one player at a time (so she can be won away), and her spouse gets rooms at half price."
