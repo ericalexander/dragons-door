@@ -21801,7 +21801,20 @@ server.tool(
   async ({ day }) => text(await call("GET", `/v1/news?day=${day}`))
 );
 server.tool("rankings", "Top 20 players by level and experience.", {}, async () => text(await call("GET", "/v1/rankings")));
-server.tool("forest", "Go into the forest looking for a fight. Uses one forest fight. Starts an encounter.", {}, async () => text(await call("POST", "/v1/forest")));
+server.tool("forest", "Hunt where you stand in the wild (what you meet depends on the place). Uses one forest fight. Starts an encounter. In town, explore first.", {}, async () => text(await call("POST", "/v1/forest")));
+server.tool("map", "The map around the player: where they stand, what lies each way, an ASCII map of what they've explored, and the places they know.", {}, async () => text(await call("GET", "/v1/map")));
+server.tool(
+  "move",
+  "Take one step north, south, east or west. A step into the wild costs a forest fight; stepping into town is free. Reveals new land the first time.",
+  { dir: external_exports.enum(["north", "south", "east", "west"]) },
+  async ({ dir }) => text(await call("POST", "/v1/move", { dir }))
+);
+server.tool(
+  "travel",
+  "Go straight to town, or back out to a place the player has already explored (x, y from the map's known places). Free: they know the way.",
+  { to: external_exports.literal("town").optional(), x: external_exports.number().int().optional(), y: external_exports.number().int().optional() },
+  async ({ to, x, y }) => text(await call("POST", "/v1/travel", to === "town" || x === void 0 || y === void 0 ? { to: "town" } : { x, y }))
+);
 server.tool(
   "fight",
   "Take one round in your current fight. attack: normal swing. special: class skill (limited per day). run: try to flee.",

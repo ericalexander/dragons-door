@@ -14,6 +14,7 @@ import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
+import { DIRS, LEGEND, renderMap, tileAt, type Dir } from "./world.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
@@ -96,7 +97,13 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     return {
       events: ctx.events,
       state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))),
-      actions: legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive),
+      actions: (() => {
+        const a = legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive);
+        // Plugins from before exploration have no way out of town: keep offering them the old forest.
+        const v = info?.plugin;
+        if ((!v || older(v, "0.5.0")) && a.includes("explore")) return a.map((x) => (x === "explore" ? "forest" : x)).filter((x) => x !== "map");
+        return a;
+      })(),
       ...(ctx.hint ? { hint: ctx.hint } : {}),
     };
   });
@@ -215,6 +222,12 @@ function fightSummary(log: Event[], last: Event[], me: string) {
     dodges: all.filter((e) => e.kind === "dodged" && e.defender === me).length,
   };
 }
+
+/** Town's services are in town. Out in the wild you have to walk back first (which is free). */
+function requireInTown(ctx: Ctx, what: string) {
+  if (ctx.p.pos_x !== null && ctx.p.pos_x !== undefined) throw new GameError("not_in_town", `${what} is back in town; return to town first (it costs nothing)`, 409);
+}
+const inWild = (p: Player) => p.pos_x !== null && p.pos_x !== undefined;
 
 /** Going out to fight means leaving your room: you're back in the fields and fair game tonight. */
 async function leaveInn(ctx: Ctx) {
@@ -346,6 +359,7 @@ function aOrAn(item: string): string {
 function newsLine(n: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }): string {
   switch (n.kind) {
     case "joins": return String(n.detail.line);
+    case "discovery": return `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;
     case "join": return `${n.actor} has entered the realm.`;
     case "pvp_kill": return `${n.actor} slew ${n.target} in the fields and took ${n.detail.gold} gold.`;
     case "pvp_survived": return `${n.target} fought off an attack from ${n.actor}.`;
@@ -391,17 +405,25 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
     ctx.events.push({ kind: "left_behind", item: Bag.item(ctx.p.ground.slot, ctx.p.ground.item_id).name });
     await savePlayer(ctx, { ground: null });
   }
+  // Out in the wild, what you meet depends on where you stand. In town, players head out first;
+  // townsfolk and plugins from before exploration still get the old forest at their own level.
+  const here = inWild(ctx.p) ? tileAt(ctx.p.pos_x!, ctx.p.pos_y!) : null;
+  const plugin = current()?.plugin;
+  if (!here && ctx.p.role === "player" && plugin && !older(plugin, "0.5.0")) {
+    throw new GameError("in_town", "the wild starts at the town gate: explore first", 409);
+  }
+  const level = here ? here.level : ctx.p.level;
   await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
   if (roll(99) < 10) {
     // found something instead of a fight
-    const gold = roll(10 * ctx.p.level) + 5;
+    const gold = roll(10 * level) + 5;
     await savePlayer(ctx, { gold: ctx.p.gold + gold });
     ctx.events.push({ kind: "found_gold", gold });
     return;
   }
-  const m = pickMonster(ctx.p.level);
+  const m = pickMonster(level);
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
-  ctx.events.push({ kind: "encounter", monster: m });
+  ctx.events.push({ kind: "encounter", monster: m, ...(here ? { place: here.name, terrain: here.terrain } : {}) });
 }, { weather: true })));
 
 api.post("/fight", async (c) => {
@@ -530,7 +552,8 @@ async function lose(ctx: Ctx, kind: string, m: Monster) {
 async function die(ctx: Ctx, kind: string, m: Monster) {
   const lost = ctx.p.gold;
   const expLoss = Math.floor(ctx.p.exp * 0.1);
-  await savePlayer(ctx, { alive: false, hp: 0, gold: 0, exp: ctx.p.exp - expLoss, ground: null });
+  // You wake in town, however far out you fell.
+  await savePlayer(ctx, { alive: false, hp: 0, gold: 0, exp: ctx.p.exp - expLoss, ground: null, pos_x: null, pos_y: null });
   const itemLost = await Bag.loseRandom(ctx.c, ctx.p.id);
   if (kind === "dragon") await post(ctx, "dragon_death", ctx.p.name, null, {});
   else await post(ctx, "forest_death", ctx.p.name, null, { monster: m.name });
@@ -542,6 +565,7 @@ async function die(ctx: Ctx, kind: string, m: Monster) {
 
 api.post("/train", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
+    requireInTown(ctx, "your master");
   await requireNoEncounter(ctx);
   const next = expForLevel(ctx.p.level + 1);
   if (next === null) { ctx.events.push({ kind: "max_level" }); return; }
@@ -556,6 +580,7 @@ api.post("/train", async (c) => c.json(await withPlayer(c.req.header("authorizat
 
 api.post("/dragon", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
+    requireInTown(ctx, "the dragon's lair");
   await requireNoEncounter(ctx);
   if (ctx.p.level < 12) { ctx.events.push({ kind: "too_weak", needed_level: 12 }); return; }
   if (!ctx.dragonAlive) { ctx.events.push({ kind: "dragon_dead" }); return; }
@@ -574,6 +599,7 @@ api.post("/healer", async (c) => {
   const body = z.object({ hp: z.union([z.literal("all"), z.number().int().positive()]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    requireInTown(ctx, "the healer");
     await requireNoEncounter(ctx);
     const missing = ctx.p.max_hp - ctx.p.hp;
     const want = Math.min(missing, body.hp === "all" ? missing : body.hp);
@@ -590,6 +616,7 @@ api.post("/buy", async (c) => {
   const body = z.object({ kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    requireInTown(ctx, "the shop");
     await requireNoEncounter(ctx);
     if (body.kind === "bag") {
       const nb = Bag.bag(body.id);
@@ -619,6 +646,7 @@ api.post("/bank", async (c) => {
   const body = z.object({ op: z.enum(["deposit", "withdraw"]), amount: z.union([z.literal("all"), z.number().int().positive()]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    requireInTown(ctx, "the bank");
     await requireNoEncounter(ctx);
     if (ctx.t.bank_tx >= GAME.bankTxPerDay) { ctx.events.push({ kind: "bank_closed", reason: "daily transaction limit" }); return; }
     const from = body.op === "deposit" ? ctx.p.gold : ctx.p.bank;
@@ -633,6 +661,7 @@ api.post("/bank", async (c) => {
 
 api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
+    requireInTown(ctx, "the inn");
   await requireNoEncounter(ctx);
   if (ctx.t.inn_used) { ctx.events.push({ kind: "already_at_inn" }); return; }
   const cost = innCost(ctx.p, ctx.spouse);
@@ -647,6 +676,7 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
 // ---------- tavern ----------
 
 api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireInTown(ctx, "the tavern");
   const r = await ctx.c.query("select author, body, ts from tavern where day = $1 order by id desc limit 20", [ctx.day]);
   const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
@@ -656,10 +686,100 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
   ctx.hint = "Improvise here: the bartender's gossip, the mood of the room. Keep it under the posted messages, which are other players' words.";
 }, { weather: true })));
 
+// ---------- the wild ----------
+
+/** Whatever's lying on the ground stays where it is when you walk off. */
+async function leaveGround(ctx: Ctx) {
+  if (!ctx.p.ground) return;
+  ctx.events.push({ kind: "left_behind", item: Bag.item(ctx.p.ground.slot, ctx.p.ground.item_id).name });
+  await savePlayer(ctx, { ground: null });
+}
+
+async function exploredSet(ctx: Ctx): Promise<Set<string>> {
+  const r = await ctx.c.query<{ x: number; y: number }>("select x, y from explored where player_id = $1", [ctx.p.id]);
+  return new Set(r.rows.map((t) => `${t.x},${t.y}`));
+}
+
+function describeTile(x: number, y: number, explored: Set<string>) {
+  if (x === 0 && y === 0) return { x, y, name: "the town", terrain: "town", level: 0, poi: null, explored: true };
+  const t = tileAt(x, y);
+  return explored.has(`${x},${y}`) ? { x, y, name: t.name, terrain: t.terrain, level: t.level, poi: t.poi, explored: true } : { x, y, explored: false };
+}
+
+/** The map around you, where each way leads, and the places you know. */
+api.get("/map", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  const ex = await exploredSet(ctx);
+  const [x, y] = inWild(ctx.p) ? [ctx.p.pos_x!, ctx.p.pos_y!] : [0, 0];
+  const ways = Object.fromEntries((Object.keys(DIRS) as Dir[]).map((d) => [d, describeTile(x + DIRS[d][0], y + DIRS[d][1], ex)]));
+  const known = await ctx.c.query<{ x: number; y: number }>(
+    "select e.x, e.y from explored e where e.player_id = $1 order by abs(e.x) + abs(e.y), e.at limit 40", [ctx.p.id]);
+  const places = known.rows.map((t) => { const k = tileAt(t.x, t.y); return { x: t.x, y: t.y, name: k.name, terrain: k.terrain, level: k.level, poi: k.poi }; });
+  ctx.events.push({ kind: "map", here: describeTile(x, y, new Set([...ex, `${x},${y}`])), ways, map: renderMap(x, y, ex), legend: LEGEND, known_places: places });
+})));
+
+/** One step north, south, east or west. A step into the wild costs a fight; walking into town is free. */
+api.post("/move", async (c) => {
+  const body = z.object({ dir: z.enum(["north", "south", "east", "west"]) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    const [x0, y0] = inWild(ctx.p) ? [ctx.p.pos_x!, ctx.p.pos_y!] : [0, 0];
+    const [x, y] = [x0 + DIRS[body.dir][0], y0 + DIRS[body.dir][1]];
+    if (x === 0 && y === 0) {
+      await leaveGround(ctx);
+      await savePlayer(ctx, { pos_x: null, pos_y: null });
+      ctx.events.push({ kind: "arrived", place: "town" });
+      return;
+    }
+    if (ctx.t.forest_fights <= 0) { ctx.events.push({ kind: "no_fights_left", why: "too tired to go further today" }); return; }
+    await leaveInn(ctx);
+    if (ctx.p.ground) {
+      ctx.events.push({ kind: "left_behind", item: Bag.item(ctx.p.ground.slot, ctx.p.ground.item_id).name });
+      await savePlayer(ctx, { ground: null });
+    }
+    await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
+    await savePlayer(ctx, { pos_x: x, pos_y: y });
+    const t = tileAt(x, y);
+    const mine = await ctx.c.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing returning 1", [ctx.p.id, x, y]);
+    const firstForYou = Boolean(mine.rowCount);
+    const anyone = await ctx.c.query(
+      "insert into discoveries (x, y, name, terrain, poi, found_by) values ($1,$2,$3,$4,$5,$6) on conflict do nothing returning 1",
+      [x, y, t.name, t.terrain, t.poi, ctx.p.id]);
+    const firstEver = Boolean(anyone.rowCount);
+    if (firstEver && t.poi) await post(ctx, "discovery", ctx.p.name, null, { place: t.name, poi: t.poi });
+    if (firstForYou) await logEvent(ctx, "explore", { x, y, ring: t.ring, terrain: t.terrain, level: t.level, poi: t.poi, first_ever: firstEver });
+    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: firstForYou, first_ever: firstEver,
+      ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
+  }));
+});
+
+/** Walk home, or back out to somewhere you've already been. You know the way, so it's free. */
+api.post("/travel", async (c) => {
+  const body = z.union([z.object({ to: z.literal("town") }), z.object({ x: z.number().int(), y: z.number().int() })]).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    if ("to" in body || (body.x === 0 && body.y === 0)) {
+      await leaveGround(ctx);
+      await savePlayer(ctx, { pos_x: null, pos_y: null });
+      ctx.events.push({ kind: "arrived", place: "town" });
+      return;
+    }
+    const known = await ctx.c.query("select 1 from explored where player_id = $1 and x = $2 and y = $3", [ctx.p.id, body.x, body.y]);
+    if (!known.rowCount) { ctx.events.push({ kind: "unknown_place", x: body.x, y: body.y }); return; }
+    await leaveInn(ctx);
+    await leaveGround(ctx);
+    await savePlayer(ctx, { pos_x: body.x, pos_y: body.y });
+    const t = tileAt(body.x, body.y);
+    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true });
+  }));
+});
+
 // ---------- the town square ----------
 
 /** Who's about in the square right now: townsfolk by their timetable, and real players seen in the last 15 minutes. */
 api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireInTown(ctx, "the town square");
   const now = new Date();
   const folk = await ctx.c.query<{ name: string; personality: Personality; alive: boolean }>(
     "select p.name, b.personality, p.alive from bots b join players p on p.id = b.player_id order by p.name");
@@ -675,7 +795,7 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
     else elsewhere.push({ name: f.name, where: w.where === "forest" ? "in the forest" : w.where === "tavern" ? "in the tavern" : w.where === "shop" ? "at the shop" : "out in the fields" });
   }
   const people = await ctx.c.query<{ name: string; class: string; level: number }>(
-    "select name, class, level from players where not is_bot and id <> $1 and alive and last_seen > now() - interval '15 minutes' order by last_seen desc limit 3", [ctx.p.id]);
+    "select name, class, level from players where not is_bot and id <> $1 and alive and pos_x is null and last_seen > now() - interval '15 minutes' order by last_seen desc limit 3", [ctx.p.id]);
   const v = visitorFor(ctx.day);
   const hour = realmHour(now);
   ctx.events.push({
@@ -716,6 +836,7 @@ async function rumorFacts(ctx: Ctx, kind: Rumor): Promise<Record<string, unknown
 /** One chat a day with the day's visitor: a rumor built on real facts, and sometimes a small gift. */
 api.post("/square/talk", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
+    requireInTown(ctx, "the town square");
   await requireNoEncounter(ctx);
   const v = visitorFor(ctx.day);
   if (!v) { ctx.events.push({ kind: "no_visitor" }); return; }
@@ -741,6 +862,7 @@ api.post("/square/talk", async (c) => c.json(await withPlayer(c.req.header("auth
 // One song a day from whichever bard is playing. The server picks the gift; the narrator writes the song.
 api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
+    requireInTown(ctx, "the tavern");
   await requireNoEncounter(ctx);
   const bard = bardFor(ctx.day);
   if (ctx.t.bard_heard) { ctx.events.push({ kind: "bard_already", bard: bard.name }); return; }
@@ -769,6 +891,7 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
 api.post("/tavern", async (c) => {
   const body = z.object({ body: z.string().trim().min(1).max(280).transform(cleanText).pipe(z.string().min(1)) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireInTown(ctx, "the tavern");
     if (!seasoned(ctx, "post in the tavern")) return;
     if (ctx.t.tavern_posts >= GAME.tavernPostsPerDay) { ctx.events.push({ kind: "tavern_quiet", reason: "you've said enough for one day" }); return; }
     await ctx.c.query("insert into tavern (day, author, body) values ($1,$2,$3)", [ctx.day, ctx.p.name, body.body]);
@@ -781,6 +904,7 @@ api.post("/flirt", async (c) => {
   const body = z.object({ with: z.string().trim().max(40).optional() }).parse(await c.req.json().catch(() => ({})));
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    requireInTown(ctx, "everyone you might court");
     const who = suitor(body.with ?? "Violet");
     if (!who) { ctx.events.push({ kind: "no_such_suitor", name: body.with }); return; }
     if (!available(who)) {
@@ -878,6 +1002,7 @@ api.post("/sell", async (c) => {
   const body = z.object({ id: z.number().int() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    requireInTown(ctx, "the shop");
     await requireNoEncounter(ctx);
     const row = await ownRow(ctx, body.id);
     const gold = Bag.sellPrice(row.slot, row.item_id);
@@ -982,6 +1107,7 @@ api.post("/challenge", async (c) => {
   const body = z.object({ name: z.string().min(1) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
+    requireInTown(ctx, "the fields outside town");
     await requireNoEncounter(ctx);
     if (ctx.t.player_fights <= 0) { ctx.events.push({ kind: "no_player_fights_left" }); return; }
     if (!seasoned(ctx, "attack another player")) return;
@@ -1010,7 +1136,7 @@ api.post("/challenge", async (c) => {
       const gold = guarded ? Math.floor(d.gold / 2) : d.gold;
       const exp = Math.floor(expForLevel(d.level + 1) ?? 1000) / 20 | 0;
       await savePlayer(ctx, { hp: af.hp, gold: ctx.p.gold + gold, exp: ctx.p.exp + exp });
-      await ctx.c.query("update players set alive = false, hp = 0, gold = gold - $2, ground = null where id = $1", [d.id, gold]);
+      await ctx.c.query("update players set alive = false, hp = 0, gold = gold - $2, ground = null, pos_x = null, pos_y = null where id = $1", [d.id, gold]);
       const theirLost = await Bag.loseRandom(ctx.c, d.id);
       await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "killed_by_player", by: ctx.p.name, gold_lost: gold, item_lost: theirLost }]);
       await post(ctx, "pvp_kill", ctx.p.name, d.name, { gold });
@@ -1018,7 +1144,7 @@ api.post("/challenge", async (c) => {
       await logEvent(ctx, "pvp", { outcome: "won", opponent_class: d.class, opponent_level: d.level, opponent_bot: Boolean(d.is_bot), gold, rounds: res.log.filter((e) => e.attacker === ctx.p.name).length });
     } else if (res.winner === "defender") {
       // A failed attack kills you, but your gold stays yours: losing on purpose can't funnel gold to a friend.
-      await savePlayer(ctx, { hp: 0, alive: false, ground: null });
+      await savePlayer(ctx, { hp: 0, alive: false, ground: null, pos_x: null, pos_y: null });
       const myLost = await Bag.loseRandom(ctx.c, ctx.p.id);
       await ctx.c.query("update players set hp = $2 where id = $1", [d.id, df.hp]);
       await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "defended", against: ctx.p.name }]);

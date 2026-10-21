@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.5.0",
+    "lore": "The town gate stands open, and beyond it the land goes on: old woods, wet fens, hills that climb toward broken crags. Nobody has mapped most of it. The first to find a place gets talked about in the tavern; the farther you go, the worse the things that live there.",
+    "plain": "(E)xplore replaces the Forest. Walk the world one step at a time (each step into the wild costs a forest fight, going home is free), hunt where you stand, and check your (M)ap. Somewhere in the hills there are caves."
+  },
+  {
     "version": "0.4.4",
     "lore": "A small correction from the town clerk: the healer's apprentice is Rowan, and always was. Anyone may court anyone in this realm, and the clerk would like that noted in the register.",
     "plain": "The healer's apprentice is Rowan (he/him); Jory uses they/them. Anyone can court and marry anyone."

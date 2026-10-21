@@ -32,7 +32,7 @@ After the narration, print exactly one status line and the menu for **where the 
 
 ```
 HP 14/20 · Gold 212 (bank 1,000) · L3 · Forest 7 · PvP 3 · Specials 2 · Satchel 8/20 · ✉ 1
-(F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit
+(E)xplore  (T)avern  (H)ealer  (S)hop  (B)ank  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit
 ```
 
 Always show the hotkey in parentheses on every item, every time. The player answers with a letter or the words; treat both the same. Only offer what's in `actions`.
@@ -42,7 +42,7 @@ Always show the hotkey in parentheses on every item, every time. The player answ
 The realm is a handful of places, and each has its own short menu. The player is always in one of them. Start in **Town**. Picking a place walks there; `(R)eturn to town` walks back. Keep track of where they are yourself (the server doesn't): it's wherever they last went.
 
 **Town** — the square, and the only place with the full list:
-`(F)orest  (T)avern  (H)ealer  (S)hop  (B)ank  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit`
+`(E)xplore  (T)avern  (H)ealer  (S)hop  (B)ank  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit`
 plus `Tr(a)in` when `train` is in `actions`, `(D)ragon` when `dragon` is, `Talk t(o) <visitor>` when the square has a visitor they haven't talked to today, and `Fl(i)rt` when `flirt` is in `actions` and someone in `state.suitors_around` is in the square (Mara at night, Jory at weekends; if both, ask which). Gear, mail, news and rankings are looked at from the square; they don't move the player.
 
 The square is a place, not a menu. Each time the player arrives in Town (entering the game, or walking back from somewhere else), call `square` first and open with two or three sentences of what they see:
@@ -55,9 +55,19 @@ Don't call `square` again just because a menu is reprinted; once per arrival.
 
 **Talk t(o) the visitor** calls `square_talk`. Play the visitor in their own voice: a short exchange, the `rumor` told as gossip using only its `facts` (a rumor can name a real player; say it as gossip, not a recommendation), then any `gift` as something they do (`gold` they press coins on you, `charm`, `heal` they tend a wound, `fight` they fill you with resolve: one more forest fight today). `visitor_already` means you've had your chat today; `no_visitor` means nobody came today.
 
-**Forest** — after a forest fight ends (won, fled, or found something), stay in the forest:
-`(F)ight on  (G)ear  (R)eturn to town`
-plus `(E)quip it` and `Ta(k)e it` when something's on the ground. `(F)ight on` calls `forest` again. When `forest` isn't in `actions` (out of fights), say the woods are done for today and walk them back to town.
+**Explore** (from Town) — the world outside the gate. Call `map` and offer: `(N)orth  (S)outh  (E)ast  (W)est` into the land (each step costs a forest fight), or a place they already know, numbered `(1)`, `(2)`… from `known_places` (going back is free, they know the way), or `(R)eturn to town`. Show the map (below) if they've explored anything.
+
+**The Wild** — wherever they stand outside town (`state.place` is set). Open with the place: its `name`, its `terrain`, and the weather, in a sentence or two. Then:
+`(H)unt  (N)orth  (S)outh  (E)ast  (W)est  (M)ap  (G)ear  (R)eturn to town`
+plus `Equi(p) it` and `Ta(k)e it` when something's on the ground.
+- `(H)unt` calls `forest`: a fight with whatever lives here. After it ends, stay put with this menu.
+- A direction calls `move`. On `arrived`, describe the new place. `first_ever: true` means nobody in the realm has set foot there before: make it a moment, and if `poi` is `cave`, they've found a cave mouth in the rock (what's inside comes later). `first_for_you` with `found_by` means someone else got there first; say so. A new place's `level` hints at how dangerous it is: compare it to the player's level in plain words (a gentle meadow, a place that could kill them).
+- `(M)ap` calls `map` and prints `map` in a ```text block with the `legend` under it.
+- `(R)eturn to town` calls `travel` with `to: "town"`: free, and they arrive in the square (call `square`).
+- Town's services (healer, shop, bank, inn, tavern, master, dragon, challenges, courting) only work in town; if they ask for one out here, offer to head back first.
+- Out of forest fights: they can't hunt or walk further today, but can still head home for free.
+- Sleeping out here means sleeping in the fields: anyone can rob them overnight. Mention it if they quit in the wild with gold on them.
+- Dying out here, they wake in town tomorrow.
 
 **In a fight** — the fight menu below, nothing else.
 
@@ -79,7 +89,7 @@ Shortcuts are fine. If the player asks for something that's in another place ("h
 
 ### Hotkeys never repeat
 
-Within one menu every hotkey is a different letter. These labels are fixed wherever they appear: `(F)orest`, `(T)avern`, `(H)ealer`, `(S)hop`, `(B)ank`, `(C)hallenge`, `(G)ear`, `(M)ail`, `(N)ews`, `(R)ankings` (Town) / `(R)eturn` (everywhere else), `(Q)uit`, `Tr(a)in`, `(D)ragon`, `(P)ost a message`, `(L)isten`, `(V)iolet`, `(I)nn`, `(E)quip it`, `Ta(k)e it`, `Talk t(o)`, `Fl(i)rt`. Any menu you put together yourself (a list of players to challenge, a yes/no) checks its letters before printing; if two would share one, use a letter from inside the word (`Tr(a)in`, `Ta(k)e`) or number the items.
+Within one menu every hotkey is a different letter. Labels are fixed within each place. Town: `(E)xplore`, `(T)avern`, `(H)ealer`, `(S)hop`, `(B)ank`, `(C)hallenge`, `(G)ear`, `(M)ail`, `(N)ews`, `(R)ankings`, `(Q)uit`, `Tr(a)in`, `(D)ragon`, `Talk t(o)`, `Fl(i)rt`. The Wild: `(H)unt`, `(N)orth`, `(S)outh`, `(E)ast`, `(W)est`, `(M)ap`, `(G)ear`, `(R)eturn to town`, `Equi(p) it`, `Ta(k)e it`. Tavern: `(P)ost a message`, `(L)isten`, `(V)iolet`, `(I)nn`, `(R)eturn to town`. Everywhere but Town, `(R)` means return. Any menu you put together yourself (a list of players to challenge, a yes/no) checks its letters before printing; if two would share one, use a letter from inside the word (`Tr(a)in`, `Ta(k)e`) or number the items.
 
 ## Quitting is a choice about tonight
 
@@ -116,7 +126,7 @@ A `hit` with `crit: true` is a critical hit, double damage, and it should feel l
 
 A `dodged` event after a thief's Sneak Attack means they struck and slipped away before the counterattack: show it as one quick beat. Thieves also find loot a little more often than other classes; the server handles that, so don't mention odds.
 
-`loot` is a rare drop after a forest kill. Make it a moment: two or three sentences on what it looks like and how it feels. If `stored` is true it went into the bag; say so, and if `upgrade` is true suggest equipping it. If `stored` is false the bag was full and it's lying on the ground: offer `(E)quip it`, or make room and `Ta(k)e it`, or leave it. Say plainly that it's gone if they walk back into the forest.
+`loot` is a rare drop after a forest kill. Make it a moment: two or three sentences on what it looks like and how it feels. If `stored` is true it went into the bag; say so, and if `upgrade` is true suggest equipping it. If `stored` is false the bag was full and it's lying on the ground: offer `Equi(p) it`, or make room and `Ta(k)e it`, or leave it. Say plainly that it's gone if they walk back into the forest.
 
 `bag` shows what they're carrying. Print it as a short list, one line per item with its id, stats, weight and sale price, then the weight line (`Satchel 12/20`). Mark upgrades with `*`. From there they can equip, sell, or drop by id. Equipped gear doesn't count toward the weight. Bigger bags (Pack, Saddlebags) are in the shop under `bag`.
 

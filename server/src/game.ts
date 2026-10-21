@@ -1,3 +1,4 @@
+import { tileAt } from "./world.js";
 import data from "./data/game.json" with { type: "json" };
 
 export const GAME = data;
@@ -35,6 +36,8 @@ export interface Player {
   is_bot: boolean;
   role: "player" | "townsfolk" | "npc";
   spouse_id: string | null;
+  pos_x: number | null;
+  pos_y: number | null;
 }
 
 export interface Turns {
@@ -109,6 +112,8 @@ export interface PublicState {
   spouse: string | null;
   /** People you could court who are around right now, and where. */
   suitors_around: { name: string; pronouns: string; where: string }[];
+  /** Where they stand: null in town, otherwise the place in the wild. */
+  place: { x: number; y: number; name: string; terrain: string; level: number; poi: string | null } | null;
   /** The sky over the player, roughly. Only on status, forest and news, and only if they haven't turned it off. */
   weather?: import("./weather.js").Weather;
 }
@@ -191,6 +196,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     bank_trips_left: Math.max(0, GAME.bankTxPerDay - t.bank_tx),
     spouse,
     suitors_around: suitorsAround,
+    place: p.pos_x === null || p.pos_x === undefined ? null : (() => { const t = tileAt(p.pos_x!, p.pos_y!); return { x: t.x, y: t.y, name: t.name, terrain: t.terrain, level: t.level, poi: t.poi }; })(),
   };
 }
 
@@ -198,9 +204,17 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
 export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean): string[] {
   if (!p.alive) return ["news", "tavern", "rankings", "status", "mail"];
   if (inEncounter) return ["fight attack", "fight special", "fight run"];
-  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail"];
+  // Out in the wild: hunt where you stand, walk on, or head home. Town's services are back in town.
+  if (p.pos_x !== null && p.pos_x !== undefined) {
+    const w: string[] = ["map", "return", "status", "bag", "news", "rankings", "mail"];
+    if (p.ground) w.unshift("take", "equip ground");
+    if (t.forest_fights > 0) w.unshift("forest", "move");
+    return w;
+  }
+  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map"];
   if (p.ground) a.unshift("take", "equip ground");
-  if (t.forest_fights > 0) a.unshift("forest");
+  // Players head out into the world; townsfolk (who don't explore) still use the old forest.
+  if (p.role === "player") { a.unshift("explore"); } else if (t.forest_fights > 0) a.unshift("forest");
   if (t.player_fights > 0) a.push("challenge");
   if (!t.flirted) a.push("flirt");
   if (!t.inn_used) a.push("inn");

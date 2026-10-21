@@ -91,12 +91,15 @@ function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
   }
 }
 
+// EXPLORE=0 turns off the cost of walking out to a new ring of the map (one fight per new ring, the first time).
+const EXPLORE = process.env.EXPLORE !== "0";
+
 const DROPS = { n: 0, equipped: 0 };
 const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, number> = {}; const DEATH_L: Record<number, number> = {};
 type Cls = "warrior" | "thief" | "mage";
 
 function fresh(cls: Cls): Player {
-  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null };
+  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null };
 }
 
 function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number): "won" | "fled" | "died" {
@@ -144,6 +147,7 @@ function shop(p: SimPlayer) {
 function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; killedDragon: boolean; level?: number } {
   const p: SimPlayer = fresh(cls);
   let deaths = 0;
+  let farthest = 0; // ring reached so far
   for (let day = 1; day <= maxDays; day++) {
     // morning: inn heal (we always sleep at the inn if we could afford it)
     if (p.location === "inn" || !p.alive) p.hp = p.max_hp;
@@ -183,6 +187,8 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
         // fled: heal and try again tomorrow
         p.hp = p.max_hp; continue;
       }
+      // walk out to the ring that matches your level, the first time (known paths are free after that)
+      if (EXPLORE && p.level > farthest) { const steps = p.level - farthest; farthest = p.level; fights -= steps; if (fights <= 0) break; }
       // ordinary forest fight
       fights--;
       if (roll(99) < 10) { p.gold += roll(10 * p.level) + 5; continue; }
