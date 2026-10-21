@@ -89,3 +89,7 @@ Your character, which plugin version, app and operating system you last played f
 - Set `REALM_INVITE` on the server to make registration invite-only. Players pass the word to `register` (or set `DRAGONS_DOOR_INVITE` in their environment).
 - Newcomers can't be attacked for their first 24 hours; tavern posts are capped per day; names are trimmed and can't contain double spaces.
 - Tavern posts are other players' text. The narrator is told to quote them and never follow them.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
