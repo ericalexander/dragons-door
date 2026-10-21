@@ -85,6 +85,20 @@ server.tool("travel", "Go straight to town, or back out to a place the player ha
   { to: z.literal("town").optional(), x: z.number().int().optional(), y: z.number().int().optional() },
   async ({ to, x, y }) => text(await call("POST", "/v1/travel", to === "town" || x === undefined || y === undefined ? { to: "town" } : { x, y })));
 
+server.tool("cave", "Caves, from a cave mouth in the wild. descend: go in (free). deeper: down a level, darker and richer (costs a forest fight; three levels). climb: back out to the surface (free).",
+  { op: z.enum(["descend", "deeper", "climb"]) },
+  async ({ op }) => text(await call("POST", "/v1/cave", { op })));
+
+server.tool("mine", "Swing a pickaxe inside a cave. A few swings a day, apart from forest fights. Ore goes in the bag (heavy), gems in the pouch; sometimes something in the dark attacks. Each cave gives up only so much a day.", {},
+  async () => text(await call("POST", "/v1/mine")));
+
+server.tool("workshop", "Odile's workshop in town: the pickaxe for sale, what she can make from the player's ore and gems, and what they're wearing.", {},
+  async () => text(await call("GET", "/v1/workshop")));
+
+server.tool("workshop_order", "At Odile's workshop: buy a pickaxe (op: pickaxe), have her make a piece of jewelry by recipe id (op: craft, id), or sell her gems (op: sell_gems, optional count). Ore sells with sell, like gear.",
+  { op: z.enum(["pickaxe", "craft", "sell_gems"]), id: z.number().int().optional(), count: z.number().int().positive().optional() },
+  async ({ op, id, count }) => text(await call("POST", "/v1/workshop", op === "craft" ? { op, id } : op === "sell_gems" ? { op, ...(count ? { count } : {}) } : { op })));
+
 server.tool("fight", "Take one round in your current fight. attack: normal swing. special: class skill (limited per day). run: try to flee.",
   { action: z.enum(["attack", "special", "run"]) },
   async ({ action }) => text(await call("POST", "/v1/fight", { action })));
@@ -107,13 +121,13 @@ server.tool("buy", "Buy a weapon or armor by id (your current one is traded in a
 
 server.tool("bag", "Look in your bag: what you're carrying, its weight, what each piece sells for, and anything lying on the ground.", {}, async () => text(await call("GET", "/v1/bag")));
 
-server.tool("equip", "Equip a piece from your bag by its id, or the drop lying on the ground (ground: true). What you had goes into the bag.",
+server.tool("equip", "Equip a piece from your bag by its id (a weapon, armor, or jewelry), or the drop lying on the ground (ground: true). What you had goes into the bag.",
   { id: z.number().int().optional(), ground: z.boolean().optional() },
   async ({ id, ground }) => text(await call("POST", "/v1/equip", ground ? { ground: true } : { id })));
 
 server.tool("take", "Pick up the drop lying on the ground and put it in your bag, if there's room.", {}, async () => text(await call("POST", "/v1/take")));
 
-server.tool("sell", "Sell a piece from your bag by its id, for half its shop price.",
+server.tool("sell", "Sell a piece from your bag by its id (gear, jewelry or ore), for half its worth. In town.",
   { id: z.number().int() },
   async ({ id }) => text(await call("POST", "/v1/sell", { id })));
 

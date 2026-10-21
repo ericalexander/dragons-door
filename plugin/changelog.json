@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.6.0",
+    "lore": "A new sign hangs off the square: ODILE, GEMCUTTER, burned into the wood. She has a loupe screwed into one eye and opinions about your ore. She'll sell you a pickaxe, and the caves in the hills, cold and dripping and three levels deep, will give a little to anyone who swings one. Not too much a day. Things live down there too.",
+    "plain": "Caves are open: (D)escend at a cave mouth, then (M)ine with a pickaxe (6 swings a day, apart from forest fights) or go (D)eeper. Take ore and gems to Odile's (W)orkshop in town to have jewelry made: one piece worn, adding strength, defense or charm."
+  },
+  {
     "version": "0.5.1",
     "lore": "The townsfolk have started wanting things. Hilde talks about a cottage by the river, Brother Ansel passes a hat for the shrine, and Pip won't stop saying he'll outrank someone. Don't be surprised to meet one of them out past the gate, or to find one gone for the day. And if you rob one, expect to be remembered.",
     "plain": "Townsfolk now have goals and choose what to do each day, so they're less predictable. You may meet them in the wild, see their goals in the news, and a townsperson you rob may come after you."

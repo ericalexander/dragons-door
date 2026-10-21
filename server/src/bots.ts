@@ -22,6 +22,7 @@ import { realmDay, realmSettings } from "./day.js";
 import { GAME, type Envelope, type Event } from "./game.js";
 import { DIRS, tileAt, type Dir } from "./world.js";
 import { SUITORS, available } from "./romance.js";
+import { MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, canMake, caveLevel, trinket, type Trinket } from "./caves.js";
 import { awayToday, choose, doneLine, finished, fraction, goalLabel, goalTalk, pickGoal, type Activity, type Facts, type Mind } from "./minds.js";
 
 export const bots = new Hono();
@@ -52,6 +53,8 @@ function authorized(header: string | undefined): boolean {
 
 class Bot {
   log: string[] = [];
+  /** Saving ore for jewelry: don't sell it. */
+  keepOre = false;
   constructor(public name: string, public personality: Personality, private key: string) {}
 
   async call(method: "GET" | "POST", path: string, body?: unknown): Promise<Envelope | { error: string; message?: string }> {
@@ -115,8 +118,9 @@ async function tidyBag(b: Bot) {
   for (const it of bagEv.items) if (it.upgrade) await b.post("/equip", { id: it.id });
   const again = await b.get("/bag");
   if (isErr(again)) return;
-  const left = (again.events.find((e) => e.kind === "bag") as unknown as { items: { id: number }[] }).items;
-  for (const it of left) await b.post("/sell", { id: it.id });
+  const left = (again.events.find((e) => e.kind === "bag") as unknown as { items: { id: number; slot: string }[] }).items;
+  // Ore is kept while they're saving it up for Odile; otherwise everything goes.
+  for (const it of left) if (!(b.keepOre && it.slot === "ore")) await b.post("/sell", { id: it.id });
 }
 
 // ---------- session building blocks ----------
@@ -393,19 +397,23 @@ export const FIGHTS: Record<Personality, number[]> = {
 
 interface Row { player_id: string; name: string; personality: Personality; api_key: string; mind: Mind }
 
-async function gatherFacts(row: Row, mind: Mind): Promise<Facts & { pos: [number, number] | null; location: string; class: string }> {
-  const p = (await pool.query<{ level: number; gold: string; bank: string; weapon_id: number; armor_id: number; married: boolean; pos_x: number | null; pos_y: number | null; location: string; class: string }>(
-    "select level, gold::text, bank::text, weapon_id, armor_id, spouse_id is not null as married, pos_x, pos_y, location, class from players where id = $1", [row.player_id])).rows[0];
+type Gathered = Facts & { pos: [number, number] | null; location: string; class: string; pickaxe: boolean; gems: number; ore: Record<number, number>; cave: { name: string; x: number; y: number } | null };
+async function gatherFacts(row: Row, mind: Mind): Promise<Gathered> {
+  const p = (await pool.query<{ level: number; gold: string; bank: string; weapon_id: number; armor_id: number; married: boolean; pos_x: number | null; pos_y: number | null; location: string; class: string; trinket_id: number; pickaxe: boolean; gems: number }>(
+    "select level, gold::text, bank::text, weapon_id, armor_id, spouse_id is not null as married, pos_x, pos_y, location, class, trinket_id, pickaxe, gems from players where id = $1", [row.player_id])).rows[0];
   const ex = (await pool.query<{ n: string; far: number }>(
     "select count(*)::text as n, coalesce(max(greatest(abs(x), abs(y))), 0) as far from explored where player_id = $1", [row.player_id])).rows[0];
-  const cave = (await pool.query<{ name: string }>(
-    "select d.name from explored e join discoveries d on d.x = e.x and d.y = e.y where e.player_id = $1 and d.poi = 'cave' limit 1", [row.player_id])).rows[0];
+  const cave = (await pool.query<{ name: string; x: number; y: number }>(
+    "select d.name, d.x, d.y from explored e join discoveries d on d.x = e.x and d.y = e.y where e.player_id = $1 and d.poi = 'cave' order by abs(d.x) + abs(d.y) limit 1", [row.player_id])).rows[0];
   const rival = (await pool.query<{ name: string; level: number }>(
     "select p.name, p.level from bots b join players p on p.id = b.player_id where p.id <> $1 order by p.level desc, p.exp desc limit 1", [row.player_id])).rows[0];
   const rivalLevel = mind.goal?.rival
     ? (await pool.query<{ level: number }>("select level from players where name = $1", [mind.goal.rival])).rows[0]?.level ?? null
     : null;
+  const ore: Record<number, number> = {};
+  for (const r of (await pool.query<{ item_id: number; n: string }>("select item_id, count(*)::text as n from inventory where player_id = $1 and slot = 'ore' group by item_id", [row.player_id])).rows) ore[r.item_id] = Number(r.n);
   return {
+    trinket_id: p.trinket_id, pickaxe: p.pickaxe, gems: p.gems, ore, cave: cave ?? null,
     name: row.name, personality: row.personality, level: p.level, gold: Number(p.gold), bank: Number(p.bank),
     weapon_id: p.weapon_id, armor_id: p.armor_id, married: p.married, explored: Number(ex.n), farthest: Number(ex.far),
     found_cave: cave?.name ?? null, top_rival: rival ?? null, rival_level: rivalLevel,
@@ -568,6 +576,86 @@ async function reviewGoal(b: Bot, row: Row, mind: Mind, f: Facts, day: string, i
   }
 }
 
+/** What a townsperson would like Odile to make: strength for most, defense for the careful, charm for the romantic. */
+function wants(p: Personality): "str" | "def" | "charm" {
+  if (p === "banker" || p === "pious") return "def";
+  if (p === "seer" || p === "gossip") return "charm";
+  return "str";
+}
+const worth = (x: Trinket, p: Personality) => x[wants(p)] * 2 + x.str + x.def + x.charm;
+
+/** The best piece they could have made right now that beats what they wear, if any. */
+function bestCraft(f: Gathered, p: Personality): Trinket | null {
+  const worn = trinket(f.trinket_id);
+  return TRINKETS.filter((x) => x.id > 0 && worth(x, p) > worth(worn, p) && canMake(x, { ore: f.ore, gems: f.gems, gold: f.gold + f.bank }))
+    .sort((a, z) => worth(z, p) - worth(a, p))[0] ?? null;
+}
+
+/** Off to the cave they know: buy a pick first if need be, go down as far as feels safe, swing until done. */
+async function mineTrip(b: Bot, row: Row, mind: Mind, f: Gathered) {
+  if (!f.cave) return;
+  if (!f.pickaxe) {
+    await home(b);
+    await b.post("/bank", { op: "withdraw", amount: PICKAXE_COST });
+    const r = await b.post("/workshop", { op: "pickaxe" });
+    if (isErr(r) || !kinds(r).includes("bought")) { b.log.push("couldn't afford a pickaxe"); return; }
+    b.log.push("bought a pickaxe from Odile");
+  }
+  const st = STYLE[row.personality];
+  const t = await b.post("/travel", { x: f.cave.x, y: f.cave.y });
+  if (isErr(t)) return;
+  await b.post("/cave", { op: "descend" });
+  const tile = tileAt(f.cave.x, f.cave.y);
+  let depth = 1;
+  while (depth < MAX_DEPTH && caveLevel(tile.level, depth + 1) <= comfort(row.personality, f.level, mind.mood ?? 0) && Math.random() < 0.6) {
+    const d = await b.post("/cave", { op: "deeper" });
+    if (isErr(d) || !kinds(d).includes("in_cave")) break;
+    depth++;
+  }
+  let finds = 0;
+  for (let k = 0; k < SWINGS_PER_DAY; k++) {
+    const r = await b.post("/mine");
+    if (isErr(r)) break;
+    const ks = kinds(r);
+    if (ks.some((x) => ["mined_out", "your_share", "no_swings_left", "no_pickaxe"].includes(x))) break;
+    if (ks.includes("encounter")) {
+      let e: Envelope | null = r;
+      for (let i = 0; i < 60 && e && e.state.in_encounter; i++) {
+        const action = st.runBelow !== undefined && e.state.hp / e.state.max_hp < st.runBelow ? "run" : "attack";
+        const n = await b.post("/fight", { action });
+        e = isErr(n) ? null : n;
+      }
+      if (e && !e.state.alive) { b.log.push(`killed in ${tile.name}`); return; }
+    }
+    const m = r.events.find((x) => x.kind === "mined") as { found?: string | null; left_behind?: boolean } | undefined;
+    if (m?.found && !m.left_behind) finds++;
+    if (m?.left_behind) break; // bag's full
+    const now = await b.get("/status");
+    if (isErr(now) || now.state.hp / now.state.max_hp < Math.max(st.healBelow, 0.35)) break;
+  }
+  await b.post("/cave", { op: "climb" });
+  await b.post("/travel", { to: "town" });
+  b.log.push(`mined ${tile.name} (depth ${depth}): ${finds} find${finds === 1 ? "" : "s"}`);
+}
+
+/** Have Odile make the best thing they can afford, and put it on. */
+async function craftJewelry(b: Bot, row: Row, f: Gathered) {
+  const x = bestCraft(f, row.personality);
+  if (!x) return;
+  await home(b);
+  if (f.gold < x.needs.fee) await b.post("/bank", { op: "withdraw", amount: x.needs.fee - f.gold });
+  const r = await b.post("/workshop", { op: "craft", id: x.id });
+  if (isErr(r) || !kinds(r).includes("crafted")) return;
+  const c = r.events.find((e) => e.kind === "crafted") as { worn?: boolean } | undefined;
+  if (!c?.worn) {
+    const bag = await b.get("/bag");
+    const items = isErr(bag) ? [] : ((bag.events.find((e) => e.kind === "bag") as unknown as { items: { id: number; slot: string; name: string }[] }).items);
+    const piece = items.find((i) => i.slot === "trinket" && i.name === x.name);
+    if (piece) await b.post("/equip", { id: piece.id });
+  }
+  b.log.push(`had Odile make a ${x.name}`);
+}
+
 async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string) {
   const plan = PLAN[row.personality];
   const slot = plan[i];
@@ -598,7 +686,10 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
   const acts: Activity[] = lazy ? ["rest"] : choose(row.personality, mind, {
     hp: s.hp, max_hp: s.max_hp, fights_left: s.forest_fights, gold: s.gold,
     can_upgrade: f.gold + f.bank >= nextCost, hint: slot.doing, last_session: last, night, grudge_target: grudgeTarget,
+    can_mine: Boolean(f.cave) && (f.pickaxe || f.gold + f.bank >= PICKAXE_COST + 100) && s.swings_left > 0,
+    can_craft: bestCraft(f, row.personality) !== null,
   }, Math.random);
+  b.keepOre = mind.goal?.kind === "jewel";
   mind.today!.sessions[String(i)] = acts;
   b.log.push(`chose ${acts.join(" + ")}`);
 
@@ -614,6 +705,8 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
       case "flirt": await home(b); await flirtSomeone(b); break;
       case "bard": await home(b); await song(b); b.log.push("listened to the bard"); break;
       case "donate": await home(b); await donate(b, row, mind); break;
+      case "mine": await mineTrip(b, row, mind, f); f = await gatherFacts(row, mind); if (bestCraft(f, row.personality)) await craftJewelry(b, row, f); break;
+      case "craft": await craftJewelry(b, row, f); break;
       case "raid": await home(b); if (grudgeTarget) { await revenge(b, grudgeTarget); delete mind.grudge; } else await raid(b); break;
       case "rest": b.log.push(lazy ? "stayed in bed" : "took it easy"); { const h = await b.get("/status"); if (!isErr(h) && !h.state.place) await healIfNeeded(b, h, 0.6); } break;
     }

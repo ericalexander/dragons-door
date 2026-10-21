@@ -21816,6 +21816,30 @@ server.tool(
   async ({ to, x, y }) => text(await call("POST", "/v1/travel", to === "town" || x === void 0 || y === void 0 ? { to: "town" } : { x, y }))
 );
 server.tool(
+  "cave",
+  "Caves, from a cave mouth in the wild. descend: go in (free). deeper: down a level, darker and richer (costs a forest fight; three levels). climb: back out to the surface (free).",
+  { op: external_exports.enum(["descend", "deeper", "climb"]) },
+  async ({ op }) => text(await call("POST", "/v1/cave", { op }))
+);
+server.tool(
+  "mine",
+  "Swing a pickaxe inside a cave. A few swings a day, apart from forest fights. Ore goes in the bag (heavy), gems in the pouch; sometimes something in the dark attacks. Each cave gives up only so much a day.",
+  {},
+  async () => text(await call("POST", "/v1/mine"))
+);
+server.tool(
+  "workshop",
+  "Odile's workshop in town: the pickaxe for sale, what she can make from the player's ore and gems, and what they're wearing.",
+  {},
+  async () => text(await call("GET", "/v1/workshop"))
+);
+server.tool(
+  "workshop_order",
+  "At Odile's workshop: buy a pickaxe (op: pickaxe), have her make a piece of jewelry by recipe id (op: craft, id), or sell her gems (op: sell_gems, optional count). Ore sells with sell, like gear.",
+  { op: external_exports.enum(["pickaxe", "craft", "sell_gems"]), id: external_exports.number().int().optional(), count: external_exports.number().int().positive().optional() },
+  async ({ op, id, count }) => text(await call("POST", "/v1/workshop", op === "craft" ? { op, id } : op === "sell_gems" ? { op, ...count ? { count } : {} } : { op }))
+);
+server.tool(
   "fight",
   "Take one round in your current fight. attack: normal swing. special: class skill (limited per day). run: try to flee.",
   { action: external_exports.enum(["attack", "special", "run"]) },
@@ -21844,14 +21868,14 @@ server.tool(
 server.tool("bag", "Look in your bag: what you're carrying, its weight, what each piece sells for, and anything lying on the ground.", {}, async () => text(await call("GET", "/v1/bag")));
 server.tool(
   "equip",
-  "Equip a piece from your bag by its id, or the drop lying on the ground (ground: true). What you had goes into the bag.",
+  "Equip a piece from your bag by its id (a weapon, armor, or jewelry), or the drop lying on the ground (ground: true). What you had goes into the bag.",
   { id: external_exports.number().int().optional(), ground: external_exports.boolean().optional() },
   async ({ id, ground }) => text(await call("POST", "/v1/equip", ground ? { ground: true } : { id }))
 );
 server.tool("take", "Pick up the drop lying on the ground and put it in your bag, if there's room.", {}, async () => text(await call("POST", "/v1/take")));
 server.tool(
   "sell",
-  "Sell a piece from your bag by its id, for half its shop price.",
+  "Sell a piece from your bag by its id (gear, jewelry or ore), for half its worth. In town.",
   { id: external_exports.number().int() },
   async ({ id }) => text(await call("POST", "/v1/sell", { id }))
 );

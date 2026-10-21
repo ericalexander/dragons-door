@@ -1,4 +1,5 @@
 import { tileAt } from "./world.js";
+import { SWINGS_PER_DAY, trinket, bonusText } from "./caves.js";
 import data from "./data/game.json" with { type: "json" };
 
 export const GAME = data;
@@ -38,6 +39,10 @@ export interface Player {
   spouse_id: string | null;
   pos_x: number | null;
   pos_y: number | null;
+  /** Jewelry worn (0 = none), whether they own a pickaxe, and how deep in a cave they are (null = not in one). */
+  trinket_id: number;
+  pickaxe: boolean;
+  cave_depth: number | null;
 }
 
 export interface Turns {
@@ -53,6 +58,8 @@ export interface Turns {
   messages_sent: number;
   bard_heard: boolean;
   visitor_talked: boolean;
+  /** Swings of the pick taken today. */
+  swings: number;
 }
 
 export interface Monster {
@@ -108,12 +115,18 @@ export interface PublicState {
   /** What things cost right now, so the narrator can quote before the player commits. */
   prices: { inn: number; heal_per_hp: number; heal_all: number };
   bank_trips_left: number;
+  /** Swings of the pick left today (only matters with a pickaxe). */
+  swings_left: number;
   /** Who they're married to, if anyone. */
   spouse: string | null;
   /** People you could court who are around right now, and where. */
   suitors_around: { name: string; pronouns: string; where: string }[];
   /** Where they stand: null in town, otherwise the place in the wild. */
   place: { x: number; y: number; name: string; terrain: string; level: number; poi: string | null } | null;
+  /** Jewelry worn, with what it does; whether they carry a pickaxe; how deep in a cave (null = not in one). */
+  jewelry: string | null;
+  pickaxe: boolean;
+  cave_depth: number | null;
   /** The sky over the player, roughly. Only on status, forest and news, and only if they haven't turned it off. */
   weather?: import("./weather.js").Weather;
 }
@@ -144,8 +157,12 @@ export function master(level: number) {
 
 /** Player's total strength and defense including gear. */
 export function effective(p: Player) {
-  return { str: p.str + weapon(p.weapon_id).str, def: p.def + armor(p.armor_id).def };
+  const j = trinket(p.trinket_id ?? 0);
+  return { str: p.str + weapon(p.weapon_id).str + j.str, def: p.def + armor(p.armor_id).def + j.def };
 }
+
+/** Charm as others feel it: your own, plus whatever your jewelry adds. */
+export const charmOf = (p: Player) => p.charm + trinket(p.trinket_id ?? 0).charm;
 
 /** A room costs 100 a level; half that for anyone married to Violet, who keeps one aside. */
 export function innCost(p: Player, spouse: string | null = null): number {
@@ -194,8 +211,12 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
       heal_all: healCost(p, p.max_hp - p.hp, spouse),
     },
     bank_trips_left: Math.max(0, GAME.bankTxPerDay - t.bank_tx),
+    swings_left: Math.max(0, SWINGS_PER_DAY - (t.swings ?? 0)),
     spouse,
     suitors_around: suitorsAround,
+    jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id))})` : null,
+    pickaxe: Boolean(p.pickaxe),
+    cave_depth: p.cave_depth ?? null,
     place: p.pos_x === null || p.pos_x === undefined ? null : (() => { const t = tileAt(p.pos_x!, p.pos_y!); return { x: t.x, y: t.y, name: t.name, terrain: t.terrain, level: t.level, poi: t.poi }; })(),
   };
 }
@@ -208,10 +229,18 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
   if (p.pos_x !== null && p.pos_x !== undefined) {
     const w: string[] = ["map", "return", "status", "bag", "news", "rankings", "mail"];
     if (p.ground) w.unshift("take", "equip ground");
+    if (p.cave_depth) {
+      // Underground: hunt, mine, go deeper, or climb out. Walking anywhere means climbing out first.
+      w.splice(0, 2, "climb", "return");
+      if (p.pickaxe && (t.swings ?? 0) < SWINGS_PER_DAY) w.unshift("mine");
+      if (t.forest_fights > 0) w.unshift("forest", ...(p.cave_depth < 3 ? ["deeper"] : []));
+      return w;
+    }
     if (t.forest_fights > 0) w.unshift("forest", "move");
+    if (tileAt(p.pos_x, p.pos_y!).poi === "cave") w.unshift("descend");
     return w;
   }
-  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map"];
+  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop"];
   if (p.ground) a.unshift("take", "equip ground");
   // Players head out into the world; townsfolk (who don't explore) still use the old forest.
   if (p.role === "player") { a.unshift("explore"); } else if (t.forest_fights > 0) a.unshift("forest");

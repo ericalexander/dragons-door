@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
+  GAME, armor, weapon, charmOf, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -16,6 +16,7 @@ import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { DIRS, LEGEND, renderMap, tileAt, type Dir } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
+import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
@@ -192,7 +193,7 @@ function seasoned(ctx: Ctx, what: string): boolean {
 
 /** Names that would pass for a local. Compared after folding lookalike characters. */
 const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
-  "violet", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
+  "violet", "odile", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
   "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic"];
 // i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
 const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
@@ -375,6 +376,8 @@ function newsLine(n: { kind: string; actor: string | null; target: string | null
       return `${n.actor} married ${to}.`;
     }
     case "goal": return String(n.detail.line);
+    case "mined_out": return `${n.detail.place} was mined out today; ${n.actor} took the last of it.`;
+    case "crafted": return `Odile made ${n.actor} ${aOrAn(String(n.detail.item))}.`;
     case "loot": return `${n.actor} pried ${aOrAn(String(n.detail.item))} off a dead ${n.detail.monster}.`;
     default: return `${n.actor ?? "Someone"} did something (${n.kind}).`;
   }
@@ -389,10 +392,10 @@ api.get("/shop", async (c) => {
   const q = c.req.query("kind");
   const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(ctx.p.charm) * 100) }); return; }
+    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
-    ctx.events.push({ kind: "catalog", shop: kind, owned, items, charm_discount_pct: Math.round(charmDiscount(ctx.p.charm) * 100) });
+    ctx.events.push({ kind: "catalog", shop: kind, owned, items, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) });
   }));
 });
 
@@ -414,7 +417,8 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
   if (!here && ctx.p.role === "player" && plugin && !older(plugin, "0.5.0")) {
     throw new GameError("in_town", "the wild starts at the town gate: explore first", 409);
   }
-  const level = here ? here.level : ctx.p.level;
+  const depth = here ? ctx.p.cave_depth ?? 0 : 0;
+  const level = here ? caveLevel(here.level, depth) : ctx.p.level;
   await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
   if (roll(99) < 10) {
     // found something instead of a fight
@@ -425,7 +429,7 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
   }
   const m = pickMonster(level);
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
-  ctx.events.push({ kind: "encounter", monster: m, ...(here ? { place: here.name, terrain: here.terrain } : {}) });
+  ctx.events.push({ kind: "encounter", monster: m, ...(here ? { place: here.name, terrain: here.terrain } : {}), ...(depth ? { in_cave: true, depth } : {}) });
 }, { weather: true })));
 
 api.post("/fight", async (c) => {
@@ -499,8 +503,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
       const w = Bag.item(drop.kind, drop.tier).weight;
       const usedNow = await Bag.used(ctx.c, ctx.p.id);
       const cap = Bag.bag(ctx.p.bag_id).capacity;
-      const current = Bag.item(drop.kind, drop.kind === "weapon" ? ctx.p.weapon_id : ctx.p.armor_id);
-      const upgrade = drop.tier > current.id;
+      const upgrade = drop.tier > (drop.kind === "weapon" ? ctx.p.weapon_id : ctx.p.armor_id);
       if (usedNow + w <= cap) {
         await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, drop.kind, drop.tier]);
         ctx.events.push({ kind: "loot", monster: m.name, item: drop.item, slot: drop.kind, weight: w, stored: true, upgrade, bag_used: usedNow + w, bag_capacity: cap });
@@ -555,7 +558,7 @@ async function die(ctx: Ctx, kind: string, m: Monster) {
   const lost = ctx.p.gold;
   const expLoss = Math.floor(ctx.p.exp * 0.1);
   // You wake in town, however far out you fell.
-  await savePlayer(ctx, { alive: false, hp: 0, gold: 0, exp: ctx.p.exp - expLoss, ground: null, pos_x: null, pos_y: null });
+  await savePlayer(ctx, { alive: false, hp: 0, gold: 0, exp: ctx.p.exp - expLoss, ground: null, pos_x: null, pos_y: null, cave_depth: null });
   const itemLost = await Bag.loseRandom(ctx.c, ctx.p.id);
   if (kind === "dragon") await post(ctx, "dragon_death", ctx.p.name, null, {});
   else await post(ctx, "forest_death", ctx.p.name, null, { monster: m.name });
@@ -624,7 +627,7 @@ api.post("/buy", async (c) => {
       const nb = Bag.bag(body.id);
       if (nb.id !== body.id) throw new GameError("no_such_item", "no such bag");
       if (nb.id <= ctx.p.bag_id) { ctx.events.push({ kind: "already_have_bigger", bag: Bag.bag(ctx.p.bag_id).name }); return; }
-      const bagCost = Math.ceil(nb.cost * (1 - charmDiscount(ctx.p.charm)));
+      const bagCost = Math.ceil(nb.cost * (1 - charmDiscount(charmOf(ctx.p))));
       if (ctx.p.gold < bagCost) { ctx.events.push({ kind: "too_poor", cost: bagCost, gold: ctx.p.gold }); return; }
       await savePlayer(ctx, { gold: ctx.p.gold - bagCost, bag_id: nb.id });
       ctx.events.push({ kind: "bought", shop: "bag", item: nb.name, cost: bagCost, capacity: nb.capacity });
@@ -635,7 +638,7 @@ api.post("/buy", async (c) => {
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
     const tradeIn = Math.floor(current.cost / 2);
-    const discount = charmDiscount(ctx.p.charm);
+    const discount = charmDiscount(charmOf(ctx.p));
     const cost = Math.ceil((item.cost - tradeIn) * (1 - discount));
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
     await savePlayer(ctx, { gold: ctx.p.gold - cost, ...(body.kind === "weapon" ? { weapon_id: item.id } : { armor_id: item.id }) });
@@ -739,7 +742,7 @@ api.post("/move", async (c) => {
     const [x, y] = [x0 + DIRS[body.dir][0], y0 + DIRS[body.dir][1]];
     if (x === 0 && y === 0) {
       await leaveGround(ctx);
-      await savePlayer(ctx, { pos_x: null, pos_y: null });
+      await savePlayer(ctx, { pos_x: null, pos_y: null, cave_depth: null });
       ctx.events.push({ kind: "arrived", place: "town" });
       return;
     }
@@ -750,7 +753,7 @@ api.post("/move", async (c) => {
       await savePlayer(ctx, { ground: null });
     }
     await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
-    await savePlayer(ctx, { pos_x: x, pos_y: y });
+    await savePlayer(ctx, { pos_x: x, pos_y: y, cave_depth: null });
     const t = tileAt(x, y);
     const mine = await ctx.c.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing returning 1", [ctx.p.id, x, y]);
     const firstForYou = Boolean(mine.rowCount);
@@ -775,7 +778,7 @@ api.post("/travel", async (c) => {
     await requireNoEncounter(ctx);
     if ("to" in body || (body.x === 0 && body.y === 0)) {
       await leaveGround(ctx);
-      await savePlayer(ctx, { pos_x: null, pos_y: null });
+      await savePlayer(ctx, { pos_x: null, pos_y: null, cave_depth: null });
       ctx.events.push({ kind: "arrived", place: "town" });
       return;
     }
@@ -783,10 +786,182 @@ api.post("/travel", async (c) => {
     if (!known.rowCount) { ctx.events.push({ kind: "unknown_place", x: body.x, y: body.y }); return; }
     await leaveInn(ctx);
     await leaveGround(ctx);
-    await savePlayer(ctx, { pos_x: body.x, pos_y: body.y });
+    await savePlayer(ctx, { pos_x: body.x, pos_y: body.y, cave_depth: null });
     const t = tileAt(body.x, body.y);
     const others = await othersHere(ctx, body.x, body.y);
     ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true, ...(others.length ? { others_here: others } : {}) });
+  }));
+});
+
+// ---------- caves ----------
+
+function requireCave(ctx: Ctx) {
+  if (!inWild(ctx.p) || !ctx.p.cave_depth) throw new GameError("not_in_cave", "you need to be inside a cave", 409);
+}
+
+/** Go down into a cave from its mouth, go deeper, or climb back out to the surface. */
+api.post("/cave", async (c) => {
+  const body = z.object({ op: z.enum(["descend", "deeper", "climb"]) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    if (!inWild(ctx.p)) throw new GameError("not_in_cave", "there are no caves in town; find one out in the hills", 409);
+    const t = tileAt(ctx.p.pos_x!, ctx.p.pos_y!);
+    const depth = ctx.p.cave_depth ?? 0;
+    if (body.op === "climb") {
+      if (!depth) { ctx.events.push({ kind: "not_in_cave" }); return; }
+      await leaveGround(ctx);
+      await savePlayer(ctx, { cave_depth: null });
+      ctx.events.push({ kind: "climbed_out", place: t.name });
+      return;
+    }
+    if (t.poi !== "cave") { ctx.events.push({ kind: "no_cave_here", place: t.name }); return; }
+    if (body.op === "descend" && depth) { ctx.events.push({ kind: "already_in_cave", depth }); return; }
+    if (body.op === "deeper") {
+      if (!depth) { ctx.events.push({ kind: "not_in_cave" }); return; }
+      if (depth >= MAX_DEPTH) { ctx.events.push({ kind: "cave_bottom", depth }); return; }
+      if (ctx.t.forest_fights <= 0) { ctx.events.push({ kind: "no_fights_left", why: "too tired to climb down any further today" }); return; }
+      await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
+    }
+    await leaveGround(ctx);
+    const next = depth + 1;
+    await savePlayer(ctx, { cave_depth: next });
+    const left = await caveFindsLeft(ctx, t.x, t.y);
+    ctx.events.push({ kind: "in_cave", place: t.name, depth: next, max_depth: MAX_DEPTH, level: caveLevel(t.level, next), pickaxe: ctx.p.pickaxe, seams: left.cave > 0 ? (left.cave > CAVE_FINDS_PER_DAY / 2 ? "rich" : "thinning") : "picked clean" });
+    if (next === 1) await logEvent(ctx, "cave", { x: t.x, y: t.y, level: t.level });
+  }));
+});
+
+async function caveFindsLeft(ctx: Ctx, x: number, y: number) {
+  const r = await ctx.c.query<{ total: string; mine: string }>(
+    "select coalesce(sum(n), 0)::text as total, coalesce(sum(n) filter (where player_id = $4), 0)::text as mine from mining where day = $1 and x = $2 and y = $3",
+    [ctx.day, x, y, ctx.p.id]);
+  const cap = ctx.p.role === "player" ? FINDS_PER_PERSON.player : FINDS_PER_PERSON.townsfolk;
+  return { cave: Math.max(0, CAVE_FINDS_PER_DAY - Number(r.rows[0].total)), yours: Math.max(0, cap - Number(r.rows[0].mine)), cap };
+}
+
+/** One swing of the pick. Costs a forest fight. Ore goes in the bag, gems in the pouch; sometimes something lives in the dark. */
+api.post("/mine", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAlive(ctx);
+  await requireNoEncounter(ctx);
+  requireCave(ctx);
+  if (!ctx.p.pickaxe) { ctx.events.push({ kind: "no_pickaxe", sold_by: "Odile, at her workshop in town", cost: PICKAXE_COST }); return; }
+  if ((ctx.t.swings ?? 0) >= SWINGS_PER_DAY) { ctx.events.push({ kind: "no_swings_left", per_day: SWINGS_PER_DAY, refills: "at the reset" }); return; }
+  const t = tileAt(ctx.p.pos_x!, ctx.p.pos_y!);
+  const depth = ctx.p.cave_depth!;
+  const left = await caveFindsLeft(ctx, t.x, t.y);
+  if (left.cave <= 0) { ctx.events.push({ kind: "mined_out", place: t.name, refills: "at the reset" }); return; }
+  if (left.yours <= 0) { ctx.events.push({ kind: "your_share", place: t.name, limit: left.cap, refills: "at the reset" }); return; }
+  await saveTurns(ctx, { swings: (ctx.t.swings ?? 0) + 1 });
+  const r = swing(depth);
+  const take = async () => {
+    await ctx.c.query("insert into mining (day, x, y, player_id, n) values ($1,$2,$3,$4,1) on conflict (day, x, y, player_id) do update set n = mining.n + 1",
+      [ctx.day, t.x, t.y, ctx.p.id]);
+    if (left.cave === 1) await post(ctx, "mined_out", ctx.p.name, null, { place: t.name });
+  };
+  if (r.kind === "ambush") {
+    const m = pickMonster(caveLevel(t.level, depth));
+    await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
+    ctx.events.push({ kind: "encounter", monster: m, place: t.name, in_cave: true, depth, ambush: true });
+    await logEvent(ctx, "mine", { x: t.x, y: t.y, depth, found: "ambush" });
+    return;
+  }
+  if (r.kind === "nothing") {
+    ctx.events.push({ kind: "mined", found: null, depth, finds_left_today: left.yours, swings_left: SWINGS_PER_DAY - ctx.t.swings });
+    await logEvent(ctx, "mine", { x: t.x, y: t.y, depth, found: "nothing" });
+    return;
+  }
+  if (r.kind === "gem") {
+    await savePlayer(ctx, { gems: ctx.p.gems + 1 });
+    await take();
+    ctx.events.push({ kind: "mined", found: "gem", gems: ctx.p.gems, depth, finds_left_today: left.yours - 1, swings_left: SWINGS_PER_DAY - ctx.t.swings });
+    await logEvent(ctx, "mine", { x: t.x, y: t.y, depth, found: "gem" });
+    return;
+  }
+  const usedNow = await Bag.used(ctx.c, ctx.p.id);
+  const cap = Bag.bag(ctx.p.bag_id).capacity;
+  if (usedNow + r.ore.weight > cap) {
+    ctx.events.push({ kind: "mined", found: r.ore.name, weight: r.ore.weight, left_behind: true, reason: "bag_full", bag_used: usedNow, bag_capacity: cap, depth });
+    await logEvent(ctx, "mine", { x: t.x, y: t.y, depth, found: r.ore.name, kept: false });
+    return;
+  }
+  await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,'ore',$2)", [ctx.p.id, r.ore.id]);
+  await take();
+  ctx.events.push({ kind: "mined", found: r.ore.name, weight: r.ore.weight, bag_used: usedNow + r.ore.weight, bag_capacity: cap, depth, finds_left_today: left.yours - 1, swings_left: SWINGS_PER_DAY - ctx.t.swings });
+  await logEvent(ctx, "mine", { x: t.x, y: t.y, depth, found: r.ore.name, kept: true });
+})));
+
+// ---------- Odile's workshop ----------
+
+async function materials(ctx: Ctx) {
+  const items = await Bag.contents(ctx.c, ctx.p.id);
+  const oreCount: Record<number, number> = {};
+  for (const x of items) if (x.slot === "ore") oreCount[x.item_id] = (oreCount[x.item_id] ?? 0) + 1;
+  return { items, ore: oreCount };
+}
+
+/** Odile's workshop: a pickaxe for sale, what she can make from what you're carrying, and what you're wearing. */
+api.get("/workshop", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireInTown(ctx, "Odile's workshop");
+  const m = await materials(ctx);
+  ctx.events.push({
+    kind: "workshop",
+    pickaxe: { owned: ctx.p.pickaxe, cost: PICKAXE_COST },
+    wearing: ctx.p.trinket_id ? { name: trinket(ctx.p.trinket_id).name, bonus: bonusText(trinket(ctx.p.trinket_id)) } : null,
+    your_ore: Object.entries(m.ore).map(([id, n]) => ({ name: oreOf(Number(id)).name, count: n })),
+    gems: ctx.p.gems,
+    gem_sells_for: GEM_SELL,
+    recipes: TRINKETS.filter((x) => x.id > 0).map((x) => ({
+      id: x.id, name: x.name, bonus: bonusText(x),
+      needs: { ore: Object.entries(x.needs.ore).map(([id, n]) => `${n} ${oreOf(Number(id)).name}`), gems: x.needs.gems, fee: x.needs.fee },
+      can_make: canMake(x, { ore: m.ore, gems: ctx.p.gems, gold: ctx.p.gold }),
+    })),
+  });
+})));
+
+api.post("/workshop", async (c) => {
+  const body = z.union([
+    z.object({ op: z.literal("pickaxe") }),
+    z.object({ op: z.literal("craft"), id: z.number().int() }),
+    z.object({ op: z.literal("sell_gems"), count: z.number().int().positive().optional() }),
+  ]).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    requireInTown(ctx, "Odile's workshop");
+    await requireNoEncounter(ctx);
+    if (body.op === "pickaxe") {
+      if (ctx.p.pickaxe) { ctx.events.push({ kind: "already_have", item: "pickaxe" }); return; }
+      if (ctx.p.gold < PICKAXE_COST) { ctx.events.push({ kind: "too_poor", cost: PICKAXE_COST, gold: ctx.p.gold }); return; }
+      await savePlayer(ctx, { gold: ctx.p.gold - PICKAXE_COST, pickaxe: true });
+      ctx.events.push({ kind: "bought", shop: "workshop", item: "Pickaxe", cost: PICKAXE_COST });
+      await logEvent(ctx, "spend", { on: "pickaxe", gold: PICKAXE_COST });
+      return;
+    }
+    if (body.op === "sell_gems") {
+      const n = Math.min(ctx.p.gems, body.count ?? ctx.p.gems);
+      if (n <= 0) { ctx.events.push({ kind: "no_gems" }); return; }
+      await savePlayer(ctx, { gems: ctx.p.gems - n, gold: ctx.p.gold + n * GEM_SELL });
+      ctx.events.push({ kind: "sold", item: n === 1 ? "a gem" : `${n} gems`, gold: n * GEM_SELL });
+      return;
+    }
+    const x = trinket(body.id);
+    if (x.id === 0) { ctx.events.push({ kind: "no_such_recipe", id: body.id }); return; }
+    const m = await materials(ctx);
+    if (!canMake(x, { ore: m.ore, gems: ctx.p.gems, gold: ctx.p.gold })) {
+      ctx.events.push({ kind: "cannot_make", item: x.name, needs: { ore: Object.entries(x.needs.ore).map(([id, n]) => `${n} ${oreOf(Number(id)).name}`), gems: x.needs.gems, fee: x.needs.fee },
+        have: { ore: Object.entries(m.ore).map(([id, n]) => `${n} ${oreOf(Number(id)).name}`), gems: ctx.p.gems, gold: ctx.p.gold } });
+      return;
+    }
+    for (const [o, k] of Object.entries(x.needs.ore)) {
+      await ctx.c.query("delete from inventory where id in (select id from inventory where player_id = $1 and slot = 'ore' and item_id = $2 order by id limit $3)", [ctx.p.id, Number(o), k]);
+    }
+    // Worn straight away if nothing's on; otherwise it goes in the bag (it weighs almost nothing).
+    const wearNow = ctx.p.trinket_id === 0;
+    await savePlayer(ctx, { gems: ctx.p.gems - x.needs.gems, gold: ctx.p.gold - x.needs.fee, ...(wearNow ? { trinket_id: x.id } : {}) });
+    if (!wearNow) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,'trinket',$2)", [ctx.p.id, x.id]);
+    ctx.events.push({ kind: "crafted", item: x.name, bonus: bonusText(x), fee: x.needs.fee, worn: wearNow, ...(wearNow ? {} : { in_bag: true, wearing: trinket(ctx.p.trinket_id).name }) });
+    await logEvent(ctx, "craft", { item: x.name, fee: x.needs.fee });
+    if (x.id >= 7) await post(ctx, "crafted", ctx.p.name, null, { item: x.name });
   }));
 });
 
@@ -869,7 +1044,7 @@ api.post("/square/talk", async (c) => c.json(await withPlayer(c.req.header("auth
   let rumor: { kind: Rumor; facts: Record<string, unknown> } | null = null;
   for (const k of v.rumors) { const f = await rumorFacts(ctx, k); if (f) { rumor = { kind: k, facts: f }; break; } }
   let gift = pickVisitorGift(v);
-  const lucky = gift === "nothing" && charmLucky(ctx.p.charm);
+  const lucky = gift === "nothing" && charmLucky(charmOf(ctx.p));
   if (lucky) gift = pickVisitorGift(v);
   if (gift === "heal" && ctx.p.hp >= ctx.p.max_hp) gift = "charm";
   let amount = 0;
@@ -892,7 +1067,7 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
   const bard = bardFor(ctx.day);
   if (ctx.t.bard_heard) { ctx.events.push({ kind: "bard_already", bard: bard.name }); return; }
   let gift = pickGift(bard);
-  const lucky = gift === "nothing" && charmLucky(ctx.p.charm);
+  const lucky = gift === "nothing" && charmLucky(charmOf(ctx.p));
   if (lucky) gift = pickGift(bard);
   if (gift === "heal" && ctx.p.hp >= ctx.p.max_hp) gift = "charm"; // nothing to mend; he flatters you instead
   let amount = 0;
@@ -947,7 +1122,7 @@ api.post("/flirt", async (c) => {
     }
     // Townsfolk court and marry too, so Sir Pomfrey can win your spouse away, but their charm counts for at most 20
     // here (about a 5% chance a night), so a local steals a heart now and then rather than every other day.
-    const { outcome, delta } = flirtOutcome(ctx.p.role === "player" ? ctx.p.charm : Math.min(ctx.p.charm, 20), who.coy);
+    const { outcome, delta } = flirtOutcome(ctx.p.role === "player" ? charmOf(ctx.p) : Math.min(charmOf(ctx.p), 20), who.coy);
     let stoleFrom: string | null = null;
     let left: string | null = null;
     if (outcome === "married" && row) {
@@ -998,14 +1173,15 @@ api.post("/equip", async (c) => {
     } else {
       const row = await ownRow(ctx, body.id); slot = row.slot; itemId = row.item_id; rowId = row.id;
     }
-    const oldId = slot === "weapon" ? ctx.p.weapon_id : ctx.p.armor_id;
+    if (slot === "ore") { ctx.events.push({ kind: "cannot_equip", reason: "ore is for selling or for Odile to work" }); return; }
+    const oldId = slot === "weapon" ? ctx.p.weapon_id : slot === "armor" ? ctx.p.armor_id : ctx.p.trinket_id;
     const usedNow = await Bag.used(ctx.c, ctx.p.id);
     const after = usedNow - (rowId !== null ? Bag.item(slot, itemId).weight : 0) + (oldId > 0 ? Bag.item(slot, oldId).weight : 0);
     const cap = Bag.bag(ctx.p.bag_id).capacity;
     if (after > cap) { ctx.events.push({ kind: "bag_full", need: after - cap, holding: Bag.item(slot, oldId).name }); return; }
     if (rowId !== null) await ctx.c.query("delete from inventory where id = $1", [rowId]);
     if (oldId > 0) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, slot, oldId]);
-    await savePlayer(ctx, { ...(slot === "weapon" ? { weapon_id: itemId } : { armor_id: itemId }), ...("ground" in body ? { ground: null } : {}) });
+    await savePlayer(ctx, { ...(slot === "weapon" ? { weapon_id: itemId } : slot === "armor" ? { armor_id: itemId } : { trinket_id: itemId }), ...("ground" in body ? { ground: null } : {}) });
     ctx.events.push({ kind: "equipped", slot, item: Bag.item(slot, itemId).name, stowed: oldId > 0 ? Bag.item(slot, oldId).name : null });
   }));
 });
@@ -1161,7 +1337,7 @@ api.post("/challenge", async (c) => {
       const gold = guarded ? Math.floor(d.gold / 2) : d.gold;
       const exp = Math.floor(expForLevel(d.level + 1) ?? 1000) / 20 | 0;
       await savePlayer(ctx, { hp: af.hp, gold: ctx.p.gold + gold, exp: ctx.p.exp + exp });
-      await ctx.c.query("update players set alive = false, hp = 0, gold = gold - $2, ground = null, pos_x = null, pos_y = null where id = $1", [d.id, gold]);
+      await ctx.c.query("update players set alive = false, hp = 0, gold = gold - $2, ground = null, pos_x = null, pos_y = null, cave_depth = null where id = $1", [d.id, gold]);
       const theirLost = await Bag.loseRandom(ctx.c, d.id);
       await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "killed_by_player", by: ctx.p.name, gold_lost: gold, item_lost: theirLost }]);
       await post(ctx, "pvp_kill", ctx.p.name, d.name, { gold });
@@ -1169,7 +1345,7 @@ api.post("/challenge", async (c) => {
       await logEvent(ctx, "pvp", { outcome: "won", opponent_class: d.class, opponent_level: d.level, opponent_bot: Boolean(d.is_bot), gold, rounds: res.log.filter((e) => e.attacker === ctx.p.name).length });
     } else if (res.winner === "defender") {
       // A failed attack kills you, but your gold stays yours: losing on purpose can't funnel gold to a friend.
-      await savePlayer(ctx, { hp: 0, alive: false, ground: null, pos_x: null, pos_y: null });
+      await savePlayer(ctx, { hp: 0, alive: false, ground: null, pos_x: null, pos_y: null, cave_depth: null });
       const myLost = await Bag.loseRandom(ctx.c, ctx.p.id);
       await ctx.c.query("update players set hp = $2 where id = $1", [d.id, df.hp]);
       await ctx.c.query("insert into mailbox (player_id, event) values ($1, $2)", [d.id, { kind: "defended", against: ctx.p.name }]);

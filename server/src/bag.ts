@@ -5,10 +5,15 @@
 import type { Client } from "./db.js";
 import { GAME, armor, weapon, type Player } from "./game.js";
 import { roll } from "./combat.js";
+import { ore, trinket, bonusText } from "./caves.js";
 
-export type Slot = "weapon" | "armor";
+/** Gear you can wear (weapon, armor, jewelry), plus ore, which you can only carry and sell. */
+export type Slot = "weapon" | "armor" | "ore" | "trinket";
+export type GearSlot = "weapon" | "armor";
 
-export function item(slot: Slot, id: number) {
+export function item(slot: Slot, id: number): { name: string; weight: number; cost: number } {
+  if (slot === "ore") return ore(id);
+  if (slot === "trinket") return trinket(id);
   return slot === "weapon" ? weapon(id) : armor(id);
 }
 export function bag(id: number) {
@@ -44,14 +49,17 @@ export async function describe(c: Client, p: Player) {
     used: weightOf(items),
     items: items.map((x) => {
       const it = item(x.slot, x.item_id);
-      return {
-        id: x.id, slot: x.slot, name: it.name,
-        ...(x.slot === "weapon" ? { str: (it as { str: number }).str } : { def: (it as { def: number }).def }),
-        weight: it.weight, sells_for: sellPrice(x.slot, x.item_id),
-        upgrade: x.item_id > (x.slot === "weapon" ? p.weapon_id : p.armor_id),
-      };
+      const stats = x.slot === "weapon" ? { str: weapon(x.item_id).str }
+        : x.slot === "armor" ? { def: armor(x.item_id).def }
+        : x.slot === "trinket" ? { bonus: bonusText(trinket(x.item_id)) } : {};
+      const upgrade = x.slot === "weapon" ? x.item_id > p.weapon_id
+        : x.slot === "armor" ? x.item_id > p.armor_id
+        : x.slot === "trinket" ? p.trinket_id === 0 : false;
+      return { id: x.id, slot: x.slot, name: it.name, ...stats, weight: it.weight, sells_for: sellPrice(x.slot, x.item_id), upgrade };
     }),
-    equipped: { weapon: weapon(p.weapon_id).name, armor: armor(p.armor_id).name },
+    equipped: { weapon: weapon(p.weapon_id).name, armor: armor(p.armor_id).name, jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id))})` : null },
+    gems: p.gems,
+    pickaxe: p.pickaxe,
     ground: p.ground ? { slot: p.ground.slot, name: item(p.ground.slot, p.ground.item_id).name, weight: item(p.ground.slot, p.ground.item_id).weight } : null,
   };
 }

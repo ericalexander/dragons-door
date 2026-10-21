@@ -11,8 +11,11 @@ import { createHash } from "node:crypto";
 import type { Personality, Doing } from "./schedule.js";
 import { GAME } from "./game.js";
 
-export type GoalKind = "save" | "gear" | "level" | "explore" | "far" | "cave" | "wed" | "shrine" | "rich" | "outrank";
-export type Activity = "hunt" | "explore" | "tavern" | "shop" | "bank" | "flirt" | "bard" | "donate" | "raid" | "rest";
+export type GoalKind = "save" | "gear" | "level" | "explore" | "far" | "cave" | "wed" | "shrine" | "rich" | "outrank" | "jewel";
+export type Activity = "hunt" | "explore" | "tavern" | "shop" | "bank" | "flirt" | "bard" | "donate" | "raid" | "rest" | "mine" | "craft";
+
+/** Jewelry tier: 0 none, 1 copper, 2 silver, 3 gold (by recipe id, see caves.ts). */
+export const jewelTier = (trinketId: number) => (trinketId >= 7 ? 3 : trinketId >= 4 ? 2 : trinketId >= 1 ? 1 : 0);
 
 export interface Goal {
   kind: GoalKind;
@@ -57,6 +60,7 @@ export interface Facts {
   explored: number;
   farthest: number;
   found_cave: string | null;
+  trinket_id: number;
   /** The highest-ranked other townsperson, for outranking. */
   top_rival: { name: string; level: number } | null;
   rival_level: number | null;
@@ -65,14 +69,14 @@ export interface Facts {
 // ---------- choosing and tracking a goal ----------
 
 const LEANS: Record<Personality, [GoalKind, number][]> = {
-  banker:   [["save", 5], ["gear", 2], ["level", 2]],
+  banker:   [["save", 5], ["gear", 2], ["level", 2], ["jewel", 1]],
   drunk:    [["wed", 3], ["explore", 3], ["level", 1]],
   raider:   [["rich", 4], ["gear", 2], ["level", 1]],
-  gossip:   [["wed", 2], ["save", 2], ["explore", 2]],
+  gossip:   [["wed", 2], ["save", 2], ["explore", 2], ["jewel", 1]],
   pious:    [["shrine", 5], ["level", 1]],
   reckless: [["outrank", 4], ["far", 3], ["level", 1]],
-  seer:     [["cave", 4], ["save", 2], ["explore", 1]],
-  braggart: [["gear", 5], ["outrank", 2], ["wed", 2]],
+  seer:     [["cave", 4], ["jewel", 3], ["save", 2], ["explore", 1]],
+  braggart: [["gear", 5], ["jewel", 2], ["outrank", 2], ["wed", 2]],
 };
 
 const round100 = (n: number) => Math.max(100, Math.round(n / 100) * 100);
@@ -92,6 +96,7 @@ export function progress(g: Goal, f: Facts, mind: Mind): number {
     case "wed": return f.married ? 1 : 0;
     case "shrine": return mind.given ?? 0;
     case "outrank": return f.rival_level !== null && f.level > f.rival_level ? 1 : 0;
+    case "jewel": return jewelTier(f.trinket_id);
   }
 }
 
@@ -101,7 +106,7 @@ export function fraction(g: Goal, f: Facts, mind: Mind): number {
     if (progress(g, f, mind) >= g.target) return 1;
     return Math.min(0.99, (f.gold + f.bank) / gearCost(g.slot!, g.target));
   }
-  if (["cave", "wed", "outrank"].includes(g.kind)) return progress(g, f, mind) >= g.target ? 1 : 0;
+  if (["cave", "wed", "outrank", "jewel"].includes(g.kind)) return progress(g, f, mind) >= g.target ? 1 : 0;
   const p = progress(g, f, mind);
   if (p >= g.target) return 1;
   return Math.max(0, Math.min(0.99, (p - g.start) / Math.max(1, g.target - g.start)));
@@ -116,6 +121,7 @@ export function pickGoal(f: Facts, mind: Mind, day: string, r: () => number): Go
     if (k === "wed" && f.married) return false;
     if (k === "outrank" && !f.top_rival) return false;
     if (k === "cave" && f.found_cave) return false;
+    if (k === "jewel" && jewelTier(f.trinket_id) >= 3) return false;
     if (k === "gear" && Math.min(f.weapon_id, f.armor_id) >= GAME.weapons.length - 1) return false;
     return true;
   });
@@ -142,6 +148,7 @@ export function pickGoal(f: Facts, mind: Mind, day: string, r: () => number): Go
     case "wed": return g(1);
     case "shrine": return g(round100((mind.given ?? 0) + 300 * f.level + 300));
     case "outrank": return g(1, { rival: f.top_rival!.name });
+    case "jewel": return g(jewelTier(f.trinket_id) + 1);
   }
 }
 
@@ -152,6 +159,7 @@ const PRONOUN: Record<string, ["he" | "she" | "they", "his" | "her" | "their"]> 
 };
 const pro = (name: string) => PRONOUN[name] ?? ["he", "his"];
 const fmt = (n: number) => n.toLocaleString("en-US");
+const METAL = ["", "copper", "silver", "gold"];
 
 /** A phrase for the square and the narrator: what's on their mind. */
 export function goalLabel(name: string, p: Personality, g: Goal): string {
@@ -179,6 +187,7 @@ export function goalLabel(name: string, p: Personality, g: Goal): string {
       if (p === "braggart") return `means to marry, and has written the speech already`;
       return `hoping to marry`;
     case "shrine": return `raising ${n} gold to mend the old shrine on the hill`;
+    case "jewel": return p === "seer" ? `wants a piece of ${METAL[g.target]} jewelry from Odile, and swears it will sharpen the sight` : p === "braggart" ? `has commissioned ${METAL[g.target]} jewelry from Odile, once he digs up the ore` : `saving ore for a piece of ${METAL[g.target]} jewelry from Odile`;
     case "outrank": return p === "reckless" ? `wants to outrank ${g.rival}, and won't shut up about it` : `can't abide that ${g.rival} outranks ${his === "her" ? "her" : "him"}`;
   }
 }
@@ -198,6 +207,7 @@ export function doneLine(name: string, p: Personality, g: Goal, f: Facts): strin
     case "wed": return `${name} is married at last.`;
     case "shrine": return `${name} raised ${n} gold, and the old shrine on the hill has a new roof.`;
     case "outrank": return `${name} now outranks ${g.rival}, and ${g.rival} has heard about it.`;
+    case "jewel": return `${name} is wearing new ${METAL[g.target]} jewelry from Odile and catching the light on purpose.`;
   }
 }
 
@@ -256,6 +266,11 @@ export function goalTalk(name: string, p: Personality, g: Goal, stage: 0 | 1 | 2
       [`Halfway to mending the shrine. Bless every one of you who gave, and the rest of you too.`, `The roof leaks a little less in my imagination already.`],
       [`Nearly enough for the shrine. One more good week of honest work.`, `The masons are ready. I nearly am.`],
     ],
+    jewel: [
+      [`I'm going to have Odile make me something in ${METAL[g.target]}. First I need the ore. And a pick. And a cave.`, `Odile says bring her ${METAL[g.target]} ore and she'll make something worth wearing. Right.`],
+      [`Got some of the ore. My back hates me. Odile will love it.`, `Halfway there. Do you know how heavy ore is? I do now.`],
+      [`One more trip underground and Odile can start work.`, `Nearly enough ore. Odile has already cleared a space on her bench.`],
+    ],
     outrank: [
       [p === "reckless" ? `I'm going to outrank ${g.rival}. Write it down.` : `It is unacceptable that ${g.rival} stands above me. It will be corrected.`, `${g.rival} had better enjoy the view from up there while it lasts.`],
       [`Catching up on ${g.rival}. They know it, too.`, `${g.rival} looked worried today. Good.`],
@@ -280,6 +295,10 @@ export interface Situation {
   night: boolean;
   /** Robbed by someone in the last few days and they're within reach. */
   grudge_target: string | null;
+  /** They know a cave and have a pickaxe (or can buy one), with swings left today. */
+  can_mine?: boolean;
+  /** Odile could make them something better than what they wear, from what they carry. */
+  can_craft?: boolean;
 }
 
 const BASE: Record<Personality, Partial<Record<Activity, number>>> = {
@@ -293,7 +312,7 @@ const BASE: Record<Personality, Partial<Record<Activity, number>>> = {
   braggart: { hunt: 2, explore: 0.6, tavern: 2, shop: 1.2, flirt: 0.5, bard: 0.6, rest: 0.1 },
 };
 
-const FIGHTING: Activity[] = ["hunt", "explore"];
+const FIGHTING: Activity[] = ["hunt", "explore", "mine"];
 
 /** Weigh what they could do this session. Returns the weights, for testing and for the log. */
 export function weigh(p: Personality, mind: Mind, s: Situation): Partial<Record<Activity, number>> {
@@ -316,7 +335,11 @@ export function weigh(p: Personality, mind: Mind, s: Situation): Partial<Record<
     case "wed": add("flirt", 2.5); add("bard", 0.5); break;
     case "shrine": add("hunt", 1); if (s.gold >= 50) add("donate", 3); break;
     case "outrank": add("hunt", 2); add("explore", 1); break;
+    case "jewel": if (s.can_mine) add("mine", 4); else add("explore", 2); break;
   }
+  if (s.can_mine) add("mine", 0.4 + (mind.goal?.kind === "save" || mind.goal?.kind === "rich" ? 0.6 : 0));
+  else w.mine = 0;
+  if (s.can_craft) add("craft", 5); else w.craft = 0;
   if (mood > 0) add("explore", 0.5 * mood);
   if (mood < 0) { add("explore", mood); add("rest", -0.5 * mood); add("tavern", -0.3 * mood); }
   const hurt = 1 - s.hp / Math.max(1, s.max_hp);

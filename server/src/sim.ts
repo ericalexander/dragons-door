@@ -9,6 +9,7 @@ import { bardFor, pickGift } from "./bards.js";
 import { visitorFor, pickVisitorGift } from "./square.js";
 import { charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
+import { FINDS_PER_PERSON, SWINGS_PER_DAY, GEM_SELL, ORES, PICKAXE_COST, TRINKETS, canMake, caveLevel, swing, trinket } from "./caves.js";
 
 
 // ---- tuning knobs (env) so the curve can be searched without editing data ----
@@ -95,11 +96,16 @@ function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
 const EXPLORE = process.env.EXPLORE !== "0";
 
 const DROPS = { n: 0, equipped: 0 };
+// MINE=1: from MINE_FROM onward, spend MINE_FIGHTS fights a day mining, and have Odile make the best jewelry you can.
+const MINE = process.env.MINE === "1";
+const MINE_FROM = Number(process.env.MINE_FROM ?? 4);
+const MINE_FIGHTS = Number(process.env.MINE_FIGHTS ?? SWINGS_PER_DAY); // swings a day (not forest fights, unless SWING_COSTS_FIGHT=1)
+const MINED = { trinkets: 0, best: 0 };
 const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, number> = {}; const DEATH_L: Record<number, number> = {};
 type Cls = "warrior" | "thief" | "mage";
 
 function fresh(cls: Cls): Player {
-  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null };
+  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null, trinket_id: 0, pickaxe: false, cave_depth: null };
 }
 
 function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number): "won" | "fled" | "died" {
@@ -148,6 +154,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
   const p: SimPlayer = fresh(cls);
   let deaths = 0;
   let farthest = 0; // ring reached so far
+  const ores: Record<number, number> = {};
   for (let day = 1; day <= maxDays; day++) {
     // morning: inn heal (we always sleep at the inn if we could afford it)
     if (p.location === "inn" || !p.alive) p.hp = p.max_hp;
@@ -160,6 +167,42 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
     CHARM.total += p.charm;
 
     shop(p);
+
+    if (MINE && p.level >= MINE_FROM) {
+      if (!p.pickaxe && p.gold + p.bank >= PICKAXE_COST + 200) { const need = PICKAXE_COST; if (p.gold < need) { p.gold += p.bank; p.bank = 0; } p.gold -= need; p.pickaxe = true; }
+      if (p.pickaxe) {
+        const depth = Number(process.env.MINE_DEPTH ?? 0) || (p.level >= 9 ? 3 : p.level >= 6 ? 2 : 1);
+        let found = 0;
+        for (let k = 0; k < MINE_FIGHTS && fights > 0 && p.alive && found < FINDS_PER_PERSON.player; k++) {
+          if (process.env.SWING_COSTS_FIGHT === "1") fights--;
+          const r = swing(depth);
+          if (r.kind === "ambush") {
+            const am = pickMonster(caveLevel(p.level, depth));
+            const res = fight(p, am, specials, 0.5);
+            if (res === "won") { p.gold += am.gold; p.exp += am.exp; }
+            if (res === "died") { DEATH_L[p.level] = (DEATH_L[p.level] ?? 0) + 1; deaths++; p.alive = false; p.gold = 0; p.exp -= Math.floor(p.exp * 0.1); }
+          } else if (r.kind === "gem") { p.gems++; found++; }
+          else if (r.kind === "ore") { ores[r.ore.id] = (ores[r.ore.id] ?? 0) + 1; found++; }
+        }
+        // the best piece Odile can make that beats what's worn (strength first, then defense), else sell spare copper
+        const worn = trinket(p.trinket_id);
+        const best = TRINKETS.filter((x) => x.id > 0 && x.charm === 0 && x.str + x.def > worn.str + worn.def && canMake(x, { ore: ores, gems: p.gems, gold: p.gold + p.bank }))
+          .sort((a, z) => z.str + z.def - (a.str + a.def) || z.str - a.str)[0];
+        if (best) {
+          for (const [o, n] of Object.entries(best.needs.ore)) ores[Number(o)] -= n ?? 0;
+          p.gems -= best.needs.gems;
+          if (p.gold < best.needs.fee) { p.gold += p.bank; p.bank = 0; }
+          p.gold -= best.needs.fee;
+          p.trinket_id = best.id;
+          MINED.trinkets++; MINED.best = Math.max(MINED.best, best.id);
+        }
+        // sell ore you've outgrown (copper once you wear silver, and so on) and gems past a handful
+        const tier = p.trinket_id >= 7 ? 2 : p.trinket_id >= 4 ? 1 : p.trinket_id >= 1 ? 0 : -1;
+        for (let o = 0; o <= tier; o++) if (o < tier || tier === 2) { p.gold += Math.floor((ores[o] ?? 0) * ORES[o].cost * GAME.sellFraction); ores[o] = 0; }
+        if (p.gems > 6) { p.gold += (p.gems - 6) * GEM_SELL; p.gems = 6; }
+      }
+      if (!p.alive) continue;
+    }
 
     while (fights > 0 && p.alive) {
       // train first if ready
@@ -249,5 +292,6 @@ if (process.env.BREAKDOWN) {
   console.log("  deaths by level:", Object.keys(DEATH_L).map(Number).sort((a, b) => a - b).map((l) => `L${l}:${(DEATH_L[l] / trials).toFixed(1)}`).join("  "));
 }
 
+if (MINE) console.log(`  jewelry made per run: ${(MINED.trinkets / trials).toFixed(1)}, best ever: ${trinket(MINED.best).name}`);
 console.log(`  drops per run: ${(DROPS.n / trials).toFixed(1)} (${(DROPS.equipped / trials).toFixed(1)} equipped)`);
 if (EXTRAS) console.log(`  married ${CHARM.married}/${trials} runs (avg day ${CHARM.married ? (CHARM.marriedDay / CHARM.married).toFixed(0) : "-"}); avg charm across days ${(CHARM.total / runs.reduce((a, r) => a + r.days, 0)).toFixed(0)}`);
