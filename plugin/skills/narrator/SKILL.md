@@ -67,7 +67,7 @@ Only list `(L)isten` while `bard` is in `actions`, `(V)iolet` while `flirt` is, 
 
 **Healer, Bank, Shop, Inn, Dragon** — counters. Walking in doesn't spend anything. Describe the counter in a line or two, give the real numbers from `state`, and wait:
 
-- **Healer:** HP, and what a full heal costs (`prices.heal_all`, or `prices.heal_per_hp` a point). `(A)ll of it  (S)ome  (R)eturn to town`, plus `Fl(i)rt with Rosalind` when she's in `state.suitors_around` and `flirt` is in `actions`. At full HP the healer just waves them off.
+- **Healer:** HP, and what a full heal costs (`prices.heal_all`, or `prices.heal_per_hp` a point). `(A)ll of it  (S)ome  (R)eturn to town`, plus `Fl(i)rt with Rowan` when he's in `state.suitors_around` and `flirt` is in `actions`. At full HP the healer just waves them off.
 - **Bank:** gold on hand, in the bank, and `bank_trips_left` today. `(D)eposit  (W)ithdraw  (R)eturn to town`, then ask how much (`all` or a number) if they didn't say.
 - **Shop:** `(W)eapons  (A)rmor  (B)ags  (R)eturn to town`. Show the list they pick, numbered `(1)`, `(2)`…, with prices and what they own marked; buy only when they pick a number.
 - **Inn** (from the Tavern): a room costs `prices.inn` (they have `gold`) and keeps them safe tonight. `(S)tay the night  (R)eturn to the tavern`. If `inn` isn't in `actions`, say why (already have a room, or can't afford it).
@@ -130,7 +130,7 @@ Some players are townsfolk, not people: `rankings` marks them `bot: true`. They 
 
 ## Fixed characters
 
-Violet, Rosalind, Mara, Jory and the bards (Fennick Reed, Dunstan the Unfinished, Corwin Lark, Wren) are characters in the realm, not players: they never appear in rankings, can't be challenged (`cannot_challenge`), and don't fight. Players can send them mail (`mail_sent` with `character: true`); they don't write back yet, so say the letter has been left for them.
+Violet, Rowan, Mara, Jory and the bards (Fennick Reed, Dunstan the Unfinished, Corwin Lark, Wren) are characters in the realm, not players: they never appear in rankings, can't be challenged (`cannot_challenge`), and don't fight. Players can send them mail (`mail_sent` with `character: true`); they don't write back yet, so say the letter has been left for them.
 
 ## Mail
 
@@ -182,11 +182,13 @@ Then the `gift`, told as what the song does to them, with the real `amount`: `go
 
 `flirt` takes `with` (Violet by default) and returns an outcome: ignored, smile, kiss, married, or spouse. Play it for a laugh. One flirt a day in total, so choosing whom is the decision.
 
+Anyone can court and marry anyone; love in this realm doesn't care about gender. Never assume the player's gender or who they're drawn to, use each character's pronouns as given (`pronouns`), and treat every pairing the same way: no surprise, no jokes about it.
+
 Who can be courted, and what marrying them does:
-- **Violet**, the barmaid (Tavern, any time): rooms at the inn are half price.
-- **Rosalind**, the healer's apprentice (Healer, 7am–5pm): healing costs a quarter less.
-- **Mara**, the lamplighter (the square, 7pm–1am): robbers who catch you in the fields get only half your gold.
-- **Jory**, a traveling juggler (the square, Friday to Sunday): +1 charm every day (`spouse_gift` at the start of a day).
+- **Violet**, the barmaid (Tavern, any time), she/her: rooms at the inn are half price.
+- **Rowan**, the healer's apprentice (Healer, 7am–5pm), he/him: healing costs a quarter less.
+- **Mara**, the lamplighter (the square, 7pm–1am), she/her: robbers who catch you in the fields get only half your gold.
+- **Jory**, a traveling juggler (the square, Friday to Sunday), they/them: +1 charm every day (`spouse_gift` at the start of a day).
 
 Weddings are rare: a flirt needs real luck, and charm only helps a little. `state.suitors_around` says who's around right now; `not_around` means you went looking at the wrong hour (say when they're usually about). Each of them is married to one player at a time, and each player to one of them:
 - **married** is a real wedding, remembered in `state.spouse`; `perk` says what it brings. `stole_from` means they left that player for this one: a scandal. Townsfolk court and marry too, so the rival may be Sir Pomfrey. `left` means the player just left their old spouse for this one: a different scandal.

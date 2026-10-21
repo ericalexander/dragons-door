@@ -1,5 +1,5 @@
 /**
- * Who can be courted, when, and what marrying them does. Also what charm is good for.
+ * Who can be courted, when, and what marrying them does. Anyone can court and marry anyone. Also what charm is good for.
  * Shared by the game and the simulator so they can't drift apart.
  */
 import { roll } from "./combat.js";
@@ -8,6 +8,8 @@ import { TZ, realmHour } from "./schedule.js";
 export type Perk = "inn" | "healer" | "guard" | "charm";
 export interface Suitor {
   name: string;
+  /** How the narrator refers to them. */
+  pronouns: "she/her" | "he/him" | "they/them";
   /** Where to find them (for the narrator). */
   where: "tavern" | "healer" | "square";
   description: string;
@@ -22,13 +24,13 @@ export interface Suitor {
 }
 
 export const SUITORS: Suitor[] = [
-  { name: "Violet", where: "tavern", description: "the barmaid at the tavern, quick-witted and hard to impress", coy: 0, perk: "inn",
+  { name: "Violet", pronouns: "she/her", where: "tavern", description: "the barmaid at the tavern, quick-witted and hard to impress", coy: 0, perk: "inn",
     perkText: "rooms at the inn are half price" },
-  { name: "Rosalind", where: "healer", description: "the healer's apprentice, brisk and kind, with ink-stained fingers and no patience for heroics", hours: [7, 17], coy: 5, perk: "healer",
+  { name: "Rowan", pronouns: "he/him", where: "healer", description: "the healer's apprentice, brisk and kind, with ink-stained fingers and no patience for heroics", hours: [7, 17], coy: 5, perk: "healer",
     perkText: "healing costs a quarter less" },
-  { name: "Mara", where: "square", description: "the lamplighter, who walks the square after dark and knows every shadow in town", hours: [19, 25], coy: 10, perk: "guard",
+  { name: "Mara", pronouns: "she/her", where: "square", description: "the lamplighter, who walks the square after dark and knows every shadow in town", hours: [19, 25], coy: 10, perk: "guard",
     perkText: "robbers who find you in the fields get only half your gold" },
-  { name: "Jory", where: "square", description: "a traveling juggler in town at the weekends, all grins and patter", days: [5, 6, 0], coy: -5, perk: "charm",
+  { name: "Jory", pronouns: "they/them", where: "square", description: "a traveling juggler in town at the weekends, all grins and patter", days: [5, 6, 0], coy: -5, perk: "charm",
     perkText: "+1 charm every day" },
 ];
 

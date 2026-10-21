@@ -108,7 +108,7 @@ export interface PublicState {
   /** Who they're married to, if anyone. */
   spouse: string | null;
   /** People you could court who are around right now, and where. */
-  suitors_around: { name: string; where: string }[];
+  suitors_around: { name: string; pronouns: string; where: string }[];
   /** The sky over the player, roughly. Only on status, forest and news, and only if they haven't turned it off. */
   weather?: import("./weather.js").Weather;
 }
@@ -147,12 +147,12 @@ export function innCost(p: Player, spouse: string | null = null): number {
   return Math.floor(GAME.innCostPerLevel * p.level * (spouse === "Violet" ? 0.5 : 1));
 }
 
-/** Healing costs a little per HP per level; a quarter less for anyone married to Rosalind. */
+/** Healing costs a little per HP per level; a quarter less for anyone married to Rowan. */
 export function healCost(p: Player, hp: number, spouse: string | null = null): number {
-  return Math.ceil(hp * GAME.healerCostPerHpPerLevel * p.level * (spouse === "Rosalind" ? 0.75 : 1));
+  return Math.ceil(hp * GAME.healerCostPerHpPerLevel * p.level * (spouse === "Rowan" ? 0.75 : 1));
 }
 
-export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0, spouse: string | null = null, suitorsAround: { name: string; where: string }[] = []): PublicState {
+export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0, spouse: string | null = null, suitorsAround: { name: string; pronouns: string; where: string }[] = []): PublicState {
   const b = GAME.bags.find((x) => x.id === p.bag_id) ?? GAME.bags[0];
   return {
     name: p.name,
