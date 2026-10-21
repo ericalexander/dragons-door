@@ -7,58 +7,92 @@
 <meta name="description" content="What happened in Dragon's Door, day by day: deaths, robberies, weddings and the slow ambitions of the townsfolk.">
 <meta property="og:title" content="The Chronicle of Dragon's Door">
 <meta property="og:description" content="What happened in the realm, day by day.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23000'/><text x='2' y='13' font-family='monospace' font-size='12' fill='%23ff5555'>▲</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23efe4c9'/><path d='M4 15V7a4 4 0 0 1 8 0v8' fill='none' stroke='%232a1c10' stroke-width='1.5'/><circle cx='7' cy='11' r='1' fill='%238f2a1c'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #000000; --fg: #aaaaaa; --hi: #ffffff; --dim: #555555;
-    --red-hi: #ff5555; --yel: #ffff55; --cyan: #55ffff; --cyan-lo: #00aaaa; --blue: #0000aa;
-    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    --paper: #efe4c9;
+    --paper-hi: #f7efdc;
+    --ink: #2a1c10;
+    --ink-soft: #4a3322;
+    --ink-faint: #6b4a2e;
+    --rule: #b89c70;
+    --wax: #8f2a1c;
+    --wax-dark: #5c1a10;
+    --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --prose: "Alegreya", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", Georgia, serif;
   }
   * { box-sizing: border-box; }
-  html { background: var(--bg); }
-  body { margin: 0; color: var(--fg); background: var(--bg); font-family: var(--mono); font-size: 15px; line-height: 1.65; -webkit-font-smoothing: antialiased; }
-  a { color: var(--cyan); text-decoration: none; }
-  a:hover, a:focus-visible { color: var(--hi); text-decoration: underline; }
-  :focus-visible { outline: 2px solid var(--yel); outline-offset: 2px; }
-  ::selection { background: var(--blue); color: var(--hi); }
-  .screen { max-width: 84ch; margin: 0 auto; padding: 24px 20px 64px; }
-  .bar { background: var(--blue); color: var(--hi); padding: 2px 10px; display: flex; gap: 2ch; justify-content: space-between; }
-  .bar b { color: var(--yel); font-weight: 400; }
-  .bar a { color: var(--hi); margin-left: 1ch; }
-  .bar a:hover { text-decoration: none; background: var(--cyan-lo); }
-  h1 { font-weight: 400; font-size: 22px; color: var(--red-hi); margin: 40px 0 4px; letter-spacing: .04em; }
-  .sub { color: var(--cyan); margin: 0 0 8px; }
-  h2 { font-weight: 400; font-size: 15px; color: var(--cyan); margin: 44px 0 12px; white-space: nowrap; overflow: hidden; }
-  h2::before { content: "══ "; color: var(--cyan-lo); }
-  h2::after { content: " ════════════════════════════════════════════════════════════════════════════"; color: var(--cyan-lo); }
-  h2 .date { color: var(--dim); }
-  .entry p { margin: 0 0 14px; color: var(--fg); }
-  .entry p:first-child::first-letter { color: var(--hi); }
-  .draft h2 { color: var(--yel); }
-  .draft .note { color: var(--dim); font-style: italic; margin: -4px 0 12px; }
-  .quiet { color: var(--dim); }
-  footer { margin-top: 56px; color: var(--dim); }
-  @media (max-width: 720px) {
-    body { font-size: 14px; }
-    h2 { white-space: normal; }
-    h2::after { content: none; }
-    .bar span:first-child { display: none; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--wax); text-decoration: underline; text-underline-offset: 3px; }
+  a:hover, a:focus-visible { color: var(--wax-dark); }
+  :focus-visible { outline: 2px solid var(--wax); outline-offset: 3px; }
+  ::selection { background: var(--ink); color: var(--paper-hi); }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+  .kicker { font-size: 14px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+
+  header.mast { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 22px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+  .mast .name { font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .mast .name a { color: var(--ink); text-decoration: none; }
+  .mast nav { display: flex; gap: 26px; flex-wrap: wrap; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+  .mast nav a { color: var(--ink); text-decoration: none; }
+  .mast nav a:hover, .mast nav a[aria-current] { text-decoration: underline; }
+
+  .head { padding-top: 56px; padding-bottom: 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; border-bottom: 2px solid var(--ink); }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(48px, 7vw, 72px); line-height: .95; margin: 0; }
+  .sub { margin: 0; font-size: 19px; color: var(--ink-soft); }
+
+  .pages { max-width: 72ch; margin: 0 auto; padding: 8px 24px 48px; }
+  section.day { padding: 36px 0 8px; border-bottom: 1px solid var(--rule); }
+  section.day:last-child { border-bottom: 0; }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0 0 4px; }
+  h2 .date { display: block; font-family: var(--body); font-weight: 500; font-size: 14px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); margin-top: 6px; }
+  .entry { font-family: var(--prose); font-size: 19px; line-height: 1.6; color: var(--ink); }
+  .entry p { margin: 14px 0 0; }
+  .entry p:first-child { margin-top: 16px; }
+  .entry p:first-child::first-letter { font-family: var(--display); font-size: 3.2em; line-height: .8; float: left; padding: 6px 8px 0 0; color: var(--wax); }
+  .draft { background: var(--paper-hi); border: 1px solid var(--rule); padding: 20px 24px 24px; margin-top: 36px; }
+  .draft h2 { font-size: 28px; }
+  .draft .note { font-family: var(--body); font-size: 15px; color: var(--ink-faint); font-style: italic; margin: 6px 0 0; }
+  .draft .entry p:first-child::first-letter { font-size: 1em; float: none; padding: 0; color: inherit; }
+  .quiet { color: var(--ink-faint); margin: 24px 0 0; }
+
+  footer { border-top: 2px solid var(--ink); }
+  footer .wrap { padding-top: 24px; padding-bottom: 32px; font-size: 14px; color: var(--ink-faint); }
+  footer p { margin: 0; max-width: 90ch; }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .head { padding-top: 40px; }
+    .entry { font-size: 18px; }
+    h2 { font-size: 30px; }
   }
 </style>
 </head>
 <body>
-<div class="screen">
-  <div class="bar" role="presentation">
-    <span><b>Dragon's Door</b> BBS</span>
-    <span><a href="/"><b>H</b>ome</a> <a href="/chronicle"><b>C</b>hronicle</a> <a href="https://github.com/ericalexander/dragons-door"><b>S</b>ource</a></span>
-  </div>
 
-  <h1>THE CHRONICLE</h1>
+<header class="mast wrap">
+  <div class="name"><a href="/">Dragon's Door</a></div>
+  <nav aria-label="Site">
+    <a href="/#fromrealm">News</a>
+    <a href="/chronicle" aria-current="page">Chronicle</a>
+    <a href="/#fromrealm">Rankings</a>
+    <a href="https://github.com/ericalexander/dragons-door">Source</a>
+  </nav>
+</header>
+
+<div class="head wrap">
+  <div class="kicker">The realm, day by day</div>
+  <h1>The Chronicle</h1>
   <p class="sub" id="season">What happened in the realm, day by day.</p>
+</div>
 
+<main class="pages">
   <section class="draft" id="today" hidden aria-labelledby="today-h">
     <h2 id="today-h"></h2>
     <p class="note">The day isn't over. This is the rough draft; the storyteller writes it up properly after the reset.</p>
@@ -66,11 +100,13 @@
   </section>
 
   <div id="entries"><p class="quiet">Fetching the chronicle…</p></div>
+</main>
 
-  <footer>
+<footer>
+  <div class="wrap">
     <p>Written from what really happened in the game: the news, the tavern board, and what the townsfolk are after. Names are characters in the realm. <a href="/">Play Dragon's Door</a> in Claude Code.</p>
-  </footer>
-</div>
+  </div>
+</footer>
 
 <script>
   const API = "https://dragons-door-api.vercel.app";
@@ -80,13 +116,13 @@
   fetch(API + "/v1/public/chronicle?limit=60").then((r) => r.json()).then((d) => {
     document.getElementById("season").textContent = `Season ${Number(d.season) || 1}. What happened in the realm, day by day.`;
     if (d.today && d.today.so_far) {
-      document.getElementById("today-h").innerHTML = `Day ${Number(d.today.number)}, so far <span class="date">· ${esc(fmt(d.today.day))}</span>`;
+      document.getElementById("today-h").innerHTML = `Day ${Number(d.today.number)}, so far <span class="date">${esc(fmt(d.today.day))}</span>`;
       document.getElementById("today-body").innerHTML = paras(d.today.so_far);
       document.getElementById("today").hidden = false;
     }
     const box = document.getElementById("entries");
     if (!d.entries.length) { box.innerHTML = '<p class="quiet">Nothing written yet. The first entry appears after the first day ends.</p>'; return; }
-    box.innerHTML = d.entries.map((e) => `<section aria-labelledby="d${esc(e.day)}"><h2 id="d${esc(e.day)}">Day ${Number(e.number)} <span class="date">· ${esc(fmt(e.day))}</span></h2><div class="entry">${paras(e.body)}</div></section>`).join("");
+    box.innerHTML = d.entries.map((e) => `<section class="day" aria-labelledby="d${esc(e.day)}"><h2 id="d${esc(e.day)}">Day ${Number(e.number)} <span class="date">${esc(fmt(e.day))}</span></h2><div class="entry">${paras(e.body)}</div></section>`).join("");
   }).catch(() => { document.getElementById("entries").innerHTML = '<p class="quiet">The chronicle isn\'t answering right now. It\'ll be back.</p>'; });
 </script>
 <script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
