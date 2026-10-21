@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.9.1",
+    "lore": "Mother Quill would like it known that a mage who has learned Frost Needle does not go about throwing Fireballs. Every spell has its greater form, and now you'll know its name: Frost Nova, Thunderclap, Blizzard, and on up.",
+    "plain": "A mage's special is now named for the spell they know (Frost Needle unleashes Frost Nova, Firebolt unleashes Fireball). Same power and mana cost as before; press (U) to unleash it."
+  },
+  {
     "version": "0.9.0",
     "lore": "Somebody finally pointed out that a mage hitting a goblin with a dagger is embarrassing for everyone. A door you hadn't noticed off the square now has a lamp in the window: the library, where Mother Quill keeps the spells and decides who's fit to learn them. Mages wake each morning with a well of mana, and spend it as they like.",
     "plain": "Mages now cast spells and use mana: (C)ast your spell, (F)ireball for more mana, or S(t)aff to save it. Mana refills each day. Learn stronger spells at Mother Quill's (L)ibrary as you level, instead of buying weapons."

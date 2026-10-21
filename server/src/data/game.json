@@ -664,5 +664,20 @@
     "Void Lance",
     "Sunburst",
     "Crystal Storm"
+  ],
+  "spellSpecials": [
+    "Spark Burst",
+    "Frost Nova",
+    "Fireball",
+    "Thunderclap",
+    "Acid Rain",
+    "Blizzard",
+    "Storm Call",
+    "Umbral Tide",
+    "Meteor",
+    "Nova",
+    "Void Rift",
+    "Solar Flare",
+    "Shatterstorm"
   ]
 }

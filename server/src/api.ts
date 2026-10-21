@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, charmOf, casts, manaMax, manaRules, weaponName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
+  GAME, armor, weapon, charmOf, casts, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -314,7 +314,7 @@ api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const discount = charmDiscount(charmOf(ctx.p));
   ctx.events.push({
     kind: "library", known: weaponName(ctx.p.class, ctx.p.weapon_id), mana: { per_day: manaMax(ctx.p), cast: manaRules(ctx.p.class)!.cast, fireball: manaRules(ctx.p.class)!.fireball },
-    spells: GAME.weapons.map((w) => ({ id: w.id, name: weaponName(ctx.p.class, w.id), str: w.str, cost: w.cost, needs_level: Math.max(1, w.id), known: w.id === ctx.p.weapon_id, learnable: w.id > ctx.p.weapon_id && ctx.p.level >= Math.max(1, w.id) })),
+    spells: GAME.weapons.map((w) => ({ id: w.id, name: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), str: w.str, cost: w.cost, needs_level: Math.max(1, w.id), known: w.id === ctx.p.weapon_id, learnable: w.id > ctx.p.weapon_id && ctx.p.level >= Math.max(1, w.id) })),
     charm_discount_pct: Math.round(discount * 100),
   });
 })));
@@ -335,7 +335,7 @@ api.post("/library", async (c) => {
     const cost = Math.ceil((w.cost - tradeIn) * (1 - discount));
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
     await savePlayer(ctx, { gold: ctx.p.gold - cost, weapon_id: w.id });
-    ctx.events.push({ kind: "learned", spell: weaponName(ctx.p.class, w.id), str: w.str, cost, trade_in: tradeIn, ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
+    ctx.events.push({ kind: "learned", spell: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), str: w.str, cost, trade_in: tradeIn, ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
     await logEvent(ctx, "spend", { on: "spell", item: weaponName(ctx.p.class, w.id), tier: w.id, gold: cost });
   }));
 });
@@ -636,7 +636,7 @@ api.post("/fight", async (c) => {
         if (mana < mr.fireball) { ctx.events.push({ kind: "no_mana", need: mr.fireball, mana }); return; }
         await saveTurns(ctx, { mana: mana - mr.fireball });
         mult = specialMultiplier(ctx.p);
-        ctx.events.push({ kind: "cast", spell: GAME.classes[ctx.p.class].special, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
+        ctx.events.push({ kind: "cast", spell: specialName(ctx.p.class, ctx.p.weapon_id), special: true, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
       } else if (body.action === "attack" && mana >= mr.cast) {
         await saveTurns(ctx, { mana: mana - mr.cast });
         ctx.events.push({ kind: "cast", spell: weaponName(ctx.p.class, ctx.p.weapon_id), mana: ctx.t.mana, mana_max: manaMax(ctx.p) });

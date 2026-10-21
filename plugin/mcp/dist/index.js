@@ -21946,7 +21946,7 @@ server.tool(
 );
 server.tool(
   "fight",
-  "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: Fireball, which costs more mana). staff: a caster's free, weaker swing. run: try to flee.",
+  "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: their big spell, named for the spell they know (state.special), which costs more mana). staff: a caster's free, weaker swing. run: try to flee.",
   { action: external_exports.enum(["attack", "special", "staff", "run"]) },
   async ({ action }) => text(await call("POST", "/v1/fight", { action }))
 );

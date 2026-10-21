@@ -156,7 +156,7 @@ server.tool("workshop_order", "At Odile's workshop: buy a pickaxe (op: pickaxe),
   { op: z.enum(["pickaxe", "craft", "sell_gems"]), id: z.number().int().optional(), count: z.number().int().positive().optional() },
   async ({ op, id, count }) => text(await call("POST", "/v1/workshop", op === "craft" ? { op, id } : op === "sell_gems" ? { op, ...(count ? { count } : {}) } : { op })));
 
-server.tool("fight", "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: Fireball, which costs more mana). staff: a caster's free, weaker swing. run: try to flee.",
+server.tool("fight", "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: their big spell, named for the spell they know (state.special), which costs more mana). staff: a caster's free, weaker swing. run: try to flee.",
   { action: z.enum(["attack", "special", "staff", "run"]) },
   async ({ action }) => text(await call("POST", "/v1/fight", { action })));
 

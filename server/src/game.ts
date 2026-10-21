@@ -130,7 +130,9 @@ export interface PublicState {
   /** What things cost right now, so the narrator can quote before the player commits. */
   prices: { inn: number; heal_per_hp: number; heal_all: number };
   bank_trips_left: number;
-  /** Casters: the spell they cast, and mana left today out of the day's pool. */
+  /** The name of their special: a caster's is named for the spell they know. */
+  special: string;
+  /** Casters: mana left today out of the day's pool. */
   mana?: number;
   mana_max?: number;
   /** Swings of the pick left today (only matters with a pickaxe). */
@@ -187,6 +189,11 @@ export function manaMax(p: Pick<Player, "class" | "level">): number {
 /** What a weapon tier is called for this class: casters know spells at the same tiers. */
 export function weaponName(cls: PlayerClass, id: number): string {
   return casts(cls) ? (GAME.spells[id] ?? weapon(id).name) : weapon(id).name;
+}
+
+/** The big move that goes with what they know: a caster's special is named for their spell (Frost Needle → Frost Nova). */
+export function specialName(cls: PlayerClass, id: number): string {
+  return casts(cls) ? (GAME.spellSpecials[id] ?? GAME.classes[cls].special) : GAME.classes[cls].special;
 }
 
 /** Player's total strength and defense including gear. */
@@ -247,6 +254,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     bank_trips_left: Math.max(0, GAME.bankTxPerDay - t.bank_tx),
     swings_left: Math.max(0, SWINGS_PER_DAY - (t.swings ?? 0)),
     ...(casts(p.class) ? { mana: t.mana ?? 0, mana_max: manaMax(p) } : {}),
+    special: specialName(p.class, p.weapon_id),
     spouse,
     suitors_around: suitorsAround,
     jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id))})` : null,
