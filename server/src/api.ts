@@ -15,6 +15,7 @@ import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js"
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { DIRS, LEGEND, renderMap, tileAt, type Dir } from "./world.js";
+import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
@@ -373,6 +374,7 @@ function newsLine(n: { kind: string; actor: string | null; target: string | null
       if (n.detail?.left) return `${n.actor} left ${n.detail.left} for ${to}.`;
       return `${n.actor} married ${to}.`;
     }
+    case "goal": return String(n.detail.line);
     case "loot": return `${n.actor} pried ${aOrAn(String(n.detail.item))} off a dead ${n.detail.monster}.`;
     default: return `${n.actor ?? "Someone"} did something (${n.kind}).`;
   }
@@ -706,6 +708,16 @@ function describeTile(x: number, y: number, explored: Set<string>) {
   return explored.has(`${x},${y}`) ? { x, y, name: t.name, terrain: t.terrain, level: t.level, poi: t.poi, explored: true } : { x, y, explored: false };
 }
 
+/** Anyone else standing on this tile: townsfolk out walking or camped, and other players. */
+async function othersHere(ctx: Ctx, x: number, y: number) {
+  const r = await ctx.c.query<{ name: string; class: string; level: number; townsfolk: boolean; personality: Personality | null; mind: Mind | null }>(
+    `select p.name, p.class, p.level, p.role = 'townsfolk' as townsfolk, b.personality, b.mind
+     from players p left join bots b on b.player_id = p.id
+     where p.pos_x = $1 and p.pos_y = $2 and p.id <> $3 and p.alive and p.role <> 'npc' limit 4`, [x, y, ctx.p.id]);
+  return r.rows.map((o) => ({ name: o.name, class: o.class, level: o.level, townsfolk: o.townsfolk,
+    ...(o.personality && o.mind?.goal ? { on_mind: goalLabel(o.name, o.personality, o.mind.goal) } : {}) }));
+}
+
 /** The map around you, where each way leads, and the places you know. */
 api.get("/map", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   const ex = await exploredSet(ctx);
@@ -748,7 +760,9 @@ api.post("/move", async (c) => {
     const firstEver = Boolean(anyone.rowCount);
     if (firstEver && t.poi) await post(ctx, "discovery", ctx.p.name, null, { place: t.name, poi: t.poi });
     if (firstForYou) await logEvent(ctx, "explore", { x, y, ring: t.ring, terrain: t.terrain, level: t.level, poi: t.poi, first_ever: firstEver });
+    const others = await othersHere(ctx, x, y);
     ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: firstForYou, first_ever: firstEver,
+      ...(others.length ? { others_here: others } : {}),
       ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
   }));
 });
@@ -771,7 +785,8 @@ api.post("/travel", async (c) => {
     await leaveGround(ctx);
     await savePlayer(ctx, { pos_x: body.x, pos_y: body.y });
     const t = tileAt(body.x, body.y);
-    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true });
+    const others = await othersHere(ctx, body.x, body.y);
+    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true, ...(others.length ? { others_here: others } : {}) });
   }));
 });
 
@@ -781,18 +796,28 @@ api.post("/travel", async (c) => {
 api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireInTown(ctx, "the town square");
   const now = new Date();
-  const folk = await ctx.c.query<{ name: string; personality: Personality; alive: boolean }>(
-    "select p.name, b.personality, p.alive from bots b join players p on p.id = b.player_id order by p.name");
-  const about: { name: string; doing: string }[] = [];
-  const elsewhere: { name: string; where: string }[] = [];
+  const folk = await ctx.c.query<{ name: string; personality: Personality; alive: boolean; mind: Mind; pos_x: number | null; pos_y: number | null; location: "inn" | "fields" }>(
+    "select p.name, b.personality, p.alive, b.mind, p.pos_x, p.pos_y, p.location from bots b join players p on p.id = b.player_id order by p.name");
+  const about: { name: string; doing: string; on_mind?: string }[] = [];
+  const elsewhere: { name: string; where: string; on_mind?: string }[] = [];
   for (const f of folk.rows) {
-    const w = whereabouts(f.personality, f.name, ctx.day, now, f.alive);
-    if (w.where === "square") about.push({ name: f.name, doing: "about the square" });
-    else if (w.where === "heading") about.push({ name: f.name, doing: `heading for the ${w.to}` });
+    const today = f.mind?.today?.day === ctx.day ? f.mind.today.sessions : undefined;
+    const w = whereabouts(f.personality, f.name, ctx.day, now, f.alive, {
+      sessions: today,
+      away: awayToday(ctx.day, f.name, f.personality),
+      wild: f.pos_x === null ? null : tileAt(f.pos_x, f.pos_y!).name,
+      sleeps: f.location,
+    });
+    const on_mind = f.mind?.goal ? goalLabel(f.name, f.personality, f.mind.goal) : undefined;
+    const grudge = f.mind?.grudge ? { grudge_against: f.mind.grudge.name } : {};
+    if (w.where === "square") about.push({ name: f.name, doing: "about the square", on_mind, ...grudge });
+    else if (w.where === "heading") about.push({ name: f.name, doing: w.to === "forest" ? "heading out to hunt" : `heading for the ${w.to}`, on_mind, ...grudge });
     else if (w.where === "asleep") elsewhere.push({ name: f.name, where: w.at === "inn" ? "asleep at the inn" : "asleep in the fields" });
     else if (w.where === "dead") elsewhere.push({ name: f.name, where: "dead until morning" });
     else if (w.where === "unseen") elsewhere.push({ name: f.name, where: "nowhere to be seen" });
-    else elsewhere.push({ name: f.name, where: w.where === "forest" ? "in the forest" : w.where === "tavern" ? "in the tavern" : w.where === "shop" ? "at the shop" : "out in the fields" });
+    else if (w.where === "away") elsewhere.push({ name: f.name, where: `away for the day: ${w.why}` });
+    else if (w.where === "wild") elsewhere.push({ name: f.name, where: `out in the wild, last seen near ${w.place}`, on_mind });
+    else elsewhere.push({ name: f.name, where: w.where === "forest" ? "out hunting" : w.where === "tavern" ? "in the tavern" : w.where === "shop" ? "at the shop" : "out in the fields", on_mind });
   }
   const people = await ctx.c.query<{ name: string; class: string; level: number }>(
     "select name, class, level from players where not is_bot and id <> $1 and alive and pos_x is null and last_seen > now() - interval '15 minutes' order by last_seen desc limit 3", [ctx.p.id]);

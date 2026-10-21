@@ -32,9 +32,9 @@ test("the shift is stable for a given day and different across days", () => {
 });
 
 test("every townsperson's steps line up with their timetable", async () => {
-  const { STEPS } = await import("./bots.js");
+  const { FIGHTS } = await import("./bots.js");
   const { PLAN } = await import("./schedule.js");
-  for (const p of Object.keys(PLAN) as (keyof typeof PLAN)[]) assert.equal(STEPS[p].length, PLAN[p].length, p);
+  for (const p of Object.keys(PLAN) as (keyof typeof PLAN)[]) assert.equal(FIGHTS[p].length, PLAN[p].length, p);
 });
 
 test("whereabouts follow the timetable", async () => {

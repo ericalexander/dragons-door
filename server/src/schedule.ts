@@ -68,18 +68,37 @@ export type Whereabouts =
   | { where: Doing }
   | { where: "asleep"; at: "inn" | "fields" }
   | { where: "unseen" }
-  | { where: "dead" };
+  | { where: "dead" }
+  | { where: "wild"; place: string }
+  | { where: "away"; why: string };
+
+/** What they really did, when the runner has already played a session: the timetable is only a habit. */
+export interface Actual {
+  sessions?: Record<string, string[]>;
+  away?: string | null;
+  /** The place in the wild where they're standing, if they're out there. */
+  wild?: string | null;
+  /** Where they actually went to bed last, if known. */
+  sleeps?: "inn" | "fields";
+}
+
+const DOING_FOR: Record<string, Doing | "wild" | "square" | "unseen"> = {
+  hunt: "forest", explore: "wild", tavern: "tavern", flirt: "tavern", bard: "tavern",
+  shop: "shop", bank: "shop", donate: "square", rest: "square", raid: "unseen",
+};
 
 const BUSY_MIN = 45;      // how long a session keeps them away
 const HEADING_MIN = 20;   // seen leaving shortly before one starts
 
 /** Where a townsperson is right now, from the same timetable the bot runner follows. */
-export function whereabouts(p: Personality, name: string, day: string, now: Date, alive: boolean): Whereabouts {
+export function whereabouts(p: Personality, name: string, day: string, now: Date, alive: boolean, actual: Actual = {}): Whereabouts {
   if (!alive) return { where: "dead" };
+  if (actual.away) return { where: "away", why: actual.away };
+  if (actual.wild) return { where: "wild", place: actual.wild };
   const plan = PLAN[p];
   const times = plan.map((s, i) => sessionTime(day, s.at, name, i).getTime());
   const t = now.getTime();
-  const lastSleep = plan[plan.length - 1].sleeps ?? "inn";
+  const lastSleep = actual.sleeps ?? plan[plan.length - 1].sleeps ?? "inn";
   const hrs = HOURS[p] ?? {};
   const wakeT = hrs.wakes ? sessionTime(day, hrs.wakes, name, 90).getTime() : times[0] - 60 * 60_000;
   const lastEnd = times[times.length - 1] + BUSY_MIN * 60_000;
@@ -89,12 +108,24 @@ export function whereabouts(p: Personality, name: string, day: string, now: Date
     const start = times[i], end = start + BUSY_MIN * 60_000;
     if (t >= start - HEADING_MIN * 60_000 && t < start) return { where: "heading", to: plan[i].doing[0] };
     if (t >= start && t < end) {
+      const did = actual.sessions?.[String(i)]?.[0];
+      if (did) {
+        const d = DOING_FOR[did] ?? "square";
+        if (d === "square") return { where: "square" };
+        if (d === "unseen") return { where: "unseen" };
+        if (d === "wild") return { where: "forest" }; // already home again, or they'd be in the wild
+        return { where: d };
+      }
       if (plan[i].doing[0] === "fields") return { where: "unseen" }; // nobody sees Vesper at work
       return { where: plan[i].doing[0] };
     }
     const next = times[i + 1];
     // after the last session, until bedtime: still in the tavern if that's where the evening went, else about town
-    if (next === undefined && t >= end) return plan[i].doing.includes("tavern") ? { where: "tavern" } : { where: "square" };
+    if (next === undefined && t >= end) {
+      const did = actual.sessions?.[String(i)];
+      const tavern = did ? did.some((a) => ["tavern", "flirt", "bard"].includes(a)) : plan[i].doing.includes("tavern");
+      return tavern ? { where: "tavern" } : { where: "square" };
+    }
     if (next !== undefined && t >= end && t < next - HEADING_MIN * 60_000) return { where: "square" };
   }
   return { where: "square" };

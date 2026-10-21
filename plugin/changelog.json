@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.5.1",
+    "lore": "The townsfolk have started wanting things. Hilde talks about a cottage by the river, Brother Ansel passes a hat for the shrine, and Pip won't stop saying he'll outrank someone. Don't be surprised to meet one of them out past the gate, or to find one gone for the day. And if you rob one, expect to be remembered.",
+    "plain": "Townsfolk now have goals and choose what to do each day, so they're less predictable. You may meet them in the wild, see their goals in the news, and a townsperson you rob may come after you."
+  },
+  {
     "version": "0.5.0",
     "lore": "The town gate stands open, and beyond it the land goes on: old woods, wet fens, hills that climb toward broken crags. Nobody has mapped most of it. The first to find a place gets talked about in the tavern; the farther you go, the worse the things that live there.",
     "plain": "(E)xplore replaces the Forest. Walk the world one step at a time (each step into the wild costs a forest fight, going home is free), hunt where you stand, and check your (M)ap. Somewhere in the hills there are caves."

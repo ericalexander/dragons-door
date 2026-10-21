@@ -19,7 +19,10 @@ import { pool } from "./db.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { realmDay, realmSettings } from "./day.js";
-import type { Envelope, Event } from "./game.js";
+import { GAME, type Envelope, type Event } from "./game.js";
+import { DIRS, tileAt, type Dir } from "./world.js";
+import { SUITORS, available } from "./romance.js";
+import { awayToday, choose, doneLine, finished, fraction, goalLabel, goalTalk, pickGoal, type Activity, type Facts, type Mind } from "./minds.js";
 
 export const bots = new Hono();
 
@@ -371,61 +374,275 @@ async function sleepRough(b: Bot) {
   b.log.push("asleep in the fields");
 }
 
-// ---------- the townsfolk's day (Eastern time) ----------
+// ---------- the townsfolk's day ----------
+//
+// The timetable (PLAN in schedule.ts) says when each of them is up and about. What they do in each
+// session is their own choice, made fresh from their goal, their needs and their mood (minds.ts).
 
-type Step = (b: Bot) => Promise<void>;
-interface Session { at: string; steps: Step[] }
-/** Steps per session; the times come from PLAN in schedule.ts, index for index. */
-const f = (n: number): Step => (b) => fights(b, n);
-const flirt: Step = async (b) => { await b.post("/flirt"); };
-const song: Step = async (b) => { await b.post("/bard"); };
-
-export const STEPS: Record<Personality, Session[]> = {
-  banker: [ // Hilde: steady all day, banks and beds down at dinner
-    { at: "07:00", steps: [f(4)] },
-    { at: "12:00", steps: [f(3)] },
-    { at: "18:00", steps: [f(3), bedInn] },
-  ],
-  gossip: [ // Old Tam: paper first, a little fighting, early to bed
-    { at: "08:00", steps: [gossip] },
-    { at: "14:00", steps: [f(3)] },
-    { at: "21:00", steps: [flirt, bedInn] },
-  ],
-  drunk: [ // Grimwald: late riser, fights hard, ends up in the fields
-    { at: "11:00", steps: [f(5)] },
-    { at: "15:00", steps: [f(5)] },
-    { at: "20:00", steps: [drunkNight] },
-  ],
-  raider: [ // Vesper: fights by day, robs the fields late at night
-    { at: "10:00", steps: [f(5)] },
-    { at: "14:00", steps: [f(5)] },
-    { at: "23:00", steps: [raid, bedInn] },
-  ],
-  pious: [ // Brother Ansel: up before dawn, careful all day, in bed by evening prayers
-    { at: "05:30", steps: [f(3)] },
-    { at: "09:00", steps: [prayers] },
-    { at: "13:00", steps: [f(4)] },
-    { at: "19:00", steps: [f(3), bedInn] },
-  ],
-  reckless: [ // Pip: chores all day, then every fight at once, then the fields
-    { at: "16:00", steps: [f(10), brag, sleepRough] },
-  ],
-  seer: [ // Madam Orsolya: wakes at dusk, reads the cards for the night ahead
-    { at: "17:00", steps: [f(5)] },
-    { at: "22:30", steps: [fortune, f(5), bedInn] },
-  ],
-  braggart: [ // Sir Pomfrey: shopping first, a little fighting, a lot of talking
-    { at: "09:30", steps: [shop, f(3)] },
-    { at: "13:00", steps: [f(3), boast] },
-    { at: "17:30", steps: [f(4), shop, flirt, song, bedInn] },
-  ],
+/** Roughly how many forest fights each session is good for, index for index with PLAN. */
+export const FIGHTS: Record<Personality, number[]> = {
+  banker: [4, 3, 3],
+  gossip: [2, 3, 2],
+  drunk: [5, 5, 2],
+  raider: [5, 5, 2],
+  pious: [3, 2, 4, 3],
+  reckless: [10],
+  seer: [5, 5],
+  braggart: [3, 3, 4],
 };
+
+interface Row { player_id: string; name: string; personality: Personality; api_key: string; mind: Mind }
+
+async function gatherFacts(row: Row, mind: Mind): Promise<Facts & { pos: [number, number] | null; location: string; class: string }> {
+  const p = (await pool.query<{ level: number; gold: string; bank: string; weapon_id: number; armor_id: number; married: boolean; pos_x: number | null; pos_y: number | null; location: string; class: string }>(
+    "select level, gold::text, bank::text, weapon_id, armor_id, spouse_id is not null as married, pos_x, pos_y, location, class from players where id = $1", [row.player_id])).rows[0];
+  const ex = (await pool.query<{ n: string; far: number }>(
+    "select count(*)::text as n, coalesce(max(greatest(abs(x), abs(y))), 0) as far from explored where player_id = $1", [row.player_id])).rows[0];
+  const cave = (await pool.query<{ name: string }>(
+    "select d.name from explored e join discoveries d on d.x = e.x and d.y = e.y where e.player_id = $1 and d.poi = 'cave' limit 1", [row.player_id])).rows[0];
+  const rival = (await pool.query<{ name: string; level: number }>(
+    "select p.name, p.level from bots b join players p on p.id = b.player_id where p.id <> $1 order by p.level desc, p.exp desc limit 1", [row.player_id])).rows[0];
+  const rivalLevel = mind.goal?.rival
+    ? (await pool.query<{ level: number }>("select level from players where name = $1", [mind.goal.rival])).rows[0]?.level ?? null
+    : null;
+  return {
+    name: row.name, personality: row.personality, level: p.level, gold: Number(p.gold), bank: Number(p.bank),
+    weapon_id: p.weapon_id, armor_id: p.armor_id, married: p.married, explored: Number(ex.n), farthest: Number(ex.far),
+    found_cave: cave?.name ?? null, top_rival: rival ?? null, rival_level: rivalLevel,
+    pos: p.pos_x === null ? null : [p.pos_x, p.pos_y!], location: p.location, class: p.class,
+  };
+}
+
+async function postNews(kind: string, actor: string, detail: Record<string, unknown>, day: string) {
+  await pool.query("insert into news (day, kind, actor, detail) values ($1,$2,$3,$4)", [day, kind, actor, JSON.stringify(detail)]);
+}
+
+/** Back to town if they're out in the wild. Walking home is free. */
+async function home(b: Bot) {
+  const s = await b.get("/status");
+  if (!isErr(s) && s.state.place) await b.post("/travel", { to: "town" });
+}
+
+/** How far they'll go: a level or so past their own, more if they're bold, less if they're shaken. */
+function comfort(p: Personality, level: number, mood: number) {
+  return level + (p === "reckless" ? 2 : 1) + (mood > 0 ? 1 : 0) - (mood < 0 ? 1 : 0);
+}
+
+/** A walk out past the gate: a step costs a fight, and now and then they hunt where they stand. */
+async function exploreTrip(b: Bot, row: Row, mind: Mind, budget: number, day: string) {
+  const st = STYLE[row.personality];
+  const known = new Set((await pool.query<{ x: number; y: number }>("select x, y from explored where player_id = $1", [row.player_id])).rows.map((t) => `${t.x},${t.y}`));
+  let used = 0, steps = 0, place = "";
+  const goal = mind.goal?.kind;
+  for (let guard = 0; used < budget && guard < 30; guard++) {
+    const s = await b.get("/status");
+    if (isErr(s) || !s.state.alive || s.state.forest_fights <= 0) break;
+    if (s.state.hp / s.state.max_hp < Math.max(st.healBelow, 0.35)) break;
+    const [x, y] = s.state.place ? [s.state.place.x, s.state.place.y] : [0, 0];
+    const limit = comfort(row.personality, s.state.level, mind.mood ?? 0);
+    const options = (Object.keys(DIRS) as Dir[]).map((d) => {
+      const [nx, ny] = [x + DIRS[d][0], y + DIRS[d][1]];
+      if (nx === 0 && ny === 0) return null;
+      const t = tileAt(nx, ny);
+      if (t.level > limit) return null;
+      let score = 1 + Math.random() * 1.5;
+      if (!known.has(`${nx},${ny}`)) score += 3;
+      if (t.ring > Math.max(Math.abs(x), Math.abs(y))) score += goal === "far" ? 3 : 0.8;
+      if (goal === "cave" && (t.terrain === "hills" || t.terrain === "crags")) score += 2;
+      if (goal === "cave" && t.poi === "cave") score += 10;
+      return { d, score, t };
+    }).filter((o): o is NonNullable<typeof o> => o !== null).sort((a, z) => z.score - a.score);
+    if (!options.length) break;
+    const go = options[0];
+    const m = await b.post("/move", { dir: go.d });
+    if (isErr(m) || m.events.some((e) => e.kind === "no_fights_left")) break;
+    used++; steps++; place = go.t.name; known.add(`${go.t.x},${go.t.y}`);
+    if (used < budget && Math.random() < 0.5) {
+      const r = await forestFight(b, st);
+      used++;
+      if (r && !r.state.alive) { b.log.push(`died out at ${place}`); mind.last_trip = { day, place, steps }; return; }
+    }
+  }
+  if (steps) { mind.last_trip = { day, place, steps }; b.log.push(`walked ${steps} step${steps === 1 ? "" : "s"} out to ${place}`); }
+  else b.log.push("meant to explore, thought better of it");
+}
+
+/** A word in the tavern: about their goal, or whatever's on their mind as usual. */
+async function tavernTalk(b: Bot, row: Row, mind: Mind, f: Facts) {
+  const g = mind.goal;
+  const flavor: Partial<Record<Personality, Step>> = { gossip, pious: prayers, seer: fortune, braggart: boast, reckless: brag };
+  const own = flavor[row.personality];
+  const grudge = mind.grudge;
+  if (grudge && Math.random() < 0.3) {
+    await say(b, pick([
+      `${grudge.name} robbed me in the fields. I haven't forgotten. I'm not the forgetting sort.`,
+      `If anyone sees ${grudge.name} asleep out there, let me know. No reason.`,
+      `${grudge.name} owes me. Tell them I said so.`,
+    ]));
+    b.log.push("muttered about a grudge");
+    return;
+  }
+  if (g && (!own || Math.random() < 0.5)) {
+    const frac = fraction(g, f, mind);
+    const stage = (frac >= 0.8 ? 2 : frac >= 0.5 ? 1 : 0) as 0 | 1 | 2;
+    await say(b, goalTalk(row.name, row.personality, g, stage, Math.random));
+    mind.told = Math.max(mind.told ?? 0, stage);
+    b.log.push("talked about their goal");
+    return;
+  }
+  if (own) return own(b);
+  if (row.personality === "drunk") { await say(b, pick(["Anyone seen my boots?", "Violet says I've had enough. Violet is not the boss of me.", "Another round. For me. I'm the round."])); return; }
+  b.log.push("kept to themselves in the tavern");
+}
+
+async function donate(b: Bot, row: Row, mind: Mind) {
+  // Brother Ansel gives most of what he carries to the shrine fund. It leaves the realm; it doesn't go to anyone.
+  const s = await b.get("/status");
+  if (isErr(s)) return;
+  const amt = Math.floor(s.state.gold * 0.6);
+  if (amt < 10) return;
+  await pool.query("update players set gold = gold - $2 where id = $1 and gold >= $2", [row.player_id, amt]);
+  mind.given = (mind.given ?? 0) + amt;
+  b.log.push(`gave ${amt} gold to the shrine`);
+}
+
+async function flirtSomeone(b: Bot) {
+  const around = SUITORS.filter((s) => available(s));
+  const who = around.length ? pick(around).name : "Violet";
+  const r = await b.post("/flirt", { with: who });
+  if (!isErr(r)) {
+    const out = r.events.find((e) => e.kind === "flirt") as { outcome?: string } | undefined;
+    b.log.push(`flirted with ${who}${out?.outcome ? ` (${out.outcome})` : ""}`);
+  }
+}
+
+async function revenge(b: Bot, target: string) {
+  const me = await b.get("/status");
+  if (isErr(me) || !me.state.alive) return;
+  await b.post("/healer", { hp: "all" });
+  const c = await b.post("/challenge", { name: target });
+  b.log.push(`went after ${target}: ${isErr(c) ? c.error : kinds(c).filter((k) => k.startsWith("pvp_") && k !== "pvp_log").join(",") || kinds(c).join(",")}`);
+}
+
+const INN_SLEEPERS: Personality[] = ["banker", "gossip", "raider", "pious", "seer", "braggart"];
+
+/** Settle the mood once a day from yesterday's news: a death shakes them, a robbery leaves a grudge. */
+async function morning(b: Bot, row: Row, mind: Mind, day: string) {
+  if (mind.today?.day === day) return;
+  const news = await yesterday(b);
+  let mood = Math.trunc((mind.mood ?? 0) * 0.5);
+  for (const n of news) {
+    if (n.what === "forest_death" && n.actor === row.name) mood -= 2;
+    if (n.what === "pvp_kill" && n.target === row.name) { mood -= 1; if (n.actor) mind.grudge = { name: n.actor, day }; }
+    if (n.what === "pvp_kill" && n.actor === row.name) mood += 1;
+    if (n.what === "level_up" && n.actor === row.name) mood += 1;
+    if (n.what === "goal" && n.actor === row.name) mood += 1;
+  }
+  mind.mood = Math.max(-2, Math.min(2, mood));
+  if (mind.grudge && (Date.parse(day) - Date.parse(mind.grudge.day)) / 86_400_000 > 3) delete mind.grudge;
+  mind.today = { day, sessions: {} };
+}
+
+/** Check on the goal: finished means a headline and a new goal; a stale one gets dropped. */
+async function reviewGoal(b: Bot, row: Row, mind: Mind, f: Facts, day: string, inTown: boolean) {
+  const g = mind.goal;
+  if (g && finished(g, f, mind)) {
+    const line = doneLine(row.name, row.personality, g, f);
+    if (g.kind !== "wed" && g.kind !== "level") await postNews("goal", row.name, { goal: g.kind, line }, day);
+    mind.done = [{ kind: g.kind, line, day }, ...(mind.done ?? [])].slice(0, 5);
+    b.log.push(`goal done: ${g.kind}`);
+    delete mind.goal;
+  } else if (g && (Date.parse(day) - Date.parse(g.since)) / 86_400_000 > 21) {
+    b.log.push(`gave up on ${g.kind}`);
+    delete mind.goal;
+  }
+  if (!mind.goal) {
+    mind.goal = pickGoal(f, mind, day, Math.random);
+    mind.told = -1;
+    b.log.push(`new goal: ${goalLabel(row.name, row.personality, mind.goal)}`);
+  }
+  // A new goal gets announced the next time they're in town.
+  if (inTown && (mind.told ?? -1) < 0) {
+    await say(b, goalTalk(row.name, row.personality, mind.goal, 0, Math.random));
+    mind.told = 0;
+  }
+}
+
+async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string) {
+  const plan = PLAN[row.personality];
+  const slot = plan[i];
+  const last = i === plan.length - 1;
+  const hour = Number(slot.at.slice(0, 2));
+  const night = hour >= 20 || hour < 5;
+
+  await morning(b, row, mind, day);
+  let f = await gatherFacts(row, mind);
+  await reviewGoal(b, row, mind, f, day, f.pos === null);
+
+  let status = await b.get("/status");
+  if (isErr(status)) return;
+  // A fight left half-finished (a timeout, a crash) would block everything else: finish it first.
+  for (let k = 0; k < 80 && status.state.in_encounter; k++) {
+    const r = await b.post("/fight", { action: "attack" });
+    if (isErr(r)) break;
+    status = r;
+  }
+  if (!status.state.alive) { b.log.push("died finishing an old fight"); return; }
+  const s = status.state;
+  const upgradeSlot = f.weapon_id <= f.armor_id ? "weapon" : "armor";
+  const nextCost = (upgradeSlot === "weapon" ? GAME.weapons : GAME.armor).find((g) => g.id === (upgradeSlot === "weapon" ? f.weapon_id : f.armor_id) + 1)?.cost ?? Infinity;
+  const grudgeTarget = mind.grudge && night ? mind.grudge.name : null;
+
+  // A lazy morning now and then: they just don't turn up.
+  const lazy = plan.length > 1 && Math.random() < 0.05;
+  const acts: Activity[] = lazy ? ["rest"] : choose(row.personality, mind, {
+    hp: s.hp, max_hp: s.max_hp, fights_left: s.forest_fights, gold: s.gold,
+    can_upgrade: f.gold + f.bank >= nextCost, hint: slot.doing, last_session: last, night, grudge_target: grudgeTarget,
+  }, Math.random);
+  mind.today!.sessions[String(i)] = acts;
+  b.log.push(`chose ${acts.join(" + ")}`);
+
+  // Fights for this session; the last one uses whatever's left.
+  const share = last ? s.forest_fights : Math.max(1, Math.min(s.forest_fights, (FIGHTS[row.personality][i] ?? 3) + Math.floor(Math.random() * 3) - 1));
+  for (const a of acts) {
+    switch (a) {
+      case "hunt": await fights(b, share); break;
+      case "explore": await exploreTrip(b, row, mind, share, day); break;
+      case "tavern": await home(b); f = await gatherFacts(row, mind); await tavernTalk(b, row, mind, f); break;
+      case "shop": await home(b); await shop(b); break;
+      case "bank": await home(b); await b.post("/bank", { op: "deposit", amount: "all" }); b.log.push("banked"); break;
+      case "flirt": await home(b); await flirtSomeone(b); break;
+      case "bard": await home(b); await song(b); b.log.push("listened to the bard"); break;
+      case "donate": await home(b); await donate(b, row, mind); break;
+      case "raid": await home(b); if (grudgeTarget) { await revenge(b, grudgeTarget); delete mind.grudge; } else await raid(b); break;
+      case "rest": b.log.push(lazy ? "stayed in bed" : "took it easy"); { const h = await b.get("/status"); if (!isErr(h) && !h.state.place) await healIfNeeded(b, h, 0.6); } break;
+    }
+    const after = await b.get("/status");
+    if (isErr(after) || !after.state.alive) return;
+  }
+
+  if (!last) return;
+  // Bedtime. Explorers who like the fields may camp where they are; everyone else walks home.
+  const now = await b.get("/status");
+  if (isErr(now) || !now.state.alive) return;
+  const camper = ["reckless", "drunk", "seer"].includes(row.personality);
+  if (now.state.place && camper && Math.random() < 0.4) { b.log.push(`camped out at ${now.state.place.name}`); return; }
+  await home(b);
+  if (row.personality === "drunk") return drunkNight(b);
+  if (row.personality === "reckless") return sleepRough(b);
+  if (INN_SLEEPERS.includes(row.personality) && Math.random() < 0.95) return bedInn(b);
+  await tidyBag(b);
+  b.log.push("couldn't be bothered with the inn tonight");
+}
+
+const song: Step = async (b) => { await b.post("/bard"); };
+type Step = (b: Bot) => Promise<void>;
 
 // ---------- seeding and running ----------
 
-async function ensureRoster(): Promise<{ player_id: string; name: string; personality: Personality; api_key: string }[]> {
-  const existing = await pool.query<{ player_id: string; name: string; personality: Personality; api_key: string }>(
-    "select b.player_id, p.name, b.personality, b.api_key from bots b join players p on p.id = b.player_id",
+async function ensureRoster(): Promise<Row[]> {
+  const existing = await pool.query<Row>(
+    "select b.player_id, p.name, b.personality, b.api_key, b.mind from bots b join players p on p.id = b.player_id",
   );
   const have = new Set(existing.rows.map((r) => r.name));
   for (const spec of ROSTER) {
@@ -439,7 +656,7 @@ async function ensureRoster(): Promise<{ player_id: string; name: string; person
     if (!j.api_key) continue; // name taken by a human, or similar; skip rather than fight over it
     const p = await pool.query<{ id: string }>("update players set is_bot = true, role = 'townsfolk' where name = $1 returning id", [spec.name]);
     await pool.query("insert into bots (player_id, personality, api_key) values ($1,$2,$3)", [p.rows[0].id, spec.personality, j.api_key]);
-    existing.rows.push({ player_id: p.rows[0].id, name: spec.name, personality: spec.personality, api_key: j.api_key });
+    existing.rows.push({ player_id: p.rows[0].id, name: spec.name, personality: spec.personality, api_key: j.api_key, mind: {} });
   }
   return existing.rows;
 }
@@ -454,22 +671,26 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
     const st = await pool.query<{ sessions: { day?: string; done?: number[] } }>("select sessions from bots where player_id = $1", [row.player_id]);
     const rec = st.rows[0]?.sessions ?? {};
     const done = new Set(rec.day === day ? rec.done ?? [] : []);
-    const plan = STEPS[row.personality].map((s, i) => ({ ...s, at: PLAN[row.personality][i]?.at ?? s.at }));
-    const due = plan.map((s, i) => ({ s, i, at: sessionTime(day, s.at, row.name, i) })).filter((x) => !done.has(x.i) && x.at <= now);
+    const plan = PLAN[row.personality];
+    const due = plan.map((s, i) => ({ i, at: sessionTime(day, s.at, row.name, i) })).filter((x) => !done.has(x.i) && x.at <= now);
     if (!due.length) continue;
     const b = new Bot(row.name, row.personality, row.api_key);
-    for (const { s, i, at } of due) {
+    const mind: Mind = row.mind ?? {};
+    const away = awayToday(day, row.name, row.personality);
+    for (const { i, at } of due) {
       b.log.push(`session ${i + 1} (${at.toISOString().slice(11, 16)}Z)`);
       try {
         const status = await b.get("/status");
         if (isErr(status)) { b.log.push(`status failed: ${status.error}`); }
         else if (!status.state.alive) { b.log.push("dead until the reset"); }
-        else for (const step of s.steps) await step(b);
+        else if (away) { b.log.push(`away: ${away}`); }
+        else await playSession(b, row, mind, i, day);
       } catch (e) {
         b.log.push(`error: ${(e as Error).message}`);
       }
       done.add(i);
-      await pool.query("update bots set sessions = $2, last_run_day = $3 where player_id = $1", [row.player_id, JSON.stringify({ day, done: [...done].sort() }), day]);
+      await pool.query("update bots set sessions = $2, last_run_day = $3, mind = $4 where player_id = $1",
+        [row.player_id, JSON.stringify({ day, done: [...done].sort() }), day, JSON.stringify(mind)]);
     }
     results[row.name] = b.log;
   }
