@@ -39,6 +39,7 @@ const TOWNSFOLK: Record<Personality, string> = {
 function characterPersona(name: string): string | null {
   const s = SUITORS.find((x) => x.name === name);
   if (s) return `${s.name}, ${s.description}. ${s.pronouns}.`;
+  if (name === "Mother Quill") return "Mother Quill, who keeps the library and teaches spells to those with the gift; very old, ink to the elbows, patient, dry, quietly fierce about books being returned. She/her.";
   if (name === "Odile") return "Odile, the gemcutter, with a jeweler's loupe in one eye and burn scars on both hands; few words, all exact; blunt about bad ore, quietly delighted by a good gem. She/her.";
   const b = BARDS.find((x) => x.name === name);
   if (b) return `${b.name}, a bard who plays the tavern some nights: ${b.style}. Writes a little like they sing.`;

@@ -84,7 +84,7 @@ async function forestFight(b: Bot, opts: { runBelow?: number; useSpecial?: boole
     const s = r.state;
     let action: "attack" | "special" | "run" = "attack";
     if (opts.runBelow !== undefined && s.hp / s.max_hp < opts.runBelow && i > 0) action = "run";
-    else if (opts.useSpecial && s.specials > 0 && roll(99) < 50) action = "special";
+    else if (opts.useSpecial && (s.mana_max !== undefined ? (s.mana ?? 0) >= 4 : s.specials > 0) && roll(99) < 50) action = "special";
     const next = await b.post("/fight", { action });
     if (isErr(next)) return r;
     r = next;

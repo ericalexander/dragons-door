@@ -73,6 +73,8 @@ export interface Turns {
   gossip_heard: boolean;
   /** Wild events turned up today. */
   events_seen: number;
+  /** Mana left today (casters only). */
+  mana: number;
 }
 
 export interface Monster {
@@ -128,6 +130,9 @@ export interface PublicState {
   /** What things cost right now, so the narrator can quote before the player commits. */
   prices: { inn: number; heal_per_hp: number; heal_all: number };
   bank_trips_left: number;
+  /** Casters: the spell they cast, and mana left today out of the day's pool. */
+  mana?: number;
+  mana_max?: number;
   /** Swings of the pick left today (only matters with a pickaxe). */
   swings_left: number;
   /** Who they're married to, if anyone. */
@@ -170,6 +175,20 @@ export function master(level: number) {
   return GAME.masters.find((m) => m.level === level) ?? null;
 }
 
+interface Mana { base: number; perLevel: number; cast: number; fireball: number; staff: number }
+/** The class's mana rules, if it casts spells (mages, and later other magic classes). */
+export const manaRules = (cls: PlayerClass): Mana | null => (GAME.classes[cls] as { mana?: Mana }).mana ?? null;
+export const casts = (cls: PlayerClass) => manaRules(cls) !== null;
+/** A day's mana: refills at the reset. */
+export function manaMax(p: Pick<Player, "class" | "level">): number {
+  const m = manaRules(p.class);
+  return m ? m.base + m.perLevel * p.level : 0;
+}
+/** What a weapon tier is called for this class: casters know spells at the same tiers. */
+export function weaponName(cls: PlayerClass, id: number): string {
+  return casts(cls) ? (GAME.spells[id] ?? weapon(id).name) : weapon(id).name;
+}
+
 /** Player's total strength and defense including gear. */
 export function effective(p: Player) {
   const j = trinket(p.trinket_id ?? 0);
@@ -201,7 +220,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     max_hp: p.max_hp,
     str: p.str,
     def: p.def,
-    weapon: weapon(p.weapon_id).name,
+    weapon: weaponName(p.class, p.weapon_id),
     armor: armor(p.armor_id).name,
     gold: p.gold,
     bank: p.bank,
@@ -227,6 +246,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     },
     bank_trips_left: Math.max(0, GAME.bankTxPerDay - t.bank_tx),
     swings_left: Math.max(0, SWINGS_PER_DAY - (t.swings ?? 0)),
+    ...(casts(p.class) ? { mana: t.mana ?? 0, mana_max: manaMax(p) } : {}),
     spouse,
     suitors_around: suitorsAround,
     jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id))})` : null,
@@ -239,7 +259,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
 /** Legal next actions given current state. The narrator only offers these. */
 export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean): string[] {
   if (!p.alive) return ["news", "tavern", "rankings", "status", "mail"];
-  if (inEncounter) return ["fight attack", "fight special", "fight run"];
+  if (inEncounter) return casts(p.class) ? ["fight attack", "fight special", "fight staff", "fight run"] : ["fight attack", "fight special", "fight run"];
   // Out in the wild: hunt where you stand, walk on, or head home. Town's services are back in town.
   if (p.pos_x !== null && p.pos_x !== undefined) {
     const w: string[] = ["map", "return", "status", "bag", "news", "rankings", "mail"];
@@ -257,6 +277,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     return w;
   }
   const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop"];
+  if (casts(p.class)) a.push("library");
   if (p.ground) a.unshift("take", "equip ground");
   // Everyone heads out into the world to hunt.
   a.unshift("explore");

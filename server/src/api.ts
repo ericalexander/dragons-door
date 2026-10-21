@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, charmOf, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
+  GAME, armor, weapon, charmOf, casts, manaMax, manaRules, weaponName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -206,7 +206,7 @@ function seasoned(ctx: Ctx, what: string): boolean {
 
 /** Names that would pass for a local. Compared after folding lookalike characters. */
 const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
-  "violet", "odile", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
+  "violet", "odile", "mother quill", "quill", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
   "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic"];
 // i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
 const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
@@ -303,6 +303,41 @@ api.post("/register", async (c) => {
     return r.rows[0];
   });
   return c.json({ api_key: key, name: out.name, class: out.class, ...(testChar ? { test: true } : {}), events: [{ kind: "joined", name: out.name, class: out.class }] });
+});
+
+// ---------- Mother Quill's library (spells for casters) ----------
+
+/** The spells for sale, tier for tier with the smith's weapons: each needs a level and costs gold, and your old spellbook trades in at half. */
+api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireInTown(ctx, "the library");
+  if (!casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "Mother Quill only teaches those with the gift" }); return; }
+  const discount = charmDiscount(charmOf(ctx.p));
+  ctx.events.push({
+    kind: "library", known: weaponName(ctx.p.class, ctx.p.weapon_id), mana: { per_day: manaMax(ctx.p), cast: manaRules(ctx.p.class)!.cast, fireball: manaRules(ctx.p.class)!.fireball },
+    spells: GAME.weapons.map((w) => ({ id: w.id, name: weaponName(ctx.p.class, w.id), str: w.str, cost: w.cost, needs_level: Math.max(1, w.id), known: w.id === ctx.p.weapon_id, learnable: w.id > ctx.p.weapon_id && ctx.p.level >= Math.max(1, w.id) })),
+    charm_discount_pct: Math.round(discount * 100),
+  });
+})));
+
+api.post("/library", async (c) => {
+  const body = z.object({ id: z.number().int() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    requireInTown(ctx, "the library");
+    await requireNoEncounter(ctx);
+    if (!casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "Mother Quill only teaches those with the gift" }); return; }
+    const w = GAME.weapons.find((x) => x.id === body.id);
+    if (!w || w.id === 0) throw new GameError("no_such_item", "no such spell");
+    if (w.id <= ctx.p.weapon_id) { ctx.events.push({ kind: "already_known", spell: weaponName(ctx.p.class, ctx.p.weapon_id) }); return; }
+    if (ctx.p.level < w.id) { ctx.events.push({ kind: "too_soon", spell: weaponName(ctx.p.class, w.id), needs_level: w.id }); return; }
+    const tradeIn = Math.floor(weapon(ctx.p.weapon_id).cost / 2);
+    const discount = charmDiscount(charmOf(ctx.p));
+    const cost = Math.ceil((w.cost - tradeIn) * (1 - discount));
+    if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
+    await savePlayer(ctx, { gold: ctx.p.gold - cost, weapon_id: w.id });
+    ctx.events.push({ kind: "learned", spell: weaponName(ctx.p.class, w.id), str: w.str, cost, trade_in: tradeIn, ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
+    await logEvent(ctx, "spend", { on: "spell", item: weaponName(ctx.p.class, w.id), tier: w.id, gold: cost });
+  }));
 });
 
 // ---------- the keeper's tools (admins only) ----------
@@ -513,11 +548,17 @@ api.get("/shop", async (c) => {
   const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) }); return; }
+    if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "the smith doesn't sell spells; Mother Quill does, at the library", go: "library" }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
     ctx.events.push({ kind: "catalog", shop: kind, owned, items, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) });
   }));
 });
+
+/** A weapon drop reads as a spell scroll to a caster: reading it (equip) teaches the spell. */
+function lootName(p: Player, drop: { kind: string; item: string; tier: number }): string {
+  return drop.kind === "weapon" && casts(p.class) ? `Scroll of ${weaponName(p.class, drop.tier)}` : drop.item;
+}
 
 // ---------- forest ----------
 
@@ -555,7 +596,7 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
 }, { weather: true })));
 
 api.post("/fight", async (c) => {
-  const body = z.object({ action: z.enum(["attack", "special", "run"]) }).parse(await c.req.json());
+  const body = z.object({ action: z.enum(["attack", "special", "staff", "run"]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     const r = await ctx.c.query<{ id: string; kind: string; monster: Monster; round: number; log: Event[] }>("select id, kind, monster, round, log from encounters where player_id = $1", [ctx.p.id]);
@@ -586,7 +627,24 @@ api.post("/fight", async (c) => {
 
     let mult = 1;
     let dodge = false;
-    if (body.action === "special") {
+    const mr = manaRules(ctx.p.class);
+    let staff = false;
+    if (mr) {
+      // Casters: a spell costs mana, Fireball costs more, and the staff costs nothing but hits soft.
+      const mana = ctx.t.mana ?? 0;
+      if (body.action === "special") {
+        if (mana < mr.fireball) { ctx.events.push({ kind: "no_mana", need: mr.fireball, mana }); return; }
+        await saveTurns(ctx, { mana: mana - mr.fireball });
+        mult = specialMultiplier(ctx.p);
+        ctx.events.push({ kind: "cast", spell: GAME.classes[ctx.p.class].special, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
+      } else if (body.action === "attack" && mana >= mr.cast) {
+        await saveTurns(ctx, { mana: mana - mr.cast });
+        ctx.events.push({ kind: "cast", spell: weaponName(ctx.p.class, ctx.p.weapon_id), mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
+      } else {
+        staff = true;
+        ctx.events.push({ kind: "staff", ...(body.action === "attack" ? { out_of_mana: true } : {}), mana, mana_max: manaMax(ctx.p) });
+      }
+    } else if (body.action === "special") {
       if (ctx.t.specials <= 0) { ctx.events.push({ kind: "no_specials_left" }); return; }
       await saveTurns(ctx, { specials: ctx.t.specials - 1 });
       mult = specialMultiplier(ctx.p);
@@ -594,6 +652,7 @@ api.post("/fight", async (c) => {
     }
 
     const pf = playerAsFighter(ctx.p);
+    if (staff) pf.str = Math.round(pf.str * mr!.staff);
     const mf = monsterAsFighter(m);
     const evs = exchange(pf, mf, mult, dodge);
     ctx.events.push(...evs);
@@ -628,10 +687,10 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
       const upgrade = drop.tier > (drop.kind === "weapon" ? ctx.p.weapon_id : ctx.p.armor_id);
       if (usedNow + w <= cap) {
         await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, drop.kind, drop.tier]);
-        ctx.events.push({ kind: "loot", monster: m.name, item: drop.item, slot: drop.kind, weight: w, stored: true, upgrade, bag_used: usedNow + w, bag_capacity: cap });
+        ctx.events.push({ kind: "loot", monster: m.name, item: lootName(ctx.p, drop), slot: drop.kind, weight: w, stored: true, upgrade, bag_used: usedNow + w, bag_capacity: cap });
       } else {
         await savePlayer(ctx, { ground: { slot: drop.kind, item_id: drop.tier } });
-        ctx.events.push({ kind: "loot", monster: m.name, item: drop.item, slot: drop.kind, weight: w, stored: false, upgrade, bag_used: usedNow, bag_capacity: cap });
+        ctx.events.push({ kind: "loot", monster: m.name, item: lootName(ctx.p, drop), slot: drop.kind, weight: w, stored: false, upgrade, bag_used: usedNow, bag_capacity: cap });
       }
       await post(ctx, "loot", ctx.p.name, null, { item: drop.item, monster: m.name });
       await logEvent(ctx, "loot", { item: drop.item, slot: drop.kind, tier: drop.tier, monster_level: m.level ?? null, stored: usedNow + w <= cap, upgrade });
@@ -648,6 +707,8 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
       str: ctx.p.str + g.str,
       def: ctx.p.def + g.def,
     });
+    const mrLvl = manaRules(ctx.p.class);
+    if (mrLvl) await saveTurns(ctx, { mana: (ctx.t.mana ?? 0) + mrLvl.perLevel });
     await post(ctx, "level_up", ctx.p.name, null, { level: lvl });
     await logEvent(ctx, "level_up", { to: lvl, exp: ctx.p.exp });
     ctx.events.push({ kind: "level_up", level: lvl, max_hp: ctx.p.max_hp, str: ctx.p.str, def: ctx.p.def });
@@ -756,6 +817,7 @@ api.post("/buy", async (c) => {
       await logEvent(ctx, "spend", { on: "bag", item: nb.name, gold: bagCost });
       return;
     }
+    if (body.kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "the smith doesn't sell spells; Mother Quill does, at the library", go: "library" }); return; }
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
@@ -1526,7 +1588,7 @@ api.post("/talk", async (c) => {
       if (s && !available(s)) { ctx.events.push({ kind: "not_around", name: who.name, hours: s.hours ?? null, days: s.days ?? null }); return; }
       const bardNames = ["Fennick Reed", "Dunstan the Unfinished", "Corwin Lark", "Wren"];
       if (bardNames.includes(who.name) && bardFor(ctx.day).name !== who.name) { ctx.events.push({ kind: "not_around", name: who.name, where: "not playing tonight" }); return; }
-      where = who.name === "Odile" ? "her workshop" : s ? s.where : "the tavern";
+      where = who.name === "Odile" ? "her workshop" : who.name === "Mother Quill" ? "the library" : s ? s.where : "the tavern";
     }
 
     const talked = (ctx.t.talked ?? []) as string[];
@@ -1755,7 +1817,8 @@ api.post("/equip", async (c) => {
     if (rowId !== null) await ctx.c.query("delete from inventory where id = $1", [rowId]);
     if (oldId > 0) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, slot, oldId]);
     await savePlayer(ctx, { ...(slot === "weapon" ? { weapon_id: itemId } : slot === "armor" ? { armor_id: itemId } : { trinket_id: itemId }), ...("ground" in body ? { ground: null } : {}) });
-    ctx.events.push({ kind: "equipped", slot, item: Bag.item(slot, itemId).name, stowed: oldId > 0 ? Bag.item(slot, oldId).name : null });
+    const label = (id: number) => slot === "weapon" && casts(ctx.p.class) ? weaponName(ctx.p.class, id) : Bag.item(slot, id).name;
+    ctx.events.push({ kind: "equipped", slot: slot === "weapon" && casts(ctx.p.class) ? "spell" : slot, item: label(itemId), ...(slot === "weapon" && casts(ctx.p.class) ? { learned_from_scroll: true } : {}), stowed: oldId > 0 ? label(oldId) : null });
   }));
 });
 

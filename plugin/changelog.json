@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.9.0",
+    "lore": "Somebody finally pointed out that a mage hitting a goblin with a dagger is embarrassing for everyone. A door you hadn't noticed off the square now has a lamp in the window: the library, where Mother Quill keeps the spells and decides who's fit to learn them. Mages wake each morning with a well of mana, and spend it as they like.",
+    "plain": "Mages now cast spells and use mana: (C)ast your spell, (F)ireball for more mana, or S(t)aff to save it. Mana refills each day. Learn stronger spells at Mother Quill's (L)ibrary as you level, instead of buying weapons."
+  },
+  {
     "version": "0.8.1",
     "lore": "The roads you know are still free to walk, but they aren't empty. The farther you go, the likelier you are to meet someone, or something, along the way.",
     "plain": "Traveling to a place you've already explored is still free, but long trips can now turn up an event on the road."

@@ -4,7 +4,7 @@
  * buys the best gear they can afford, trains when ready, inn every night, no PvP.
  * Uses the real combat functions and data. Run: npx tsx src/sim.ts [class] [trials]
  */
-import { GAME, armor, weapon, expForLevel, master, levelGains, type Player, type Monster } from "./game.js";
+import { GAME, armor, weapon, expForLevel, master, levelGains, manaMax, manaRules, type Player, type Monster } from "./game.js";
 import { bardFor, pickGift } from "./bards.js";
 import { visitorFor, pickVisitorGift } from "./square.js";
 import { charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
@@ -41,6 +41,11 @@ if (process.env.MAGE_DEF) GAME.classes.mage.defPerLevel = Number(process.env.MAG
 if (process.env.MAGE_STR) GAME.classes.mage.strPerLevel = Number(process.env.MAGE_STR);
 if (process.env.MAGE_MULT) GAME.classes.mage.specialMult = Number(process.env.MAGE_MULT);
 if (process.env.MAGE_SPD) GAME.classes.mage.specialsPerDay = Number(process.env.MAGE_SPD);
+// mana knobs: MANA_BASE, MANA_LVL, CAST, FIREBALL, STAFF; MANA=0 plays the old mage (dagger and specials)
+const MANA_ON = process.env.MANA !== "0";
+{ const m = (GAME.classes.mage as { mana?: Record<string, number> }).mana!;
+  for (const [k, f] of [["MANA_BASE", "base"], ["MANA_LVL", "perLevel"], ["CAST", "cast"], ["FIREBALL", "fireball"], ["STAFF", "staff"]] as const) if (process.env[k]) m[f] = Number(process.env[k]);
+  if (!MANA_ON) delete (GAME.classes.mage as { mana?: unknown }).mana; }
 if (process.env.DHP) GAME.dragon.hp = Number(process.env.DHP); if (process.env.DSTR) GAME.dragon.str = Number(process.env.DSTR); if (process.env.DDEF) GAME.dragon.def = Number(process.env.DDEF);
 if (K.ghp) GAME.growth.hp = Number(K.ghp); if (K.gstr) GAME.growth.str = Number(K.gstr); if (K.gdef) GAME.growth.def = Number(K.gdef);
 for (const m of GAME.monsters) { m.str = Math.round(m.str * K.mstr); m.hp = Math.round(m.hp * K.mhp); m.gold = Math.round(m.gold * K.mgold); m.exp = Math.round(m.exp * K.mexp); }
@@ -121,11 +126,22 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number)
       continue;
     }
     let mult = 1, dodge = false;
-    if (specials.n > 0 && mf.hp > pf.str * 1.5) { mult = specialMultiplier(p); dodge = specialDodges(p); specials.n--; }
-    if (mult > 1 && p.class === "mage" && MAGE.pierce > 0) {
-      const armour = mf.def; mf.def = Math.round(armour * (1 - MAGE.pierce));
-      exchange(pf, mf, mult, dodge); mf.def = armour;
-    } else exchange(pf, mf, mult, dodge);
+    const mr = manaRules(p.class);
+    if (mr) {
+      // A caster's round: Fireball on a tough target if there's mana to spare, else a spell, else the staff.
+      const full = pf.str;
+      if (specials.n >= mr.fireball && mf.hp > full * 1.5) { mult = specialMultiplier(p); specials.n -= mr.fireball; }
+      else if (specials.n >= mr.cast) specials.n -= mr.cast;
+      else pf.str = Math.round(full * mr.staff);
+      exchange(pf, mf, mult, false);
+      pf.str = full;
+    } else {
+      if (specials.n > 0 && mf.hp > pf.str * 1.5) { mult = specialMultiplier(p); dodge = specialDodges(p); specials.n--; }
+      if (mult > 1 && p.class === "mage" && MAGE.pierce > 0) {
+        const armour = mf.def; mf.def = Math.round(armour * (1 - MAGE.pierce));
+        exchange(pf, mf, mult, dodge); mf.def = armour;
+      } else exchange(pf, mf, mult, dodge);
+    }
     if (mf.hp <= 0) { p.hp = pf.hp; return "won"; }
     if (pf.hp <= 0) { p.hp = 0; return "died"; }
   }
@@ -160,7 +176,8 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
     if (p.location === "inn" || !p.alive) p.hp = p.max_hp;
     p.alive = true;
     p.gold += 0; // bank -> withdraw happens below
-    const specials = { n: GAME.classes[p.class].specialsPerDay };
+    // For casters this is the day's mana; for everyone else, specials.
+    const specials = { n: manaRules(p.class) ? manaMax(p) : GAME.classes[p.class].specialsPerDay };
     const extra = { n: 0 };
     dailyExtras(p, day, extra);
     let fights = 10 + extra.n;

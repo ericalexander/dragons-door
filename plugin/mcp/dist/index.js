@@ -21921,6 +21921,18 @@ server.tool(
   async () => text(await call("POST", "/v1/mine"))
 );
 server.tool(
+  "library",
+  "Mother Quill's library in town, for casters: the spells for sale (each needs a level and costs gold, and the old spellbook trades in at half), which they know, and their mana.",
+  {},
+  async () => text(await call("GET", "/v1/library"))
+);
+server.tool(
+  "learn_spell",
+  "Learn a spell at Mother Quill's library by id (casters only). It replaces the spell they cast now.",
+  { id: external_exports.number().int() },
+  async ({ id }) => text(await call("POST", "/v1/library", { id }))
+);
+server.tool(
   "workshop",
   "Odile's workshop in town: the pickaxe for sale, what she can make from the player's ore and gems, and what they're wearing.",
   {},
@@ -21934,8 +21946,8 @@ server.tool(
 );
 server.tool(
   "fight",
-  "Take one round in your current fight. attack: normal swing. special: class skill (limited per day). run: try to flee.",
-  { action: external_exports.enum(["attack", "special", "run"]) },
+  "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: Fireball, which costs more mana). staff: a caster's free, weaker swing. run: try to flee.",
+  { action: external_exports.enum(["attack", "special", "staff", "run"]) },
   async ({ action }) => text(await call("POST", "/v1/fight", { action }))
 );
 server.tool("train", "Challenge your master to advance a level. Only when you have enough experience.", {}, async () => text(await call("POST", "/v1/train")));

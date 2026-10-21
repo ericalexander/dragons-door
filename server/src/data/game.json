@@ -27,7 +27,14 @@
       "hpPerLevel": 8,
       "strPerLevel": 3,
       "defPerLevel": 2,
-      "critChance": 0.17
+      "critChance": 0.17,
+      "mana": {
+        "base": 20,
+        "perLevel": 5,
+        "cast": 1,
+        "fireball": 4,
+        "staff": 0.6
+      }
     }
   },
   "levels": [
@@ -642,5 +649,20 @@
   ],
   "sellFraction": 0.5,
   "messagesPerDay": 30,
-  "critMultiplier": 2
+  "critMultiplier": 2,
+  "spells": [
+    "Spark",
+    "Frost Needle",
+    "Firebolt",
+    "Lightning Lash",
+    "Acid Arrow",
+    "Ice Lance",
+    "Chain Lightning",
+    "Shadow Bolt",
+    "Meteor Shard",
+    "Starfall",
+    "Void Lance",
+    "Sunburst",
+    "Crystal Storm"
+  ]
 }

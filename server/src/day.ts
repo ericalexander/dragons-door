@@ -1,5 +1,5 @@
 import type { Client } from "./db.js";
-import { GAME, type Player, type Turns } from "./game.js";
+import { GAME, manaMax, type Player, type Turns } from "./game.js";
 
 /** Realm-day: UTC date after subtracting the reset hour. One clock for the whole realm. */
 export function realmDay(resetHourUtc: number, now = new Date()): string {
@@ -23,7 +23,7 @@ export async function loadTurns(c: Client, p: Player, day: string): Promise<{ tu
   const existing = await c.query<Turns>("select * from turns where player_id = $1 and day = $2", [p.id, day]);
   if (existing.rowCount) return { turns: existing.rows[0], player: p, rolled: false };
 
-  const ins = await c.query<Turns>("insert into turns (player_id, day, specials) values ($1, $2, $3) returning *", [p.id, day, GAME.classes[p.class].specialsPerDay]);
+  const ins = await c.query<Turns>("insert into turns (player_id, day, specials, mana) values ($1, $2, $3, $4) returning *", [p.id, day, GAME.classes[p.class].specialsPerDay, manaMax(p)]);
   const healed = p.location === "inn" || !p.alive;
   const upd = await c.query<Player>(
     `update players set alive = true, hp = case when $2 then max_hp else greatest(hp, 1) end, location = 'fields', last_seen = now()
