@@ -6,14 +6,16 @@ import type { Client } from "./db.js";
 import { GAME, armor, weapon, type Player } from "./game.js";
 import { roll } from "./combat.js";
 import { ore, trinket, bonusText } from "./caves.js";
+import { QUESTS } from "./quests.js";
 
 /** Gear you can wear (weapon, armor, jewelry), plus ore, which you can only carry and sell. */
-export type Slot = "weapon" | "armor" | "ore" | "trinket";
+export type Slot = "weapon" | "armor" | "ore" | "trinket" | "quest";
 export type GearSlot = "weapon" | "armor";
 
 export function item(slot: Slot, id: number): { name: string; weight: number; cost: number } {
   if (slot === "ore") return ore(id);
   if (slot === "trinket") return trinket(id);
+  if (slot === "quest") { const q = QUESTS[id]; return { name: q?.item?.name ?? "something odd", weight: 1, cost: (q?.item?.sell ?? 0) * 2 }; }
   return slot === "weapon" ? weapon(id) : armor(id);
 }
 export function bag(id: number) {
@@ -51,7 +53,8 @@ export async function describe(c: Client, p: Player) {
       const it = item(x.slot, x.item_id);
       const stats = x.slot === "weapon" ? { str: weapon(x.item_id).str }
         : x.slot === "armor" ? { def: armor(x.item_id).def }
-        : x.slot === "trinket" ? { bonus: bonusText(trinket(x.item_id)) } : {};
+        : x.slot === "trinket" ? { bonus: bonusText(trinket(x.item_id)) }
+        : x.slot === "quest" ? { quest_item: true } : {};
       const upgrade = x.slot === "weapon" ? x.item_id > p.weapon_id
         : x.slot === "armor" ? x.item_id > p.armor_id
         : x.slot === "trinket" ? p.trinket_id === 0 : false;
@@ -66,7 +69,8 @@ export async function describe(c: Client, p: Player) {
 
 /** On death: one random carried item is gone. Returns its name, or null if the bag was empty. */
 export async function loseRandom(c: Client, playerId: string): Promise<string | null> {
-  const items = await contents(c, playerId);
+  // Quest items aren't lost this way; a quest should end by a choice, not a bad fight.
+  const items = (await contents(c, playerId)).filter((x) => x.slot !== "quest");
   if (!items.length) return null;
   const x = items[roll(items.length - 1)];
   await c.query("delete from inventory where id = $1", [x.id]);

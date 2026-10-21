@@ -41,6 +41,8 @@ export interface Trinket {
   needs: { ore: Partial<Record<number, number>>; gems: number; fee: number };
   /** Notional worth, for selling (half of it, like gear). */
   cost: number;
+  /** A one-of-a-kind piece from a quest: never made at the workshop. */
+  quest?: boolean;
 }
 
 const t = (id: number, name: string, bonus: { str?: number; def?: number; charm?: number }, ore: Partial<Record<number, number>>, gems: number, fee: number): Trinket => {
@@ -60,6 +62,7 @@ export const TRINKETS: Trinket[] = [
   t(7, "Gold Signet", { str: 22 }, { 2: 3 }, 2, 1200),
   t(8, "Gold Locket", { def: 22 }, { 2: 3 }, 2, 1200),
   t(9, "Starstone Circlet", { charm: 25 }, { 2: 2 }, 5, 2000),
+  { id: 10, name: "Ysolde's Favor", str: 0, def: 4, charm: 6, weight: 1, needs: { ore: {}, gems: 0, fee: 0 }, cost: 1600, quest: true },
 ];
 
 export const trinket = (id: number) => TRINKETS.find((x) => x.id === id) ?? TRINKETS[0];
@@ -96,7 +99,7 @@ export const caveLevel = (tileLevel: number, depth: number) => tileLevel + depth
 
 /** Whether someone holding these ore counts and gems (and gold) could have Odile make this. */
 export function canMake(x: Trinket, have: { ore: Record<number, number>; gems: number; gold: number }): boolean {
-  if (x.id === 0) return false;
+  if (x.id === 0 || x.quest) return false;
   for (const [o, k] of Object.entries(x.needs.ore)) if ((have.ore[Number(o)] ?? 0) < (k ?? 0)) return false;
   return have.gems >= x.needs.gems && have.gold >= x.needs.fee;
 }

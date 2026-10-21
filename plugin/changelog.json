@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.8.0",
+    "lore": "Not everything you pick up in the wild is just loot. Some things belong to someone, and some people in town are waiting for a favor. Keep your ears open and your bag closed. The shop will always buy, but it rarely pays best.",
+    "plain": "Side quests: some events, conversations and finds start a quest that plays out over a few days. Check your journal under (G)ear."
+  },
+  {
     "version": "0.7.3",
     "lore": "The town clerk, who has never once been in the forest, has decided it's misleading to count your day in forest fights when most of it is spent walking. From now on it's simply turns: a hunt is a turn, a step into the wild is a turn.",
     "plain": "\"Forest\" on the status line is now \"Turns\". Nothing else changed: hunting and each step into the wild still use one."

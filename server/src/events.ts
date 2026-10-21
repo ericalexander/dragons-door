@@ -18,12 +18,15 @@ export type Effect =
   | { exp: number }             // times tile level
   | { map: number }             // places nearby marked on their map
   | { monster: number }         // a fight, at tile level plus this
+  | { quest: string }           // starts a side quest (quests.ts)
   | { nothing: true };
 
 export interface Outcome { key: string; weight: number; effects: Effect[] }
 export interface Choice { id: string; label: string; outcomes: Outcome[]; /** gold it costs to pick, times tile level */ cost?: number }
 export interface WildEvent {
   id: string;
+  /** Only turns up for someone who hasn't had this quest before. */
+  quest?: string;
   /** For the narrator: what they come upon. */
   description: string;
   terrains: Terrain[] | "any";
@@ -134,6 +137,22 @@ export const EVENTS: WildEvent[] = [
       { id: "tonic", label: "Buy a tonic", cost: 6, outcomes: [o("works", 65, { heal_pct: 100 }), o("strong", 20, { heal_pct: 50 }, { fights: 1 }), o("swindle", 15, { nothing: true })] },
       { id: "chat", label: "Pass the time", outcomes: [o("gossip", 50, { map: 1 }), o("sales_pitch", 50, { nothing: true })] },
       { id: "leave", label: "Wave and walk on", outcomes: [o("left", 100, { nothing: true })] },
+    ],
+  },
+  {
+    id: "glint", terrains: ["forest", "meadow", "marsh"], quest: "lost_ring",
+    description: "something glinting in the mud at the edge of the path: a small silver ring, tarnished almost black",
+    choices: [
+      { id: "take", label: "Pick it up", outcomes: [o("pocketed", 100, { quest: "lost_ring" })] },
+      { id: "leave", label: "Leave it in the mud", outcomes: [o("left", 100, { nothing: true })] },
+    ],
+  },
+  {
+    id: "torn_scrap", terrains: ["hills", "forest", "crags"], quest: "torn_map",
+    description: "a scrap of old vellum caught on a thornbush, inked with a river, a cairn and half of an X",
+    choices: [
+      { id: "take", label: "Take the scrap", outcomes: [o("kept", 100, { quest: "torn_map" })] },
+      { id: "leave", label: "Let the wind have it", outcomes: [o("left", 100, { nothing: true })] },
     ],
   },
 ];

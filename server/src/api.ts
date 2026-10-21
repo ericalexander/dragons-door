@@ -16,7 +16,8 @@ import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { DIRS, LEGEND, renderMap, tileAt, type Dir, type Tile } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
-import { EVENTS_PER_DAY, EVENT_CHANCE, eventById, eventsFor, rollOutcome } from "./events.js";
+import { EVENTS_PER_DAY, EVENT_CHANCE, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
+import { QUESTS, questById, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
@@ -95,6 +96,7 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     if (!opts.quiet) {
       await drainMailbox(ctx);
       await noticeMail(ctx);
+      await expireQuests(ctx);
     }
     await fn(ctx);
     await c.query("update players set last_seen = now() where id = $1", [ctx.p.id]);
@@ -103,14 +105,16 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const bagUsed = await Bag.used(c, ctx.p.id);
     const unreadMail = await unreadCount(ctx);
     const newsUnread = await unreadNews(ctx);
+    const journal = ctx.p.role === "player" ? await questJournal(ctx) : [];
     return {
       events: ctx.events,
-      state: publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))),
+      state: { ...publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))), quests: journal },
       actions: (() => {
         const a = legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive);
         // Plugins from before exploration have no way out of town: keep offering them the old forest.
         const v = info?.plugin;
-        if ((!v || older(v, "0.5.0")) && a.includes("explore")) return a.map((x) => (x === "explore" ? "forest" : x)).filter((x) => x !== "map");
+        if (!info?.townsfolk && (!v || older(v, "0.5.0")) && a.includes("explore")) return a.map((x) => (x === "explore" ? "forest" : x)).filter((x) => x !== "map");
+        if (journal.some((j) => j.waiting_on_you)) a.push("quest");
         return a;
       })(),
       ...(ctx.hint ? { hint: ctx.hint } : {}),
@@ -820,7 +824,8 @@ async function dropEvent(ctx: Ctx) {
 async function maybeEvent(ctx: Ctx, x: number, y: number) {
   if (ctx.p.role !== "player" || (ctx.t.events_seen ?? 0) >= EVENTS_PER_DAY || Math.random() >= EVENT_CHANCE) return;
   const t = tileAt(x, y);
-  const options = eventsFor(t.terrain);
+  const had = new Set((await ctx.c.query<{ quest: string }>("select quest from quests where player_id = $1", [ctx.p.id])).rows.map((r) => r.quest));
+  const options = eventsFor(t.terrain).filter((e) => !e.quest || !had.has(e.quest));
   if (!options.length) return;
   const e = options[Math.floor(Math.random() * options.length)];
   await saveTurns(ctx, { events_seen: (ctx.t.events_seen ?? 0) + 1 });
@@ -937,7 +942,8 @@ api.post("/move", async (c) => {
     ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: firstForYou, first_ever: firstEver,
       ...(others.length ? { others_here: others } : {}),
       ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
-    await maybeEvent(ctx, x, y);
+    await questTriggers(ctx, { arrive: { x, y } });
+    if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, x, y);
   }));
 });
 
@@ -966,10 +972,235 @@ api.post("/travel", async (c) => {
     const t = tileAt(body.x, body.y);
     const others = await othersHere(ctx, body.x, body.y);
     ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true, ...(others.length ? { others_here: others } : {}) });
+    await questTriggers(ctx, { arrive: { x: body.x, y: body.y } });
+  }));
+});
+
+// ---------- side quests ----------
+
+interface QRow { id: string; quest: string; step: string; data: { target?: { x: number; y: number }; pending?: boolean }; started_day: string; step_day: string; deadline: string }
+
+async function activeQuests(ctx: Ctx): Promise<QRow[]> {
+  return (await ctx.c.query<QRow>(
+    "select id::text, quest, step, data, started_day::text, step_day::text, deadline::text from quests where player_id = $1 and status = 'active' order by id", [ctx.p.id])).rows;
+}
+const areaOf = (t: { x: number; y: number }) => `near ${tileAt(t.x, t.y).name}, ${directions(t.x, t.y)}`;
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
+
+function knowLine(q: QuestDef, row: QRow): string {
+  const st = stepOf(q, row.step);
+  return (st?.know ?? "").replace("{area}", row.data.target ? areaOf(row.data.target) : "somewhere out there");
+}
+
+/** The journal, for the status: what they're in the middle of and how long it has. */
+async function questJournal(ctx: Ctx) {
+  return (await activeQuests(ctx)).map((r) => {
+    const q = questById(r.quest)!;
+    return { title: q.title, know: knowLine(q, r), days_left: Math.max(0, daysBetween(ctx.day, r.deadline)), ...(r.data.pending ? { waiting_on_you: true } : {}) };
+  });
+}
+
+async function questItem(ctx: Ctx, q: QuestDef, give: boolean) {
+  const idx = questIndex(q.id);
+  if (give) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,'quest',$2)", [ctx.p.id, idx]);
+  else await ctx.c.query("delete from inventory where id in (select id from inventory where player_id = $1 and slot = 'quest' and item_id = $2 limit 1)", [ctx.p.id, idx]);
+}
+
+/** Begin a quest unless they've had it before. Found-item quests start with the item in the bag. */
+async function startQuest(ctx: Ctx, id: string, withItem: boolean): Promise<boolean> {
+  const q = questById(id);
+  if (!q || ctx.p.role !== "player") return false;
+  const had = await ctx.c.query("select 1 from quests where player_id = $1 and quest = $2", [ctx.p.id, id]);
+  if (had.rowCount) return false;
+  const deadline = new Date(ctx.day + "T00:00:00Z"); deadline.setUTCDate(deadline.getUTCDate() + q.days);
+  const r = await ctx.c.query<QRow>(
+    "insert into quests (player_id, quest, step, started_day, step_day, deadline) values ($1,$2,$3,$4,$4,$5) returning id::text, quest, step, data, started_day::text, step_day::text, deadline::text",
+    [ctx.p.id, id, q.steps[0].id, ctx.day, deadline.toISOString().slice(0, 10)]);
+  if (withItem && q.item) await questItem(ctx, q, true);
+  await logEvent(ctx, "quest", { quest: id, step: "start" });
+  const first = q.steps[0];
+  if (!first.on) await fireStep(ctx, q, r.rows[0], first);
+  else ctx.events.push({ kind: "quest_started", quest: q.id, title: q.title, know: knowLine(q, r.rows[0]), ...(withItem && q.item ? { item: q.item.name } : {}) });
+  return true;
+}
+
+async function endQuest(ctx: Ctx, q: QuestDef, row: QRow, outcome: string, status = "done") {
+  await ctx.c.query("update quests set status = $2, outcome = $3, ended_at = now() where id = $1", [row.id, status, outcome]);
+  ctx.events.push({ kind: "quest_done", quest: q.id, title: q.title, outcome });
+  await logEvent(ctx, "quest", { quest: q.id, outcome });
+}
+
+async function moveTo(ctx: Ctx, q: QuestDef, row: QRow, to?: string, end?: string) {
+  if (end) return endQuest(ctx, q, row, end);
+  if (!to) return;
+  row.step = to; row.step_day = ctx.day; row.data.pending = false;
+  await ctx.c.query("update quests set step = $2, step_day = $3, data = $4 where id = $1", [row.id, to, ctx.day, JSON.stringify(row.data)]);
+  if (to !== stepOf(q, to)?.id) return;
+  ctx.events.push({ kind: "quest_progress", quest: q.id, title: q.title, know: knowLine(q, row) });
+}
+
+/** Quest effects plus the ones only quests have (the item, a target spot). */
+async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]) {
+  const plain: (Effect | QEffect)[] = [];
+  for (const fx of effects) {
+    if ("give_item" in fx) await questItem(ctx, q, true);
+    else if ("take_item" in fx) await questItem(ctx, q, false);
+    else if ("place_target" in fx) {
+      const ex = await exploredSet(ctx);
+      const far = Math.max(1, ...[...ex].map((k) => { const [a, b] = k.split(",").map(Number); return Math.max(Math.abs(a), Math.abs(b)); }));
+      const ring = Math.max(1, far + fx.place_target.near + Math.floor(Math.random() * (fx.place_target.far - fx.place_target.near + 1)));
+      // A spot on that ring, not in town and not too dangerous for them.
+      let best: Tile | null = null;
+      for (let k = 0; k < 40; k++) {
+        const side = Math.floor(Math.random() * 4), off = Math.floor(Math.random() * (2 * ring + 1)) - ring;
+        const [x, y] = side === 0 ? [off, -ring] : side === 1 ? [ring, off] : side === 2 ? [off, ring] : [-ring, off];
+        const t = tileAt(x, y);
+        if (t.level <= ctx.p.level + 1 && (!best || Math.abs(t.level - ctx.p.level) < Math.abs(best.level - ctx.p.level))) best = t;
+      }
+      best ??= tileAt(ring, 0);
+      row.data.target = { x: best.x, y: best.y };
+      await ctx.c.query("update quests set data = $2 where id = $1", [row.id, JSON.stringify(row.data)]);
+    } else if ("mark_target" in fx) {
+      if (row.data.target) await hearOf(ctx, row.data.target.x, row.data.target.y, q.title);
+    } else plain.push(fx);
+  }
+  const { got, monster } = await applyEffects(ctx, plain, Math.max(1, ctx.p.level), null, q.title);
+  return { got, monster };
+}
+
+/** A step's moment has come: tell it, apply what it does, and either offer its choices or move on. */
+async function fireStep(ctx: Ctx, q: QuestDef, row: QRow, st: QStep) {
+  const { got, monster } = st.effects ? await questEffects(ctx, q, row, st.effects) : { got: {}, monster: null };
+  const lvl = Math.max(1, ctx.p.level);
+  ctx.events.push({
+    kind: "quest", quest: q.id, title: q.title, step: st.id, cue: st.cue, ...(Object.keys(got).length ? { got } : {}),
+    ...(st.choices ? { choices: st.choices.map((c, i) => ({ n: i + 1, id: c.id, label: c.label, ...(c.cost ? { costs_gold: c.cost * lvl } : {}) })) } : {}),
+  });
+  ctx.hint = `A side quest moves: tell the cue in two to four sentences, in the scene.${st.choices ? " Then offer its choices numbered (1), (2)… and call `quest` with the choice id only when they pick." : ""}`;
+  if (monster !== null) {
+    const m = pickMonster(ctx.p.level + monster);
+    await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
+    ctx.events.push({ kind: "encounter", monster: m, from_quest: q.id });
+  }
+  if (st.choices) {
+    row.data.pending = true;
+    await ctx.c.query("update quests set data = $2 where id = $1", [row.id, JSON.stringify(row.data)]);
+  } else await moveTo(ctx, q, row, st.then, st.end);
+}
+
+/** Check whether anything they just did moves a quest along. */
+async function questTriggers(ctx: Ctx, what: { talk?: { name: string; townsfolk: boolean } } | { arrive: { x: number; y: number } }) {
+  for (const row of await activeQuests(ctx)) {
+    if (row.data.pending) continue;
+    const q = questById(row.quest); const st = q && stepOf(q, row.step);
+    if (!q || !st?.on) continue;
+    if (st.after_days && daysBetween(row.step_day, ctx.day) < st.after_days) continue;
+    if ("talk" in what && what.talk && "talk" in st.on) {
+      const on = st.on;
+      const fits = on.talk === "townsfolk" ? what.talk.townsfolk : on.talk.includes(what.talk.name);
+      if (!fits || (on.chance !== undefined && Math.random() >= on.chance)) continue;
+      await fireStep(ctx, q, row, st);
+      return; // one quest moment per conversation
+    }
+    if ("arrive" in what && "arrive" in st.on && row.data.target && row.data.target.x === what.arrive.x && row.data.target.y === what.arrive.y) {
+      await fireStep(ctx, q, row, st);
+    }
+  }
+}
+
+/** Strangers who've come to town for this player's quest, if any are due. */
+async function questVisitors(ctx: Ctx): Promise<{ name: string; quest: string; row: QRow; step: QStep }[]> {
+  const out: { name: string; quest: string; row: QRow; step: QStep }[] = [];
+  for (const row of await activeQuests(ctx)) {
+    const q = questById(row.quest); const st = q && stepOf(q, row.step);
+    if (!q || !st?.on || !("meet" in st.on) || row.data.pending) continue;
+    if (st.after_days && daysBetween(row.step_day, ctx.day) < st.after_days) continue;
+    out.push({ name: st.on.meet, quest: q.id, row, step: st });
+  }
+  return out;
+}
+
+/** Quests left hanging past their deadline close on their own. */
+async function expireQuests(ctx: Ctx) {
+  const r = await ctx.c.query<QRow>("select id::text, quest, step, data, started_day::text, step_day::text, deadline::text from quests where player_id = $1 and status = 'active' and deadline < $2", [ctx.p.id, ctx.day]);
+  for (const row of r.rows) {
+    const q = questById(row.quest);
+    if (!q) continue;
+    await ctx.c.query("update quests set status = 'expired', outcome = 'expired', ended_at = now() where id = $1", [row.id]);
+    ctx.events.push({ kind: "quest_expired", quest: q.id, title: q.title, line: q.expired[row.step] ?? q.expired.default });
+  }
+}
+
+/** Selling or dropping a quest's item ends that quest, quietly. */
+async function questItemGone(ctx: Ctx, idx: number, how: string) {
+  const q = QUESTS[idx];
+  if (!q) return;
+  const row = (await activeQuests(ctx)).find((r) => r.quest === q.id);
+  if (row) await endQuest(ctx, q, row, how, "abandoned");
+}
+
+/** Answer the choice a quest is waiting on. */
+api.post("/quest", async (c) => {
+  const body = z.object({ choice: z.string().trim().min(1).max(40) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    const rows = (await activeQuests(ctx)).filter((r) => r.data.pending);
+    for (const row of rows) {
+      const q = questById(row.quest)!; const st = stepOf(q, row.step)!;
+      const ch = st.choices?.find((x, i) => x.id === body.choice || String(i + 1) === body.choice || x.label.toLowerCase() === body.choice.toLowerCase());
+      if (!ch) continue;
+      const cost = (ch.cost ?? 0) * Math.max(1, ctx.p.level);
+      if (cost > ctx.p.gold) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, note: "the quest waits; come back with the gold" }); return; }
+      if (cost) await savePlayer(ctx, { gold: ctx.p.gold - cost });
+      const { got, monster } = await questEffects(ctx, q, row, ch.effects);
+      ctx.events.push({ kind: "quest_choice", quest: q.id, title: q.title, choice: ch.id, label: ch.label, ...(cost ? { paid: cost } : {}), got });
+      if (monster !== null) {
+        const m = pickMonster(ctx.p.level + monster);
+        await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
+        ctx.events.push({ kind: "encounter", monster: m, from_quest: q.id });
+      }
+      // "Think about it" goes back to the same step, waiting for the same moment again.
+      if (ch.then === st.id) {
+        row.data.pending = false;
+        await ctx.c.query("update quests set data = $2 where id = $1", [row.id, JSON.stringify(row.data)]);
+        ctx.events.push({ kind: "quest_progress", quest: q.id, title: q.title, know: knowLine(q, row) });
+      } else await moveTo(ctx, q, row, ch.then, ch.end);
+      ctx.hint = "Tell how it went in two to four sentences, with the real numbers in got; then the journal line if the quest goes on, or a beat of closure if it's done.";
+      return;
+    }
+    ctx.events.push({ kind: "no_quest_choice", waiting: rows.map((r) => ({ quest: r.quest, choices: stepOf(questById(r.quest)!, r.step)?.choices?.map((x) => x.id) ?? [] })) });
   }));
 });
 
 // ---------- wild events ----------
+
+/** Apply event or quest effects. Gold and experience scale by lvl. Returns what changed, any monster level offset, and any quest to start. */
+async function applyEffects(ctx: Ctx, effects: (Effect | QEffect)[], lvl: number, around: [number, number] | null, from: string) {
+  const got: Record<string, unknown> = {};
+  let monster: number | null = null;
+  let quest: string | null = null;
+  for (const fx of effects) {
+    if ("gold" in fx) { const g = fx.gold * lvl; await savePlayer(ctx, { gold: Math.max(0, ctx.p.gold + g) }); got.gold = g; }
+    else if ("lose_gold_pct" in fx) { const g = Math.floor(ctx.p.gold * fx.lose_gold_pct / 100); await savePlayer(ctx, { gold: ctx.p.gold - g }); got.gold_lost = g; }
+    else if ("heal_pct" in fx) { const h = Math.min(ctx.p.max_hp - ctx.p.hp, Math.ceil(ctx.p.max_hp * fx.heal_pct / 100)); await savePlayer(ctx, { hp: ctx.p.hp + h }); got.healed = h; }
+    else if ("hurt_pct" in fx) { const h = Math.min(ctx.p.hp - 1, Math.ceil(ctx.p.max_hp * fx.hurt_pct / 100)); await savePlayer(ctx, { hp: ctx.p.hp - Math.max(0, h) }); got.hurt = Math.max(0, h); }
+    else if ("charm" in fx) { const n = Math.max(-ctx.p.charm, fx.charm); await savePlayer(ctx, { charm: ctx.p.charm + n }); got.charm = n; }
+    else if ("gem" in fx) { await savePlayer(ctx, { gems: ctx.p.gems + fx.gem }); got.gems = fx.gem; }
+    else if ("fights" in fx) { const n = Math.max(-ctx.t.forest_fights, fx.fights); await saveTurns(ctx, { forest_fights: ctx.t.forest_fights + n }); got.forest_fights = n; }
+    else if ("exp" in fx) { const n = fx.exp * lvl; await savePlayer(ctx, { exp: ctx.p.exp + n }); got.exp = n; }
+    else if ("map" in fx) { got.marked = await sketchNearby(ctx, from, fx.map, around ?? undefined); }
+    else if ("monster" in fx) { monster = fx.monster; }
+    else if ("quest" in fx) { quest = fx.quest; }
+    else if ("trinket" in fx) {
+      const x = trinket(fx.trinket);
+      if (ctx.p.trinket_id === 0) await savePlayer(ctx, { trinket_id: x.id });
+      else await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,'trinket',$2)", [ctx.p.id, x.id]);
+      got.jewelry = { name: x.name, bonus: bonusText(x), worn: ctx.p.trinket_id === x.id };
+    }
+  }
+  return { got, monster, quest };
+}
 
 /** Answer the event in front of you. The server rolls what comes of it. */
 api.post("/event", async (c) => {
@@ -988,21 +1219,10 @@ api.post("/event", async (c) => {
     if (cost > ctx.p.gold) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, note: "the event is still there; pick something else or walk on" }); return; }
     await savePlayer(ctx, { pending_event: null, ...(cost ? { gold: ctx.p.gold - cost } : {}) });
     const out = rollOutcome(choice);
-    const got: Record<string, unknown> = {};
-    let monster: Monster | null = null;
-    for (const fx of out.effects) {
-      if ("gold" in fx) { const g = fx.gold * lvl; await savePlayer(ctx, { gold: Math.max(0, ctx.p.gold + g) }); got.gold = g; }
-      else if ("lose_gold_pct" in fx) { const g = Math.floor(ctx.p.gold * fx.lose_gold_pct / 100); await savePlayer(ctx, { gold: ctx.p.gold - g }); got.gold_lost = g; }
-      else if ("heal_pct" in fx) { const h = Math.min(ctx.p.max_hp - ctx.p.hp, Math.ceil(ctx.p.max_hp * fx.heal_pct / 100)); await savePlayer(ctx, { hp: ctx.p.hp + h }); got.healed = h; }
-      else if ("hurt_pct" in fx) { const h = Math.min(ctx.p.hp - 1, Math.ceil(ctx.p.max_hp * fx.hurt_pct / 100)); await savePlayer(ctx, { hp: ctx.p.hp - Math.max(0, h) }); got.hurt = Math.max(0, h); }
-      else if ("charm" in fx) { const n = Math.max(-ctx.p.charm, fx.charm); await savePlayer(ctx, { charm: ctx.p.charm + n }); got.charm = n; }
-      else if ("gem" in fx) { await savePlayer(ctx, { gems: ctx.p.gems + fx.gem }); got.gems = fx.gem; }
-      else if ("fights" in fx) { const n = Math.max(-ctx.t.forest_fights, fx.fights); await saveTurns(ctx, { forest_fights: ctx.t.forest_fights + n }); got.forest_fights = n; }
-      else if ("exp" in fx) { const n = fx.exp * lvl; await savePlayer(ctx, { exp: ctx.p.exp + n }); got.exp = n; }
-      else if ("map" in fx) { const marked = await sketchNearby(ctx, e.id === "hermit" ? "a hermit" : "what you saw", fx.map, [pe.x, pe.y]); got.marked = marked; }
-      else if ("monster" in fx) { monster = pickMonster(t.level + fx.monster); }
-    }
+    const { got, monster: m0, quest } = await applyEffects(ctx, out.effects, lvl, [pe.x, pe.y], e.id === "hermit" ? "a hermit" : "what you saw");
+    const monster = m0 !== null ? pickMonster(t.level + m0) : null;
     ctx.events.push({ kind: "event_outcome", event: e.id, choice: choice.id, outcome: out.key, ...(cost ? { paid: cost } : {}), got });
+    if (quest) await startQuest(ctx, quest, true);
     if (monster) {
       await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, monster]);
       ctx.events.push({ kind: "encounter", monster, place: t.name, terrain: t.terrain, from_event: e.id });
@@ -1131,7 +1351,7 @@ api.get("/workshop", async (c) => c.json(await withPlayer(c.req.header("authoriz
     your_ore: Object.entries(m.ore).map(([id, n]) => ({ name: oreOf(Number(id)).name, count: n })),
     gems: ctx.p.gems,
     gem_sells_for: GEM_SELL,
-    recipes: TRINKETS.filter((x) => x.id > 0).map((x) => ({
+    recipes: TRINKETS.filter((x) => x.id > 0 && !x.quest).map((x) => ({
       id: x.id, name: x.name, bonus: bonusText(x),
       needs: { ore: Object.entries(x.needs.ore).map(([id, n]) => `${n} ${oreOf(Number(id)).name}`), gems: x.needs.gems, fee: x.needs.fee },
       can_make: canMake(x, { ore: m.ore, gems: ctx.p.gems, gold: ctx.p.gold }),
@@ -1214,6 +1434,7 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
     else if (w.where === "wild") elsewhere.push({ name: f.name, where: `out in the wild, last seen near ${w.place}`, on_mind });
     else elsewhere.push({ name: f.name, where: w.where === "forest" ? "out hunting" : w.where === "tavern" ? "in the tavern" : w.where === "shop" ? "at the shop" : "out in the fields", on_mind });
   }
+  for (const v of await questVisitors(ctx)) about.push({ name: v.name, doing: v.step.cue, on_mind: "here about your quest", ...({ quest: v.quest } as Record<string, string>) });
   const people = await ctx.c.query<{ name: string; class: string; level: number }>(
     "select name, class, level from players where not is_bot and not is_test and id <> $1 and alive and pos_x is null and last_seen > now() - interval '15 minutes' order by last_seen desc limit 3", [ctx.p.id]);
   const v = visitorFor(ctx.day);
@@ -1263,6 +1484,14 @@ api.post("/talk", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
+    // A stranger in town for this player's quest.
+    const visitor = (await questVisitors(ctx)).find((v) => v.name.toLowerCase() === body.to.toLowerCase());
+    if (visitor) {
+      requireInTown(ctx, visitor.name);
+      ctx.events.push({ kind: "talk", name: visitor.name, where: "the square", quest_visitor: true });
+      await fireStep(ctx, questById(visitor.quest)!, visitor.row, visitor.step);
+      return;
+    }
     const r = await ctx.c.query<{ id: string; name: string; role: string; class: string; level: number; alive: boolean; pos_x: number | null; pos_y: number | null; location: "inn" | "fields"; personality: Personality | null; mind: Mind | null }>(
       `select p.id, p.name, p.role, p.class, p.level, p.alive, p.pos_x, p.pos_y, p.location, b.personality, b.mind
        from players p left join bots b on b.player_id = p.id where lower(p.name) = lower($1) and p.role in ('townsfolk', 'npc')`, [body.to]);
@@ -1332,6 +1561,13 @@ api.post("/talk", async (c) => {
       ...(gossip ? { gossip } : {}),
     });
     ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${again ? " You've already talked today; keep it brief." : ""}`;
+    const before = ctx.hint;
+    // Talking can move a quest along, or a townsperson might ask a favor.
+    await questTriggers(ctx, { talk: { name: who.name, townsfolk: who.role === "townsfolk" } });
+    if (!ctx.events.some((e) => e.kind === "quest") && !again) {
+      for (const q of QUESTS) if (q.start_on?.talk.includes(who.name) && Math.random() < q.start_on.chance && await startQuest(ctx, q.id, false)) break;
+    }
+    if (ctx.events.some((e) => e.kind === "quest")) ctx.hint = `${before} Then the quest moment, in the same conversation: tell its cue, and offer any choices numbered (1), (2)…; call \`quest\` with the choice id only when they pick.`;
   }));
 });
 
@@ -1506,6 +1742,7 @@ api.post("/equip", async (c) => {
       const row = await ownRow(ctx, body.id); slot = row.slot; itemId = row.item_id; rowId = row.id;
     }
     if (slot === "ore") { ctx.events.push({ kind: "cannot_equip", reason: "ore is for selling or for Odile to work" }); return; }
+    if (slot === "quest") { ctx.events.push({ kind: "cannot_equip", reason: "it isn't something you wear; it belongs to a story" }); return; }
     const oldId = slot === "weapon" ? ctx.p.weapon_id : slot === "armor" ? ctx.p.armor_id : ctx.p.trinket_id;
     const usedNow = await Bag.used(ctx.c, ctx.p.id);
     const after = usedNow - (rowId !== null ? Bag.item(slot, itemId).weight : 0) + (oldId > 0 ? Bag.item(slot, oldId).weight : 0);
@@ -1542,6 +1779,7 @@ api.post("/sell", async (c) => {
     await ctx.c.query("delete from inventory where id = $1", [row.id]);
     await savePlayer(ctx, { gold: ctx.p.gold + gold });
     ctx.events.push({ kind: "sold", item: Bag.item(row.slot, row.item_id).name, gold });
+    if (row.slot === "quest") await questItemGone(ctx, row.item_id, "sold");
   }));
 });
 
@@ -1551,6 +1789,7 @@ api.post("/drop", async (c) => {
     const row = await ownRow(ctx, body.id);
     await ctx.c.query("delete from inventory where id = $1", [row.id]);
     ctx.events.push({ kind: "dropped", item: Bag.item(row.slot, row.item_id).name });
+    if (row.slot === "quest") await questItemGone(ctx, row.item_id, "dropped");
   }));
 });
 

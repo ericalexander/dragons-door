@@ -140,6 +140,8 @@ export interface PublicState {
   jewelry: string | null;
   pickaxe: boolean;
   cave_depth: number | null;
+  /** Side quests under way: title, what they know, days left, and whether one is waiting on their choice. */
+  quests?: { title: string; know: string; days_left: number; waiting_on_you?: boolean }[];
   /** The sky over the player, roughly. Only on status, forest and news, and only if they haven't turned it off. */
   weather?: import("./weather.js").Weather;
 }

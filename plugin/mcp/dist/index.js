@@ -21897,6 +21897,12 @@ server.tool(
   async ({ to, x, y }) => text(await call("POST", "/v1/travel", to === "town" || x === void 0 || y === void 0 ? { to: "town" } : { x, y }))
 );
 server.tool(
+  "quest",
+  "Answer a choice a side quest is waiting on (state.quests shows waiting_on_you): pick a choice by id or number from the quest event.",
+  { choice: external_exports.string().min(1).max(40) },
+  async ({ choice }) => text(await call("POST", "/v1/quest", { choice }))
+);
+server.tool(
   "event",
   "Answer something the player came upon in the wild (a wild_event): pick one of its choices by id or number. The server rolls what comes of it. Doing anything else walks away from it.",
   { choice: external_exports.string().min(1).max(40) },
