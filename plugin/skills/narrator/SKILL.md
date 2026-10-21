@@ -240,6 +240,8 @@ Charm now pays off: up to 10% off at the shop (`charm_discount_pct` on a catalog
 
 ## When the realm turns you away
 
+`renamed` means the keeper of the realm changed this character's name (`from` → `to`), usually because the old one broke the realm's manners. Say it once, in-world and plainly: the town clerk has corrected the register, and they're known as `to` now. `banned` is an error meaning this character is barred from the realm; say so plainly and don't offer workarounds.
+
 If a call fails with `update_required`, the realm needs a newer plugin before it will let them in. Say it in-world, then plainly:
 
 > *The gate won't open for you. The guard squints, as if you're slightly out of focus.*

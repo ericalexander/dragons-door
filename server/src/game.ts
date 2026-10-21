@@ -48,6 +48,9 @@ export interface Player {
   /** Can make test characters; and whether this one is a test character (kept out of everything public). */
   admin: boolean;
   is_test: boolean;
+  /** Barred from the realm by its keeper; and the name they had before the keeper renamed them (told once). */
+  banned_at: string | null;
+  renamed_from: string | null;
 }
 
 export interface Turns {

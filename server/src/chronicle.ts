@@ -12,7 +12,7 @@
 import { Hono } from "hono";
 import { pool } from "./db.js";
 import { realmDay, realmSettings } from "./day.js";
-import { newsLine } from "./api.js";
+import { newsLine, hash } from "./api.js";
 import { goalLabel, type Mind } from "./minds.js";
 import { plain, write } from "./llm.js";
 import type { Personality } from "./schedule.js";
@@ -44,7 +44,7 @@ async function gather(day: string): Promise<DayFacts> {
     "select kind, actor, target, detail from news where day = $1 order by id", [day])).rows;
   const tavern = (await pool.query<{ author: string; body: string; townsfolk: boolean }>(
     `select t.author, t.body, coalesce(p.role = 'townsfolk', false) as townsfolk
-     from tavern t left join players p on p.name = t.author where t.day = $1 and not coalesce(p.is_test, false) order by t.id limit 40`, [day])).rows;
+     from tavern t left join players p on p.name = t.author where t.day = $1 and t.hidden_at is null and not coalesce(p.is_test, false) order by t.id limit 40`, [day])).rows;
   const folk = (await pool.query<{ name: string; personality: Personality; mind: Mind }>(
     "select p.name, b.personality, b.mind from bots b join players p on p.id = b.player_id")).rows;
   const goals = folk.filter((f) => f.mind?.goal).map((f) => ({ name: f.name, goal: goalLabel(f.name, f.personality, f.mind.goal!) }));
@@ -191,6 +191,18 @@ export async function catchUp(now = new Date()): Promise<string[]> {
   for (const d of missing) { const w = await writeEntry(d); if (w) done.push(`${w.day} (${w.source})`); }
   return done;
 }
+
+/** The keeper rewrites one day's entry (after hiding a post or renaming someone): POST /v1/admin/chronicle {day}. */
+chronicle.post("/admin/chronicle", async (c) => {
+  const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+  const admin = key ? (await pool.query<{ name: string; admin: boolean }>("select name, admin from players where api_key_hash = $1", [hash(key)])).rows[0] : undefined;
+  if (!admin?.admin) return c.json({ error: "not_found" }, 404);
+  const day = String((await c.req.json().catch(() => ({})) as { day?: string }).day ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return c.json({ error: "day must be YYYY-MM-DD" }, 400);
+  const w = await writeEntry(day, true);
+  await pool.query("insert into admin_log (admin, action, target, detail) values ($1,'rewrite_chronicle',$2,'{}')", [admin.name, day]);
+  return c.json({ events: [{ kind: "admin_done", action: "rewrite_chronicle", day, written: w }] });
+});
 
 /** The website's page: finished days newest first, plus a rough draft of today so far. Names only, nothing private. */
 chronicle.get("/public/chronicle", async (c) => {

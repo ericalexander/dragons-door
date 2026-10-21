@@ -29,7 +29,7 @@ class GameError extends Error {
   constructor(public code: string, msg: string, public status = 400) { super(msg); }
 }
 
-const hash = (key: string) => createHash("sha256").update(key).digest("hex");
+export const hash = (key: string) => createHash("sha256").update(key).digest("hex");
 
 // ---------- context ----------
 
@@ -66,6 +66,12 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const day = realmDay(settings.resetHourUtc);
     const loaded = await loadTurns(c, r.rows[0], day);
     const ctx: Ctx = { c, p: numify(loaded.player), t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [], spouse: null };
+    if (ctx.p.banned_at) throw new GameError("banned", "The gate is barred to you. The realm's keeper has turned this character away.", 403);
+    // Renamed by the keeper: say so once.
+    if (ctx.p.renamed_from) {
+      ctx.events.push({ kind: "renamed", from: ctx.p.renamed_from, to: ctx.p.name });
+      await c.query("update players set renamed_from = null where id = $1", [ctx.p.id]);
+    }
     if (ctx.p.spouse_id) ctx.spouse = (await c.query<{ name: string }>("select name from players where id = $1", [ctx.p.spouse_id])).rows[0]?.name ?? null;
     weatherOff = ctx.p.weather_off;
     if (info && !info.townsfolk && info.plugin) {
@@ -293,6 +299,106 @@ api.post("/register", async (c) => {
     return r.rows[0];
   });
   return c.json({ api_key: key, name: out.name, class: out.class, ...(testChar ? { test: true } : {}), events: [{ kind: "joined", name: out.name, class: out.class }] });
+});
+
+// ---------- the keeper's tools (admins only) ----------
+
+function requireAdmin(ctx: Ctx) {
+  if (!ctx.p.admin) throw new GameError("not_found", "no such thing here", 404);
+}
+async function audit(ctx: Ctx, action: string, target: string | null, detail: Record<string, unknown> = {}) {
+  await ctx.c.query("insert into admin_log (admin, action, target, detail) values ($1,$2,$3,$4)", [ctx.p.name, action, target, JSON.stringify(detail)]);
+}
+const NAME_RULE = z.string().trim().min(2).max(20).regex(/^[A-Za-z0-9_.'-]+( [A-Za-z0-9_.'-]+)*$/, "letters, digits, apostrophes, periods, hyphens, single spaces");
+
+/** Find players by name, newest first: who they are, when they were last seen, and their standing. */
+api.get("/admin/players", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAdmin(ctx);
+  const q = (c.req.query("q") ?? "").trim();
+  const r = await ctx.c.query(
+    `select name, class, level, role, is_test, banned_at, created_at, last_seen, client->>'plugin' as plugin,
+       (select count(*) from tavern t where t.author = p.name)::int as posts
+     from players p where role = 'player' and ($1 = '' or name ilike '%' || $1 || '%') order by created_at desc limit 30`, [q]);
+  ctx.events.push({ kind: "admin_players", players: r.rows });
+})));
+
+/** Give a player a new name. Their history (news, tavern, chronicle) follows the new name; they're told once. */
+api.post("/admin/rename", async (c) => {
+  const body = z.object({ name: z.string().trim().min(1).max(40), to: NAME_RULE }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAdmin(ctx);
+    const who = (await ctx.c.query<{ id: string; name: string; role: string }>("select id, name, role from players where lower(name) = lower($1)", [body.name])).rows[0];
+    if (!who || who.role !== "player") { ctx.events.push({ kind: "admin_error", error: "no_such_player", name: body.name }); return; }
+    if (reservedName(body.to)) { ctx.events.push({ kind: "admin_error", error: "reserved_name", to: body.to }); return; }
+    const taken = await ctx.c.query("select 1 from players where lower(name) = lower($1) and id <> $2", [body.to, who.id]);
+    if (taken.rowCount) { ctx.events.push({ kind: "admin_error", error: "name_taken", to: body.to }); return; }
+    const old = who.name;
+    await ctx.c.query("update players set name = $2, renamed_from = $3 where id = $1", [who.id, body.to, old]);
+    await ctx.c.query("update news set actor = $2 where actor = $1", [old, body.to]);
+    await ctx.c.query("update news set target = $2 where target = $1", [old, body.to]);
+    await ctx.c.query("update news set detail = jsonb_set(detail, '{stole_from}', to_jsonb($2::text)) where detail->>'stole_from' = $1", [old, body.to]);
+    await ctx.c.query("update news set detail = jsonb_set(detail, '{left}', to_jsonb($2::text)) where detail->>'left' = $1", [old, body.to]);
+    await ctx.c.query("update tavern set author = $2 where author = $1", [old, body.to]);
+    await ctx.c.query("update bots set mind = jsonb_set(mind, '{grudge,name}', to_jsonb($2::text)) where mind->'grudge'->>'name' = $1", [old, body.to]);
+    // The chronicle is prose: swap the old name wherever it stands as a whole word.
+    const esc = old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await ctx.c.query("update chronicle set body = regexp_replace(body, $1, $2, 'g') where body ~ $1", [`\\m${esc}\\M`, body.to]);
+    await audit(ctx, "rename", old, { to: body.to });
+    ctx.events.push({ kind: "admin_done", action: "rename", from: old, to: body.to });
+  }));
+});
+
+/** Bar a player from the realm (their key stops working) and take them off everything public. Unban reverses it. */
+api.post("/admin/ban", async (c) => {
+  const body = z.object({ name: z.string().trim().min(1).max(40), reason: z.string().max(200).optional(), hide_posts: z.boolean().optional() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAdmin(ctx);
+    const who = (await ctx.c.query<{ id: string; name: string; role: string; admin: boolean }>("select id, name, role, admin from players where lower(name) = lower($1)", [body.name])).rows[0];
+    if (!who || who.role !== "player") { ctx.events.push({ kind: "admin_error", error: "no_such_player", name: body.name }); return; }
+    if (who.admin) { ctx.events.push({ kind: "admin_error", error: "cannot_ban_admin" }); return; }
+    await ctx.c.query("update players set banned_at = now(), is_test = true where id = $1", [who.id]);
+    let hidden = 0;
+    if (body.hide_posts !== false) hidden = (await ctx.c.query("update tavern set hidden_at = now() where author = $1 and hidden_at is null", [who.name])).rowCount ?? 0;
+    await audit(ctx, "ban", who.name, { reason: body.reason ?? null, posts_hidden: hidden });
+    ctx.events.push({ kind: "admin_done", action: "ban", name: who.name, posts_hidden: hidden });
+  }));
+});
+
+api.post("/admin/unban", async (c) => {
+  const body = z.object({ name: z.string().trim().min(1).max(40) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAdmin(ctx);
+    const r = await ctx.c.query<{ name: string }>("update players set banned_at = null, is_test = false where lower(name) = lower($1) and banned_at is not null returning name", [body.name]);
+    if (!r.rowCount) { ctx.events.push({ kind: "admin_error", error: "not_banned", name: body.name }); return; }
+    await audit(ctx, "unban", r.rows[0].name);
+    ctx.events.push({ kind: "admin_done", action: "unban", name: r.rows[0].name, note: "their tavern posts stay hidden; unhide any you want back" });
+  }));
+});
+
+/** Recent tavern posts with their ids, hidden ones included, to find something to hide. */
+api.get("/admin/posts", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAdmin(ctx);
+  const days = Math.min(14, Math.max(1, Number(c.req.query("days") ?? 2)));
+  const who = (c.req.query("author") ?? "").trim();
+  const r = await ctx.c.query(
+    `select id::int, day::text, author, body, hidden_at is not null as hidden from tavern
+     where day > current_date - $1::int and ($2 = '' or lower(author) = lower($2)) order by id desc limit 50`, [days, who]);
+  ctx.events.push({ kind: "admin_posts", posts: r.rows });
+})));
+
+/** Hide a tavern post from the board and the chronicle (or bring it back with hidden: false). */
+api.post("/admin/hide_post", async (c) => {
+  const body = z.object({ id: z.number().int(), hidden: z.boolean().optional() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAdmin(ctx);
+    const hide = body.hidden !== false;
+    const r = await ctx.c.query<{ author: string; body: string; day: string }>(
+      "update tavern set hidden_at = $2 where id = $1 returning author, body, day::text", [body.id, hide ? new Date() : null]);
+    if (!r.rowCount) { ctx.events.push({ kind: "admin_error", error: "no_such_post", id: body.id }); return; }
+    await audit(ctx, hide ? "hide_post" : "unhide_post", r.rows[0].author, { id: body.id, body: r.rows[0].body });
+    ctx.events.push({ kind: "admin_done", action: hide ? "hide_post" : "unhide_post", id: body.id, author: r.rows[0].author, day: r.rows[0].day,
+      note: "If this day already has a chronicle entry that quotes it, rewrite that day with the chronicle tool." });
+  }));
 });
 
 // ---------- public (no auth) ----------
@@ -694,7 +800,7 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
 
 api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireInTown(ctx, "the tavern");
-  const r = await ctx.c.query("select author, body, ts from tavern where day = $1 order by id desc limit 20", [ctx.day]);
+  const r = await ctx.c.query("select author, body, ts from tavern where day = $1 and hidden_at is null order by id desc limit 20", [ctx.day]);
   const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
   ctx.events.push({ kind: "bartender", recently_seen: online.rows.map((x) => x.name), gem_price: 100 * ctx.p.level, flirted_today: ctx.t.flirted });
