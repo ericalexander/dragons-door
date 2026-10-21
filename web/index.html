@@ -144,6 +144,7 @@
   .realm td.rank, .realm th.rank { width: 2.5ch; color: var(--wax); font-family: var(--display); font-size: 20px; font-weight: 700; }
   .realm td.name { font-weight: 700; color: var(--ink); }
   .realm td.lvl, .realm th.lvl { text-align: right; font-family: var(--mono); font-size: 14px; }
+  .realm td.cls { color: var(--ink-soft); }
   .realm .board i { font-style: normal; color: var(--ink-faint); }
   .realm .note { font-size: 14px; color: var(--ink-faint); }
   .realm .quiet { color: var(--ink-faint); }
@@ -313,11 +314,11 @@
       ? '<span class="alive">The Red Dragon is alive.</span>'
       : '<span class="dead">The Red Dragon is dead, for now.</span>';
     status.innerHTML = `${Number(d.players)} player${d.players === 1 ? "" : "s"} in the realm. ${dragon}`;
-    const top = d.top.slice(0, 5);
+    const top = d.top.slice(0, 10);
     if (!top.length) { board.innerHTML = '<p class="quiet">Nobody on the board yet.</p>'; return; }
-    const rows = top.map((p, i) => `<tr><td class="rank">${i + 1}</td><td class="name">${esc(p.name)}${p.bot ? "<i>†</i>" : ""}</td><td class="lvl">L${Number(p.level)}</td></tr>`).join("");
+    const rows = top.map((p, i) => `<tr><td class="rank">${i + 1}</td><td class="name">${esc(p.name)}${p.bot ? "<i>†</i>" : ""}</td><td class="cls">${esc(String(p.class).charAt(0).toUpperCase() + String(p.class).slice(1))}</td><td class="lvl">L${Number(p.level)}</td></tr>`).join("");
     const anyBot = top.some(p => p.bot);
-    board.innerHTML = `<table><thead><tr><th class="rank" aria-label="Rank"></th><th>Name</th><th class="lvl">Level</th></tr></thead><tbody>${rows}</tbody></table>` + (anyBot ? '<p class="note">† townsfolk</p>' : "");
+    board.innerHTML = `<table><thead><tr><th class="rank" aria-label="Rank"></th><th>Name</th><th class="cls">Class</th><th class="lvl">Level</th></tr></thead><tbody>${rows}</tbody></table>` + (anyBot ? '<p class="note">† townsfolk</p>' : "");
   }).catch(() => { status.textContent = "The realm isn't answering right now. It'll be back."; });
 </script>
 <!-- Vercel Web Analytics: cookieless page-view counts for this site only -->

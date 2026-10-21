@@ -417,7 +417,7 @@ api.get("/public/realm", async (c) => {
     const players = await db.query<{ n: string }>("select count(*)::text as n from players where role = 'player' and not is_test");
     const news = await db.query<{ day: string; kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
       "select day::text, kind, actor, target, detail from news where day in ($1, $2) and kind <> 'join' order by id desc limit 12", [today, yesterday]);
-    const top = await db.query("select name, class, level, is_bot as bot, dragon_kills from players where role <> 'npc' and not is_test order by level desc, exp desc limit 8");
+    const top = await db.query("select name, class, level, is_bot as bot, dragon_kills from players where role <> 'npc' and not is_test order by level desc, exp desc limit 10");
     return {
       day: today,
       dragon_alive: settings.dragonAlive,
