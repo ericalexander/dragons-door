@@ -59,9 +59,9 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const ctx: Ctx = { c, p: numify(loaded.player), t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [] };
     weatherOff = ctx.p.weather_off;
     if (info && !info.townsfolk && info.plugin) {
-      const prev = ctx.p.client as { plugin?: string; app?: string; os?: string } | null;
-      if (prev?.plugin !== info.plugin || prev?.app !== info.app || prev?.os !== info.os) {
-        const client = { plugin: info.plugin, app: info.app, os: info.os, since: new Date().toISOString() };
+      const prev = ctx.p.client as { plugin?: string; app?: string; os?: string; model?: string } | null;
+      if (prev?.plugin !== info.plugin || prev?.app !== info.app || prev?.os !== info.os || (info.model && prev?.model !== info.model)) {
+        const client = { plugin: info.plugin, app: info.app, os: info.os, model: info.model ?? prev?.model, since: new Date().toISOString() };
         await c.query("update players set client = $2 where id = $1", [ctx.p.id, JSON.stringify(client)]);
         ctx.p.client = client;
       }
@@ -189,8 +189,8 @@ const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
 /** One line in the game event log: game facts only, for balance checks. Never names or player-written text. */
 async function logEvent(ctx: Ctx, kind: string, data: Record<string, unknown> = {}) {
   await ctx.c.query(
-    "insert into game_events (day, player_id, class, level, is_bot, plugin, kind, data) values ($1,$2,$3,$4,$5,$6,$7,$8)",
-    [ctx.day, ctx.p.id, ctx.p.class, ctx.p.level, Boolean(ctx.p.is_bot), current()?.plugin ?? null, kind, JSON.stringify(data)]);
+    "insert into game_events (day, player_id, class, level, is_bot, plugin, model, kind, data) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+    [ctx.day, ctx.p.id, ctx.p.class, ctx.p.level, Boolean(ctx.p.is_bot), current()?.plugin ?? null, current()?.model ?? null, kind, JSON.stringify(data)]);
 }
 
 /** Totals for a finished fight, from its saved rounds plus the last one. */

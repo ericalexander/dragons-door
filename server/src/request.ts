@@ -13,6 +13,7 @@ export interface RequestInfo {
   plugin?: string;        // plugin version, e.g. "0.2.8"
   app?: string;           // e.g. "claude-code 2.1.300"
   os?: string;            // e.g. "darwin"
+  model?: string;         // Claude model id, when the player's status line reports it
   townsfolk: boolean;     // the bot runner, calling in-process (proved by INTERNAL_TOKEN)
   lat?: number;
   lon?: number;
@@ -33,6 +34,7 @@ export function fromHeaders(h: (name: string) => string | undefined): RequestInf
     plugin: clip(h("x-dragons-door-version"), 20),
     app: clip(h("x-dragons-door-app")),
     os: clip(h("x-dragons-door-os"), 20),
+    model: clip(h("x-dragons-door-model"), 60),
     townsfolk: h("x-dragons-door-internal") === INTERNAL_TOKEN,
     lat: num(h("x-vercel-ip-latitude")),
     lon: num(h("x-vercel-ip-longitude")),

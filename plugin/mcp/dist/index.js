@@ -21497,6 +21497,10 @@ var StdioServerTransport = class {
   }
 };
 
+// src/index.ts
+import { readFileSync as readFileSync2 } from "node:fs";
+import { join as join4 } from "node:path";
+
 // src/config.ts
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -21752,7 +21756,13 @@ async function call(method, path, body) {
 }
 function clientHeaders() {
   const app = server.server.getClientVersion();
+  let model = "";
+  try {
+    model = readFileSync2(join4(CONFIG_DIR, "model"), "utf8").trim().slice(0, 60);
+  } catch {
+  }
   return {
+    .../^[A-Za-z0-9._:\/\[\]-]+$/.test(model) ? { "x-dragons-door-model": model } : {},
     "x-dragons-door-version": VERSION,
     "x-dragons-door-os": process.platform,
     ...app?.name ? { "x-dragons-door-app": `${app.name} ${app.version ?? ""}`.trim().slice(0, 60) } : {}

@@ -16,6 +16,8 @@ In Claude Code:
 /dragons-door:enter
 ```
 
+Plays best on Sonnet: good writing, quick, light on usage. Any model plays fair, since the server makes every roll.
+
 First run asks for a name and class and stores an API key in `~/.config/dragons-door/config.json`. That key is your character; there's no password. The plugin talks to the shared realm at `https://dragons-door-api.vercel.app` by default. Nothing from the game shows up in your Claude Code sessions until you run `/dragons-door:enter`; the optional status line shows `⚔` for unread news and `✉` for mail.
 
 ## Layout

@@ -6,7 +6,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { loadConfig, saveConfig } from "./config.js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { CONFIG_DIR, loadConfig, saveConfig } from "./config.js";
 import { clientInfo, VERSION } from "./version.js";
 import { installStatusline, noteUnread, refreshInstalledScript, uninstallStatusline } from "./statusline.js";
 
@@ -29,10 +31,14 @@ async function call(method: "GET" | "POST", path: string, body?: unknown) {
   return json;
 }
 
-/** Which plugin, app and OS this is, so the realm can tell old clients apart. Nothing personal. */
+/** Which plugin, app, OS and Claude model this is, so the realm can tell old clients apart. Nothing personal. */
 function clientHeaders(): Record<string, string> {
   const app = server.server.getClientVersion();
+  // The status line writes the session's model here; absent for players without it.
+  let model = "";
+  try { model = readFileSync(join(CONFIG_DIR, "model"), "utf8").trim().slice(0, 60); } catch { /* no status line */ }
   return {
+    ...(/^[A-Za-z0-9._:\/\[\]-]+$/.test(model) ? { "x-dragons-door-model": model } : {}),
     "x-dragons-door-version": VERSION,
     "x-dragons-door-os": process.platform,
     ...(app?.name ? { "x-dragons-door-app": `${app.name} ${app.version ?? ""}`.trim().slice(0, 60) } : {}),
