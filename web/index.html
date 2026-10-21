@@ -131,8 +131,14 @@
   .realm li::before { content: "— "; color: var(--rule); }
   .realm .status .alive { color: var(--wax); font-weight: 700; }
   .realm .status .dead { color: var(--ink-faint); }
-  .realm .board span { font-weight: 700; color: var(--ink); }
+  .realm table { border-collapse: collapse; width: 100%; max-width: 420px; font-size: 16px; }
+  .realm th { text-align: left; font-weight: 500; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); padding: 0 0 6px; border-bottom: 1px solid var(--rule); }
+  .realm td { padding: 7px 0; border-bottom: 1px solid #ddd0b3; color: var(--ink-soft); }
+  .realm td.rank, .realm th.rank { width: 2.5ch; color: var(--wax); font-family: var(--display); font-size: 20px; font-weight: 700; }
+  .realm td.name { font-weight: 700; color: var(--ink); }
+  .realm td.lvl, .realm th.lvl { text-align: right; font-family: var(--mono); font-size: 14px; }
   .realm .board i { font-style: normal; color: var(--ink-faint); }
+  .realm .note { font-size: 14px; color: var(--ink-faint); }
   .realm .quiet { color: var(--ink-faint); }
 
   footer { border-top: 2px solid var(--ink); }
@@ -256,7 +262,7 @@
   <div>
     <div class="kicker">Rankings</div>
     <h3>Names on the board</h3>
-    <p class="board" id="realm-board"></p>
+    <div class="board" id="realm-board"></div>
   </div>
 </section>
 
@@ -295,8 +301,11 @@
     if (!lines.length) list.innerHTML = '<li class="quiet">A quiet day. Somebody go poke the forest.</li>';
     else for (const n of lines) { const li = document.createElement("li"); li.textContent = n.line; list.appendChild(li); }
     const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
-    const top = d.top.slice(0, 5).map(p => `<span>${esc(p.name)}</span>${p.bot ? "<i>†</i>" : ""} L${Number(p.level)}`).join("   ");
-    board.innerHTML = top ? `${top}<br><i>† townsfolk</i>` : '<span class="quiet">Nobody on the board yet.</span>';
+    const top = d.top.slice(0, 5);
+    if (!top.length) { board.innerHTML = '<p class="quiet">Nobody on the board yet.</p>'; return; }
+    const rows = top.map((p, i) => `<tr><td class="rank">${i + 1}</td><td class="name">${esc(p.name)}${p.bot ? "<i>†</i>" : ""}</td><td class="lvl">L${Number(p.level)}</td></tr>`).join("");
+    const anyBot = top.some(p => p.bot);
+    board.innerHTML = `<table><thead><tr><th class="rank" aria-label="Rank"></th><th>Name</th><th class="lvl">Level</th></tr></thead><tbody>${rows}</tbody></table>` + (anyBot ? '<p class="note">† townsfolk</p>' : "");
   }).catch(() => { status.textContent = "The realm isn't answering right now. It'll be back."; });
 </script>
 <!-- Vercel Web Analytics: cookieless page-view counts for this site only -->
