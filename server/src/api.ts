@@ -16,7 +16,7 @@ import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { DIRS, LEGEND, renderMap, tileAt, type Dir, type Tile } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
-import { EVENTS_PER_DAY, EVENT_CHANCE, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
+import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { QUESTS, questById, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
@@ -821,8 +821,8 @@ async function dropEvent(ctx: Ctx) {
 }
 
 /** Sometimes a step turns up something besides a fight. Players only, a few a day. */
-async function maybeEvent(ctx: Ctx, x: number, y: number) {
-  if (ctx.p.role !== "player" || (ctx.t.events_seen ?? 0) >= EVENTS_PER_DAY || Math.random() >= EVENT_CHANCE) return;
+async function maybeEvent(ctx: Ctx, x: number, y: number, chance = EVENT_CHANCE, onTheRoad = false) {
+  if (ctx.p.role !== "player" || (ctx.t.events_seen ?? 0) >= EVENTS_PER_DAY || Math.random() >= chance) return;
   const t = tileAt(x, y);
   const had = new Set((await ctx.c.query<{ quest: string }>("select quest from quests where player_id = $1", [ctx.p.id])).rows.map((r) => r.quest));
   const options = eventsFor(t.terrain).filter((e) => !e.quest || !had.has(e.quest));
@@ -830,7 +830,7 @@ async function maybeEvent(ctx: Ctx, x: number, y: number) {
   const e = options[Math.floor(Math.random() * options.length)];
   await saveTurns(ctx, { events_seen: (ctx.t.events_seen ?? 0) + 1 });
   await savePlayer(ctx, { pending_event: { id: e.id, x, y } });
-  ctx.events.push({ kind: "wild_event", event: e.id, place: t.name, terrain: t.terrain, description: e.description,
+  ctx.events.push({ kind: "wild_event", event: e.id, place: t.name, terrain: t.terrain, description: e.description, ...(onTheRoad ? { on_the_road: true } : {}),
     choices: e.choices.map((c, i) => ({ n: i + 1, id: c.id, label: c.label, ...(c.cost ? { costs_gold: c.cost * t.level } : {}) })) });
   ctx.hint = "Something besides a fight. Describe it in two or three sentences from `description`, then offer its choices numbered (1), (2)… with their labels (and any gold cost), plus the usual Wild menu below. Call `event` with the choice id only when they pick one; anything else they do walks away from it.";
 }
@@ -968,11 +968,15 @@ api.post("/travel", async (c) => {
     }
     await leaveInn(ctx);
     await leaveGround(ctx);
+    // The road between: the farther you go over known land, the likelier something turns up on the way.
+    const [fx, fy] = inWild(ctx.p) ? [ctx.p.pos_x!, ctx.p.pos_y!] : [0, 0];
+    const distance = Math.abs(body.x - fx) + Math.abs(body.y - fy);
     await savePlayer(ctx, { pos_x: body.x, pos_y: body.y, cave_depth: null });
     const t = tileAt(body.x, body.y);
     const others = await othersHere(ctx, body.x, body.y);
-    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true, ...(others.length ? { others_here: others } : {}) });
+    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true, distance, ...(others.length ? { others_here: others } : {}) });
     await questTriggers(ctx, { arrive: { x: body.x, y: body.y } });
+    if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, body.x, body.y, Math.min(ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP * distance), true);
   }));
 });
 

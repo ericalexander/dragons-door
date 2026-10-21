@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.8.1",
+    "lore": "The roads you know are still free to walk, but they aren't empty. The farther you go, the likelier you are to meet someone, or something, along the way.",
+    "plain": "Traveling to a place you've already explored is still free, but long trips can now turn up an event on the road."
+  },
+  {
     "version": "0.8.0",
     "lore": "Not everything you pick up in the wild is just loot. Some things belong to someone, and some people in town are waiting for a favor. Keep your ears open and your bag closed. The shop will always buy, but it rarely pays best.",
     "plain": "Side quests: some events, conversations and finds start a quest that plays out over a few days. Check your journal under (G)ear."

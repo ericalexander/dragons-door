@@ -161,6 +161,9 @@ export const EVENTS: WildEvent[] = [
 // DRAGONS_DOOR_EVENT_CHANCE=1 forces one on every step, for local testing.
 export const EVENT_CHANCE = Number(process.env.DRAGONS_DOOR_EVENT_CHANCE ?? 0.15);
 export const EVENTS_PER_DAY = 3;
+/** Travel over known land is free, but the road can still surprise you: this much per step of distance, up to a cap. */
+export const ROAD_EVENT_PER_STEP = 0.05;
+export const ROAD_EVENT_MAX = 0.4;
 
 export function eventsFor(terrain: Terrain): WildEvent[] {
   return EVENTS.filter((e) => e.terrains === "any" || e.terrains.includes(terrain));
