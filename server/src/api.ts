@@ -993,16 +993,27 @@ api.post("/healer", async (c) => {
 });
 
 api.post("/buy", async (c) => {
-  const body = z.object({ kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int() }).parse(await c.req.json());
+  const body = z.object({ kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int(), keep_old: z.boolean().optional(), confirm: z.boolean().optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     const shopTown = requireTown(ctx, "the shop", ["brightwater", "ironhold"]);
     await requireNoEncounter(ctx);
+    // Gold changes hands only on a confirmed call: without confirm this returns a quote and does nothing.
+    // Plugins from before buy quotes (0.15.1) and townsfolk go straight through, trading in as before.
+    const plugin = current()?.plugin;
+    const confirmed = body.confirm === true || ctx.p.is_bot || (plugin !== undefined && plugin !== null && older(plugin, "0.15.1"));
+    const discount = charmDiscount(charmOf(ctx.p));
+    const pct = discount ? { charm_discount_pct: Math.round(discount * 100) } : {};
     if (body.kind === "bag") {
       const nb = Bag.bag(body.id);
       if (nb.id !== body.id) throw new GameError("no_such_item", "no such bag");
       if (nb.id <= ctx.p.bag_id) { ctx.events.push({ kind: "already_have_bigger", bag: Bag.bag(ctx.p.bag_id).name }); return; }
-      const bagCost = Math.ceil(nb.cost * (1 - charmDiscount(charmOf(ctx.p))));
+      const bagCost = Math.ceil(nb.cost * (1 - discount));
+      if (!confirmed) {
+        ctx.events.push({ kind: "buy_quote", shop: "bag", item: nb.name, capacity: nb.capacity, cost: bagCost, gold: ctx.p.gold, bank: ctx.p.bank, ...(ctx.p.gold < bagCost ? { short_by: bagCost - ctx.p.gold } : {}), ...pct });
+        ctx.hint = "Say what it costs, then ask Confirm? (Y)es / (N)o. Only on a yes call buy again with confirm: true. If they're short, say so; never take gold from the bank unless they ask.";
+        return;
+      }
       if (ctx.p.gold < bagCost) { ctx.events.push({ kind: "too_poor", cost: bagCost, gold: ctx.p.gold }); return; }
       await savePlayer(ctx, { gold: ctx.p.gold - bagCost, bag_id: nb.id });
       ctx.events.push({ kind: "bought", shop: "bag", item: nb.name, cost: bagCost, capacity: nb.capacity });
@@ -1012,15 +1023,41 @@ api.post("/buy", async (c) => {
     if (body.kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell spells; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
-    const current = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
+    const current_ = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
     const curRar = body.kind === "weapon" ? ctx.p.weapon_rarity ?? 0 : ctx.p.armor_rarity ?? 0;
-    const tradeIn = Math.floor(Bag.item(body.kind, current.id, curRar).cost / 2);
-    const discount = charmDiscount(charmOf(ctx.p));
-    const cost = Math.ceil((item.cost - tradeIn) * (1 - discount));
-    if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
+    const old = Bag.item(body.kind, current_.id, curRar);
+    const hasOld = current_.id > 0;
+    const tradeIn = hasOld ? Math.floor(old.cost / 2) : 0;
+    const costTrading = Math.ceil((item.cost - tradeIn) * (1 - discount));
+    const costKeeping = Math.ceil(item.cost * (1 - discount));
+    // Keeping the old piece means carrying it: it goes into the bag, so it has to fit.
+    const room = Bag.bag(ctx.p.bag_id).capacity - await Bag.used(ctx.c, ctx.p.id);
+    const canKeep = hasOld && old.weight <= room;
+    const stat = (x: { str?: number; def?: number }) => body.kind === "weapon" ? { power: x.str ?? 0 } : { defense: x.def ?? 0 };
+    if (!confirmed) {
+      ctx.events.push({
+        kind: "buy_quote", shop: body.kind, item: item.name, ...stat(item), gold: ctx.p.gold, bank: ctx.p.bank, ...pct,
+        ...(hasOld ? {
+          old: { item: old.name, ...stat(current_) },
+          trade_in: { value: tradeIn, cost: costTrading, ...(ctx.p.gold < costTrading ? { short_by: costTrading - ctx.p.gold } : {}) },
+          keep: canKeep
+            ? { cost: costKeeping, weight: old.weight, sells_to_smith_for: Bag.sellPrice(body.kind, current_.id, curRar), ...(ctx.p.gold < costKeeping ? { short_by: costKeeping - ctx.p.gold } : {}) }
+            : { possible: false, why: `no room in the bag (it weighs ${old.weight}, ${Math.max(0, room)} free)` },
+        } : { cost: costTrading, ...(ctx.p.gold < costTrading ? { short_by: costTrading - ctx.p.gold } : {}) }),
+      });
+      ctx.hint = hasOld
+        ? "Show the price both ways: trade the old piece in (cheaper) or keep it in the bag to sell or auction (full price). Ask which, e.g. (T)rade in / (K)eep it / (N)o. Then call buy again with confirm: true, and keep_old: true if they chose to keep it. If they're short, say so; never take gold from the bank unless they ask."
+        : "Say what it costs, then ask Confirm? (Y)es / (N)o. Only on a yes call buy again with confirm: true. If they're short, say so; never take gold from the bank unless they ask.";
+      return;
+    }
+    const keep = body.keep_old === true && hasOld;
+    if (keep && !canKeep) { ctx.events.push({ kind: "bag_full", need: old.weight - Math.max(0, room), holding: old.name }); return; }
+    const cost = keep ? costKeeping : costTrading;
+    if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: keep ? 0 : tradeIn }); return; }
     await savePlayer(ctx, { gold: ctx.p.gold - cost, ...(body.kind === "weapon" ? { weapon_id: item.id, weapon_rarity: 0 } : { armor_id: item.id, armor_rarity: 0 }) });
-    if (current.id > 0 && !ctx.p.is_test) await toStorehouse(ctx.c, [{ slot: body.kind, item_id: current.id, rarity: curRar }]);
-    ctx.events.push({ kind: "bought", shop: body.kind, item: item.name, cost, trade_in: tradeIn, ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
+    if (keep) await ctx.c.query("insert into inventory (player_id, slot, item_id, rarity) values ($1,$2,$3,$4)", [ctx.p.id, body.kind, current_.id, curRar]);
+    else if (hasOld && !ctx.p.is_test) await toStorehouse(ctx.c, [{ slot: body.kind, item_id: current_.id, rarity: curRar }]);
+    ctx.events.push({ kind: "bought", shop: body.kind, item: item.name, cost, ...(keep ? { kept: old.name } : { trade_in: tradeIn }), ...pct });
     await logEvent(ctx, "spend", { on: body.kind, item: item.name, tier: item.id, gold: cost });
   }));
 });

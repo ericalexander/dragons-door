@@ -201,9 +201,9 @@ server.tool("shop", "See the weapon, armor, or bag catalog.",
   { kind: z.enum(["weapon", "armor", "bag"]) },
   async ({ kind }) => text(await call("GET", `/v1/shop?kind=${kind}`)));
 
-server.tool("buy", "Buy a weapon or armor by id (your current one is traded in at half price), or a bigger bag.",
-  { kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int() },
-  async ({ kind, id }) => text(await call("POST", "/v1/buy", { kind, id })));
+server.tool("buy", "Buy a weapon or armor by id, or a bigger bag. Returns a quote (buy_quote) and does nothing until called again with confirm: true after the player says yes. For a weapon or armor the quote prices it two ways: trade the current piece in at half its worth, or keep it (keep_old: true) in the bag to sell or auction, at full price.",
+  { kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int(), keep_old: z.boolean().optional(), confirm: z.boolean().optional() },
+  async ({ kind, id, keep_old, confirm }) => text(await call("POST", "/v1/buy", { kind, id, ...(keep_old ? { keep_old } : {}), ...(confirm ? { confirm } : {}) })));
 
 server.tool("bag", "Look in your bag: what you're carrying, its weight, what each piece sells for, and anything lying on the ground.", {}, async () => text(await call("GET", "/v1/bag")));
 

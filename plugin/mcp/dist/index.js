@@ -22019,9 +22019,9 @@ server.tool(
 );
 server.tool(
   "buy",
-  "Buy a weapon or armor by id (your current one is traded in at half price), or a bigger bag.",
-  { kind: external_exports.enum(["weapon", "armor", "bag"]), id: external_exports.number().int() },
-  async ({ kind, id }) => text(await call("POST", "/v1/buy", { kind, id }))
+  "Buy a weapon or armor by id, or a bigger bag. Returns a quote (buy_quote) and does nothing until called again with confirm: true after the player says yes. For a weapon or armor the quote prices it two ways: trade the current piece in at half its worth, or keep it (keep_old: true) in the bag to sell or auction, at full price.",
+  { kind: external_exports.enum(["weapon", "armor", "bag"]), id: external_exports.number().int(), keep_old: external_exports.boolean().optional(), confirm: external_exports.boolean().optional() },
+  async ({ kind, id, keep_old, confirm }) => text(await call("POST", "/v1/buy", { kind, id, ...keep_old ? { keep_old } : {}, ...confirm ? { confirm } : {} }))
 );
 server.tool("bag", "Look in your bag: what you're carrying, its weight, what each piece sells for, and anything lying on the ground.", {}, async () => text(await call("GET", "/v1/bag")));
 server.tool(

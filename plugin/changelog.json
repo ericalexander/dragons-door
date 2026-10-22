@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.15.1",
+    "lore": "The smith has stopped snatching the old gear off your back before you've said a word. Now he names his price both ways, with your old piece on the pile or still in your pack, and waits. He doesn't like waiting. He'll live.",
+    "plain": "Buying gear now shows a price first and lets you keep your old weapon or armor in your bag (to sell or auction) instead of trading it in."
+  },
+  {
     "version": "0.15.0",
     "lore": "Ironhold's training yard has opened its gate to newcomers. Those who mean to fight with steel start out up in the hills now, under Corporal Fenn's shouting, with the forge going day and night; the gifted still begin in Brightwater, among Mother Quill's books and Prior Hale's candles. The road between is the same as ever. Mind the bridges.",
     "plain": "New warriors and thieves start in Ironhold, with its own masters, weaponry, armory, bank and Long Hall board; new mages and priests start in Brightwater. The first walk to the other town is guarded. Existing characters stay where they are."
