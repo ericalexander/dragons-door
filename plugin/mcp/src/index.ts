@@ -150,6 +150,10 @@ server.tool("learn_spell", "Learn a spell by id at the caster's teacher (Mother 
   { id: z.number().int() },
   async ({ id }) => text(await call("POST", "/v1/library", { id })));
 
+server.tool("respec", "Start over in a different class, in town: back to level 1, for a fee. Without confirm it only quotes the fee and what's kept and lost; call again with confirm: true only after the player has said yes to that quote.",
+  { class: z.enum(["warrior", "thief", "mage", "priest"]), confirm: z.boolean().optional() },
+  async ({ class: cls, confirm }) => text(await call("POST", "/v1/respec", { class: cls, ...(confirm ? { confirm: true } : {}) })));
+
 server.tool("workshop", "Odile's workshop in town: the pickaxe for sale, what she can make from the player's ore and gems, and what they're wearing.", {},
   async () => text(await call("GET", "/v1/workshop")));
 

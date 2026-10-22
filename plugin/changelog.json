@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.11.0",
+    "lore": "It turns out you can change who you are in this town, if you're willing to start from the bottom. Prior Hale will take your vows, Mother Quill will take you on, and the smith will buy back your old kit and point you at the training yard. It costs gold, and it takes you back to the beginning. Most people only do it once.",
+    "plain": "You can now change class: at the Chapel (priest), the Library (mage), or the Smith (warrior or thief). It costs 250 gold for each level you give up (100 at least) and starts you at level 1. You keep your bank, charm, gems, jewelry, marriage, map and quests; your old weapons and armor are sold back at half price. Once a week at most."
+  },
+  {
     "version": "0.10.1",
     "lore": "The shopkeepers have all moved to one lane off the square, which the town is calling Market Row: the smith's hammer at one end, Odile's lamp halfway down, and the library and the chapel tucked in among them. The square is quieter for it.",
     "plain": "Shops now live on Market Row: pick (S)hops in town, then the Smith, Odile's Workshop, or your Library or Chapel."

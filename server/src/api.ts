@@ -352,6 +352,60 @@ api.post("/library", async (c) => {
   }));
 });
 
+// ---------- starting over in a new class ----------
+
+const RESPEC_DAYS = 7;
+const RESPEC_PER_LEVEL = 250;
+const PUT_DOWN: Record<string, string> = { warrior: "put down the sword", thief: "put away the lockpicks", mage: "put down the staff", priest: "laid aside the vestments" };
+const TAKE_UP: Record<string, string> = { warrior: "taken up the sword", thief: "taken to the shadows", mage: "taken up the staff", priest: "taken holy orders" };
+
+/**
+ * Change class for gold: back to level 1 in the new class. Keeps the bank (less the fee), charm, gems,
+ * jewelry, pickaxe, marriage, map, quests and mail. The smith buys back weapons and armor (worn and carried)
+ * at half price into the bank, so nobody restarts at level 1 in late-game gear. Once a week. Without
+ * confirm: true it only quotes.
+ */
+api.post("/respec", async (c) => {
+  const body = z.object({ class: z.enum(["warrior", "thief", "mage", "priest"]), confirm: z.boolean().optional() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    requireInTown(ctx, "the town");
+    await requireNoEncounter(ctx);
+    if (ctx.p.role !== "player") { ctx.events.push({ kind: "not_for_you", reason: "townsfolk are who they are" }); return; }
+    if (body.class === ctx.p.class) { ctx.events.push({ kind: "already_that_class", class: body.class }); return; }
+    const last = ctx.p.respec_at ? new Date(ctx.p.respec_at) : null;
+    if (last && Date.now() - last.getTime() < RESPEC_DAYS * 86_400_000) {
+      ctx.events.push({ kind: "respec_too_soon", next: new Date(last.getTime() + RESPEC_DAYS * 86_400_000).toISOString().slice(0, 10), every_days: RESPEC_DAYS });
+      return;
+    }
+    const fee = Math.max(100, RESPEC_PER_LEVEL * (ctx.p.level - 1));
+    const items = await Bag.contents(ctx.c, ctx.p.id);
+    const gear = items.filter((x) => x.slot === "weapon" || x.slot === "armor");
+    const buyback = gear.reduce((n, x) => n + Bag.sellPrice(x.slot, x.item_id), 0)
+      + (ctx.p.weapon_id ? Bag.sellPrice("weapon", ctx.p.weapon_id) : 0) + (ctx.p.armor_id ? Bag.sellPrice("armor", ctx.p.armor_id) : 0);
+    const have = ctx.p.gold + ctx.p.bank + buyback;
+    const quote = {
+      from: ctx.p.class, to: body.class, from_level: ctx.p.level, fee, buyback, can_afford: have >= fee,
+      keeps: ["bank (less the fee)", "charm", "gems", "jewelry", "pickaxe", "marriage", "map", "quests", "mail"],
+      resets: ["level 1", "experience", "HP, attribute and defense to a beginner's", "weapon or spell, and armor (sold back at half price into the bank)"],
+      every_days: RESPEC_DAYS,
+    };
+    if (!body.confirm) { ctx.events.push({ kind: "respec_quote", ...quote }); return; }
+    if (have < fee) { ctx.events.push({ kind: "too_poor", cost: fee, gold: ctx.p.gold, bank: ctx.p.bank, buyback }); return; }
+    // Buyback into the bank, then the fee from the purse first and the bank after.
+    let gold = ctx.p.gold, bank = ctx.p.bank + buyback;
+    const fromGold = Math.min(gold, fee); gold -= fromGold; bank -= fee - fromGold;
+    await ctx.c.query("delete from inventory where player_id = $1 and slot in ('weapon','armor')", [ctx.p.id]);
+    const old = ctx.p.class;
+    await savePlayer(ctx, { class: body.class, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, weapon_id: 0, armor_id: 0, gold, bank, ground: null, respec_at: new Date().toISOString() });
+    await saveTurns(ctx, { specials: GAME.classes[body.class].specialsPerDay, mana: manaMax(ctx.p) });
+    await post(ctx, "respec", ctx.p.name, null, { from: old, to: body.class, line: `${ctx.p.name} has ${PUT_DOWN[old]} and ${TAKE_UP[body.class]}.` });
+    await logEvent(ctx, "respec", { from: old, to: body.class, from_level: quote.from_level, fee, buyback });
+    ctx.events.push({ kind: "respec_done", ...quote, gold, bank });
+    ctx.hint = "A new beginning: tell it as a turning point in two or three sentences, from the old life to the new, then the new class's basics (their attribute, their first spell or fists, their special) and the Town menu.";
+  }));
+});
+
 // ---------- the keeper's tools (admins only) ----------
 
 function requireAdmin(ctx: Ctx) {
@@ -543,6 +597,7 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
       return `${n.actor} married ${to}.`;
     }
     case "goal": return String(n.detail.line);
+    case "respec": return String(n.detail.line);
     case "mined_out": return `${n.detail.place} was mined out today; ${n.actor} took the last of it.`;
     case "crafted": return `Odile made ${n.actor} ${aOrAn(String(n.detail.item))}.`;
     case "loot": return `${n.actor} pried ${aOrAn(String(n.detail.item))} off a dead ${n.detail.monster}.`;
