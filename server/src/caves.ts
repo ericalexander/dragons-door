@@ -79,13 +79,21 @@ export type MineResult =
   | { kind: "ore"; ore: Ore }
   | { kind: "gem" };
 
+/** Weights for copper, silver, gold and a gem, by depth (1, 2, 3+). Caves in Ironhold's country run to ore,
+ *  caves near Brightwater to gems; with no country given, the old even mix. */
+const SEAMS: Record<"any" | "brightwater" | "ironhold", number[][]> = {
+  any:         [[60, 25, 0, 15], [35, 35, 15, 15], [15, 35, 30, 20]],
+  brightwater: [[50, 20, 0, 30], [30, 30, 10, 30], [10, 30, 25, 35]],
+  ironhold:    [[65, 30, 0, 5], [38, 40, 17, 5], [17, 38, 35, 10]],
+};
+
 /** One swing of the pick at a given depth. Deeper is richer, and the chance of company is the same everywhere. */
-export function swing(depth: number): MineResult {
+export function swing(depth: number, country: keyof typeof SEAMS = "any"): MineResult {
   const r = roll(99);
   if (r < 15) return { kind: "ambush" };
   if (r < 35) return { kind: "nothing" };
   // weights for copper, silver, gold, gem by depth
-  const w = depth >= 3 ? [15, 35, 30, 20] : depth === 2 ? [35, 35, 15, 15] : [60, 25, 0, 15];
+  const w = SEAMS[country][Math.min(3, Math.max(1, depth)) - 1];
   let x = roll(w.reduce((a, b) => a + b, 0) - 1);
   for (let i = 0; i < 4; i++) {
     if (x < w[i]) return i === 3 ? { kind: "gem" } : { kind: "ore", ore: ORES[i] };

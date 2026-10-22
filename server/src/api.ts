@@ -17,7 +17,7 @@ import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
-import { regionAt } from "./bestiary.js";
+import { countryOf, regionAt, rollFind } from "./bestiary.js";
 import { DIRS, LEGEND, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
@@ -885,6 +885,22 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
       await logEvent(ctx, "loot", { item: drop.item, slot: drop.kind, tier: drop.tier, monster_level: m.level ?? null, stored: usedNow + w <= cap, upgrade });
       ctx.hint = "A rare drop. Give it a beat: what it looks like, how it feels. If stored is false the bag is full and it's lying on the ground: offer (E)quip it now, or make room (sell or drop something) and Ta(k)e it, or leave it. It's gone if they walk back into the forest.";
     }
+    // The land itself: ore off monsters in stone country, gems in the lowlands. Not in caves; there's the pick for that.
+    const region = regionHere(ctx);
+    const find = region ? rollFind(region, m.level ?? ctx.p.level) : null;
+    if (find?.kind === "gem") {
+      await savePlayer(ctx, { gems: ctx.p.gems + 1 });
+      ctx.events.push({ kind: "found_material", monster: m.name, item: "a gem", gems: ctx.p.gems });
+      await logEvent(ctx, "find", { item: "gem", region });
+    } else if (find?.kind === "ore") {
+      const o = oreOf(find.ore);
+      const usedNow = await Bag.used(ctx.c, ctx.p.id);
+      const cap = Bag.bag(ctx.p.bag_id).capacity;
+      const fits = usedNow + o.weight <= cap;
+      if (fits) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,'ore',$2)", [ctx.p.id, o.id]);
+      ctx.events.push({ kind: "found_material", monster: m.name, item: o.name, weight: o.weight, stored: fits, ...(fits ? {} : { reason: "bag_full" }), bag_used: usedNow + (fits ? o.weight : 0), bag_capacity: cap });
+      await logEvent(ctx, "find", { item: o.name, region, stored: fits });
+    }
     if (next !== null && ctx.p.exp >= next) ctx.events.push({ kind: "level_ready", level: ctx.p.level + 1 });
   } else if (kind === "master") {
     const lvl = ctx.p.level + 1;
@@ -1671,7 +1687,7 @@ api.post("/mine", async (c) => c.json(await withPlayer(c.req.header("authorizati
   if (left.cave <= 0) { ctx.events.push({ kind: "mined_out", place: t.name, refills: "at the reset" }); return; }
   if (left.yours <= 0) { ctx.events.push({ kind: "your_share", place: t.name, limit: left.cap, refills: "at the reset" }); return; }
   await saveTurns(ctx, { swings: (ctx.t.swings ?? 0) + 1 });
-  const r = swing(depth);
+  const r = swing(depth, countryOf(t.x, t.y));
   const take = async () => {
     await ctx.c.query("insert into mining (day, x, y, player_id, n) values ($1,$2,$3,$4,1) on conflict (day, x, y, player_id) do update set n = mining.n + 1",
       [ctx.day, t.x, t.y, ctx.p.id]);

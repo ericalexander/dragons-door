@@ -37,3 +37,21 @@ test("a region with no one at a level falls back to the old monsters", () => {
   const old = new Set(GAME.monsters.map((m) => m.name));
   for (let i = 0; i < 50; i++) { const m = pickMonster(1, "crags"); if (m.level === 1) assert.ok(old.has(m.name)); }
 });
+
+import { countryOf, rollFind } from "./bestiary.js";
+
+test("stone country gives ore, the lowlands gems, caves nothing off a kill", () => {
+  const seq = (...xs: number[]) => { let i = 0; return () => xs[i++ % xs.length]; };
+  assert.deepEqual(rollFind("highland", 2, seq(0.01, 0.5)), { kind: "ore", ore: 0 });
+  assert.deepEqual(rollFind("crags", 10, seq(0.01, 0.1)), { kind: "ore", ore: 2 });
+  assert.deepEqual(rollFind("hills", 6, seq(0.01, 0.2)), { kind: "ore", ore: 1 });
+  assert.deepEqual(rollFind("meadow", 3, seq(0.01)), { kind: "gem" });
+  assert.equal(rollFind("cave", 5, seq(0.0)), null);
+  assert.equal(rollFind("forest", 1, seq(0.5)), null);
+});
+
+test("each place belongs to the nearer town", () => {
+  assert.equal(countryOf(2, 0), "brightwater");
+  assert.equal(countryOf(0, -12), "ironhold");
+  assert.equal(countryOf(-4, -11), "ironhold");
+});

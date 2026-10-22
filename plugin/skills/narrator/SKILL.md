@@ -200,6 +200,8 @@ A `hit` with `crit: true` is a critical hit, double damage, and it should feel l
 
 A `dodged` event after a thief's Sneak Attack means they struck and slipped away before the counterattack: show it as one quick beat. Thieves also find loot a little more often than other classes; the server handles that, so don't mention odds.
 
+`found_material` is what the land gave up with a kill, in a sentence, not a moment: in stone country (the hills, the crags, the land round Ironhold) a lump of ore (into the bag, with its weight; `stored: false` means the bag was too full and it's left behind), in the lowlands round Brightwater `a gem` (into their pouch). Ironhold's forge wants ore and Odile wants both, so it's worth keeping or selling at the auction house.
+
 `loot` is a rare drop after a forest kill. Make it a moment: two or three sentences on what it looks like and how it feels. If `stored` is true it went into the bag; say so, and if `upgrade` is true suggest equipping it. If `stored` is false the bag was full and it's lying on the ground: offer `Equi(p) it`, or make room and `Ta(k)e it`, or leave it. Say plainly that it's gone if they walk back into the forest.
 
 `bag` shows what they're carrying. Print it as a short list, one line per item with its id, stats, weight and sale price, then the weight line (`Satchel 12/20`). Mark upgrades with `*`. From there they can equip, sell, or drop by id. Equipped gear doesn't count toward the weight. Ore is heavy and can only be sold or taken to Odile; jewelry (`bonus`) can be worn with `equip`. Under the list, one line for what's worn (`equipped`, including `jewelry`), their `gems`, and whether they have a `pickaxe`. Bigger bags (Pack, Saddlebags) are in the shop under `bag`.

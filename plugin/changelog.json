@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.15.3",
+    "lore": "Every town has something the other one wants. The hills round Ironhold are full of ore, if you don't mind prising it off whatever was sitting on it, and the lowlands round Brightwater turn up gems in the oddest places. The caves have taken sides too. Mabry and Cass are very pleased about all of it.",
+    "plain": "Monsters sometimes leave ore in the hills and crags (and around Ironhold) and gems in the forest, meadows and marshes. Caves near Ironhold run to ore, caves near Brightwater to gems. Trade the difference at the auction house."
+  },
+  {
     "version": "0.15.2",
     "lore": "The wild was never all boars and mosquitoes; you just hadn't been looking. The marshes have their own things, the hills have theirs, and the slag heaps round Ironhold have grown a few creatures nobody's proud of. Down in the caves, something bigger is moving.",
     "plain": "Monsters now depend on where you are: marsh, meadow, hills, crags, the land around Ironhold and the caves each have their own. Same strength as before, level for level."

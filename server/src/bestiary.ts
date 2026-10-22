@@ -97,3 +97,31 @@ export function regionAt(x: number, y: number, inCave = false): Region {
   const terrain = tileAt(x, y).terrain;
   return terrain === "town" ? "forest" : BY_TERRAIN[terrain];
 }
+
+// ---------- what the land gives up ----------
+// Stone country (the hills, the crags, and the land round Ironhold) gives up ore; the lowlands round
+// Brightwater (forest, meadow, marsh) give up gems. Ironhold's forge wants ore and, at the top, gems;
+// Odile's jewelry in Brightwater wants both. So each town has something the other needs, and the
+// shared auction board is where they meet.
+
+export type Find = { kind: "ore"; ore: number } | { kind: "gem" };
+/** Chance a kill leaves something behind besides gold, by kind of land. Caves have the pick instead. */
+export const FIND_CHANCE: Record<Region, number> = { highland: 0.08, hills: 0.08, crags: 0.08, forest: 0.06, meadow: 0.06, marsh: 0.06, cave: 0 };
+const STONE: Region[] = ["highland", "hills", "crags"];
+
+/** What a kill leaves, if anything: ore in stone country (better ore off tougher monsters), a gem in the lowlands. */
+export function rollFind(region: Region, level: number, r: () => number = Math.random): Find | null {
+  if (r() >= FIND_CHANCE[region]) return null;
+  if (!STONE.includes(region)) return { kind: "gem" };
+  const x = r();
+  if (level >= 9) return { kind: "ore", ore: x < 0.25 ? 2 : x < 0.6 ? 1 : 0 };
+  if (level >= 5) return { kind: "ore", ore: x < 0.35 ? 1 : 0 };
+  return { kind: "ore", ore: 0 };
+}
+
+/** Whose country a place is in: the nearer town's. */
+export function countryOf(x: number, y: number): "brightwater" | "ironhold" {
+  const b = Math.max(Math.abs(x), Math.abs(y));
+  const i = Math.max(Math.abs(x - TOWN_TILES.ironhold.x), Math.abs(y - TOWN_TILES.ironhold.y));
+  return i < b ? "ironhold" : "brightwater";
+}
