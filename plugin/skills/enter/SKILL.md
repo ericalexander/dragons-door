@@ -43,6 +43,6 @@ Load the `narrator` skill and enter the game.
 
 1. Use that `status` result. If it returns `not_registered`, ask for a name and class and call `register`.
 2. If `$ARGUMENTS` names an action (forest, tavern, news, challenge <name>, …), do that. Otherwise, if there are `new_day` or `while_you_were_away` events, narrate them, then call `news` and give the headlines.
-3. If `state.place` is set they're out in the wild where they camped last night: describe the place and show the Wild menu. Otherwise they're in Town: call `square`, describe what they see (see the narrator's Places), then print the status line and the Town menu. Wait for the player.
+3. If `state.place` is a town (`poi: "town"`), they woke up there: call `town` and show that town's menu. If `state.place` is set otherwise, they're out in the wild where they camped last night: describe the place and show the Wild menu. Otherwise they're in Town: call `square`, describe what they see (see the narrator's Places), then print the status line and the Town menu. Wait for the player.
 
 Stay in the game until the player says they're done or asks for something unrelated to it.

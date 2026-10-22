@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.15.0",
+    "lore": "Ironhold's training yard has opened its gate to newcomers. Those who mean to fight with steel start out up in the hills now, under Corporal Fenn's shouting, with the forge going day and night; the gifted still begin in Brightwater, among Mother Quill's books and Prior Hale's candles. The road between is the same as ever. Mind the bridges.",
+    "plain": "New warriors and thieves start in Ironhold, with its own masters, weaponry, armory, bank and Long Hall board; new mages and priests start in Brightwater. The first walk to the other town is guarded. Existing characters stay where they are."
+  },
+  {
     "version": "0.14.1",
     "lore": "Everyone in Brightwater has heard of Ironhold, the hillfort far out in the hills with the best steel in the realm. Hardly anyone has been. The road is long, and they say something lives under the old bridge below the walls that doesn't let strangers by. And word is a sword can be made there better than anything Brightwater's smith sells.",
     "plain": "Ironhold is out there, far past the forest: a second town with a forge and an auction house. The first time you go, you'll have to fight your way in (tough below level 6). Weapons and armor now come in rarities, Common to Mythic."

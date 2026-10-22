@@ -57,6 +57,8 @@ export interface Player {
   renamed_from: string | null;
   /** When they last changed class (once a week at most). */
   respec_at: string | null;
+  /** Where they started, and where they return and wake up after dying: brightwater or ironhold. */
+  start_town?: string;
 }
 
 export interface Turns {
@@ -310,7 +312,9 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     }
     // Inside another town's walls: its own services, no hunting; walking out still costs a turn.
     if (townAt(p.pos_x, p.pos_y) === "ironhold") {
-      w.unshift("town", "healer", "auction", "forge", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []));
+      w.unshift("town", "healer", "auction", "forge", "shop", "bank", "tavern", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []), ...(t.player_fights > 0 ? ["challenge"] : []));
+      const nextLvl = expForLevel(p.level + 1);
+      if (!casts(p.class) && nextLvl !== null && p.exp >= nextLvl) w.unshift("train");
       return w;
     }
     if (t.forest_fights > 0) w.unshift("forest", "move");

@@ -21,6 +21,7 @@ export const TOWNS: Partial<Record<TownId, Town>> = {
       { name: "Mabry Locke", where: "the auction house", does: "runs Ironhold's auction house, which shares a board with Brightwater's" },
       { name: "Jessamy Crane", where: "the Long Hall", does: "keeps the Long Hall: stew, bunks for the night, and stitches for the wounded" },
       { name: "Corra Bell", where: "the Long Hall", does: "sings in the Long Hall most nights, old marching songs with the words changed" },
+      { name: "Tobin Harrow", where: "the armory", does: "keeps Ironhold's armory: armor and bags, fitted properly" },
     ],
   },
 };

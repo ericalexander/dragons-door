@@ -21892,7 +21892,7 @@ server.tool(
 );
 server.tool(
   "travel",
-  "Go straight to town, or back out to a place the player has already explored (x, y from the map's known places). Free: they know the way.",
+  "Go straight home (to: town: the town they started in), or to a place the player has already explored, another town included once they've been (x, y from the map's known places; Brightwater is 0, 0). Free: they know the way.",
   { to: external_exports.literal("town").optional(), x: external_exports.number().int().optional(), y: external_exports.number().int().optional() },
   async ({ to, x, y }) => text(await call("POST", "/v1/travel", to === "town" || x === void 0 || y === void 0 ? { to: "town" } : { x, y }))
 );

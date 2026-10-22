@@ -123,7 +123,7 @@ server.tool("move", "Take one step north, south, east or west. A step into the w
   { dir: z.enum(["north", "south", "east", "west"]) },
   async ({ dir }) => text(await call("POST", "/v1/move", { dir })));
 
-server.tool("travel", "Go straight to town, or back out to a place the player has already explored (x, y from the map's known places). Free: they know the way.",
+server.tool("travel", "Go straight home (to: town: the town they started in), or to a place the player has already explored, another town included once they've been (x, y from the map's known places; Brightwater is 0, 0). Free: they know the way.",
   { to: z.literal("town").optional(), x: z.number().int().optional(), y: z.number().int().optional() },
   async ({ to, x, y }) => text(await call("POST", "/v1/travel", to === "town" || x === undefined || y === undefined ? { to: "town" } : { x, y })));
 

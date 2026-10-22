@@ -19,10 +19,12 @@ export interface Lore {
   world: string;
   people: Record<string, { pieces: string[]; mentions: string[] }>;
   masters: Record<number, { name: string; about: string }>;
+  /** Ironhold's training yard: masters for those who fight with steel. */
+  ironMasters: Record<number, { name: string; about: string }>;
   journals: Journal[];
 }
 
-const EMPTY: Lore = { world: "", people: {}, masters: {}, journals: [] };
+const EMPTY: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, journals: [] };
 const TTL = 5 * 60_000;
 let current: Lore = EMPTY;
 let loadedAt = 0;
@@ -39,13 +41,13 @@ export async function loadLore(force = false): Promise<Lore> {
     loadedAt = Date.now();
     return current;
   }
-  const next: Lore = { world: "", people: {}, masters: {}, journals: [] };
+  const next: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, journals: [] };
   const person = (name: string) => (next.people[name] ??= { pieces: [], mentions: [] });
   for (const r of rows) {
     if (r.kind === "world") next.world = r.body;
     else if (r.kind === "person" && r.subject) person(r.subject).pieces[r.piece ?? 0] = r.body;
     else if (r.kind === "mention" && r.subject) person(r.subject).mentions.push(r.body);
-    else if (r.kind === "master" && r.piece) next.masters[r.piece] = { name: r.subject ?? "", about: r.body };
+    else if (r.kind === "master" && r.piece) ((r.data as { town?: string }).town === "ironhold" ? next.ironMasters : next.masters)[r.piece] = { name: r.subject ?? "", about: r.body };
     else if (r.kind === "journal") {
       const d = r.data as { where?: Journal["where"]; author?: string | null; min_ring?: number };
       next.journals.push({ key: r.key, title: r.subject ?? "", text: r.body, where: d.where ?? "wild", author: d.author ?? null, min_ring: d.min_ring ?? 0 });

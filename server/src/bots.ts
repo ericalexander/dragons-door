@@ -106,8 +106,9 @@ async function forestFight(b: Bot, opts: { runBelow?: number; useSpecial?: boole
 
 async function trainIfReady(b: Bot, r: Envelope | null) {
   if (!r || !r.state.alive || r.state.exp_next === null || r.state.exp < r.state.exp_next) return;
-  // Masters live in town, like everyone's.
-  if (r.state.place) await b.post("/travel", { to: "town" });
+  // Masters live in town. Ironhold's teach only steel, so its mages walk down to Brightwater to train.
+  if (b.home === "ironhold" && ["mage", "priest"].includes(r.state.class)) await b.post("/travel", { x: 0, y: 0 });
+  else if (r.state.place) await b.post("/travel", { to: "town" });
   const t = await b.post("/train");
   if (isErr(t) || !kinds(t).includes("master_challenge")) return;
   for (let i = 0; i < 80; i++) {

@@ -313,9 +313,17 @@ api.post("/register", async (c) => {
     const settings = await realmSettings(db);
     const day = realmDay(settings.resetHourUtc);
     if (!testChar) await db.query("insert into news (day, kind, actor) values ($1,'join',$2)", [day, body.name]);
+    // Those who fight with steel start in Ironhold; the gifted in Brightwater. Older plugins don't know
+    // about other towns, so their new characters start in Brightwater as before.
+    if ((body.class === "warrior" || body.class === "thief") && !info?.townsfolk && info?.plugin && !older(info.plugin, "0.15.0")) {
+      const t = TOWN_TILES.ironhold;
+      await db.query("update players set start_town = 'ironhold', pos_x = $2, pos_y = $3 where id = $1", [r.rows[0].id, t.x, t.y]);
+      await db.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing", [r.rows[0].id, t.x, t.y]);
+      r.rows[0].start_town = "ironhold";
+    }
     return r.rows[0];
   });
-  return c.json({ api_key: key, name: out.name, class: out.class, ...(testChar ? { test: true } : {}), events: [{ kind: "joined", name: out.name, class: out.class }] });
+  return c.json({ api_key: key, name: out.name, class: out.class, ...(testChar ? { test: true } : {}), events: [{ kind: "joined", name: out.name, class: out.class, starts_in: out.start_town === "ironhold" ? "Ironhold" : "Brightwater" }] });
 });
 
 // ---------- Mother Quill's library (spells for casters) ----------
@@ -382,7 +390,7 @@ api.post("/respec", async (c) => {
   const body = z.object({ class: z.enum(["warrior", "thief", "mage", "priest"]), confirm: z.boolean().optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, "the town");
+    requireTown(ctx, "the town", body.class === "warrior" || body.class === "thief" ? ["brightwater", "ironhold"] : ["brightwater"]);
     await requireNoEncounter(ctx);
     if (ctx.p.role !== "player") { ctx.events.push({ kind: "not_for_you", reason: "townsfolk are who they are" }); return; }
     if (body.class === ctx.p.class) { ctx.events.push({ kind: "already_that_class", class: body.class }); return; }
@@ -828,6 +836,16 @@ api.post("/fight", async (c) => {
 });
 
 async function win(ctx: Ctx, kind: string, m: Monster) {
+  if (kind === "gate" && m.name === GATE_GUARDS.brightwater?.name) {
+    await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp, pos_x: null, pos_y: null, cave_depth: null });
+    await ctx.c.query("insert into explored (player_id, x, y) values ($1, 0, 0) on conflict do nothing", [ctx.p.id]);
+    ctx.events.push({ kind: "gate_won", monster: m.name, gold: m.gold, exp: m.exp, town: "Brightwater" });
+    await post(ctx, "gate_won", ctx.p.name, null, { monster: m.name, place: "Brightwater" });
+    await logEvent(ctx, "gate", { town: "brightwater", monster: m.name });
+    ctx.events.push({ kind: "arrived", place: "town", first_for_you: true });
+    ctx.hint = "They've come down out of the hills into Brightwater for the first time. Call `square` and show them the town properly.";
+    return;
+  }
   if (kind === "gate") {
     // Through: into the town, which counts as found (and the first ever to get there makes the news).
     const id = ((Object.keys(GATE_GUARDS) as (keyof typeof TOWN_TILES)[]).find((t) => GATE_GUARDS[t]?.name === m.name) ?? "ironhold");
@@ -910,8 +928,10 @@ async function lose(ctx: Ctx, kind: string, m: Monster) {
 async function die(ctx: Ctx, kind: string, m: Monster) {
   const lost = ctx.p.gold;
   const expLoss = Math.floor(ctx.p.exp * 0.1);
-  // You wake in town, however far out you fell.
-  await savePlayer(ctx, { alive: false, hp: 0, gold: 0, exp: ctx.p.exp - expLoss, ground: null, pos_x: null, pos_y: null, cave_depth: null });
+  // You wake in your home town, however far out you fell.
+  const home = homeTile(ctx.p);
+  const atHome = home.x === 0 && home.y === 0 ? { pos_x: null, pos_y: null } : { pos_x: home.x, pos_y: home.y };
+  await savePlayer(ctx, { alive: false, hp: 0, gold: 0, exp: ctx.p.exp - expLoss, ground: null, ...atHome, cave_depth: null });
   const itemLost = await Bag.loseRandom(ctx.c, ctx.p.id);
   if (kind === "dragon") await post(ctx, "dragon_death", ctx.p.name, null, {});
   else await post(ctx, "forest_death", ctx.p.name, null, { monster: m.name });
@@ -923,14 +943,15 @@ async function die(ctx: Ctx, kind: string, m: Monster) {
 
 api.post("/train", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
-    requireInTown(ctx, "your master");
+  // Brightwater's masters teach everyone; Ironhold's teach only those who fight with steel.
+  const trainTown = requireTown(ctx, "your master", casts(ctx.p.class) ? ["brightwater"] : ["brightwater", "ironhold"]);
   await requireNoEncounter(ctx);
   const next = expForLevel(ctx.p.level + 1);
   if (next === null) { ctx.events.push({ kind: "max_level" }); return; }
   if (ctx.p.exp < next) { ctx.events.push({ kind: "not_ready", exp: ctx.p.exp, needed: next }); return; }
   await leaveInn(ctx);
   const ms = master(ctx.p.level)!;
-  const known = lore().masters[ms.level];
+  const known = (trainTown === "ironhold" ? lore().ironMasters : lore().masters)[ms.level];
   const m: Monster = { name: known?.name || ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 };
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'master',$2)", [ctx.p.id, m]);
   ctx.events.push({ kind: "master_challenge", master: m, about: known?.about ?? null, level: ctx.p.level + 1 });
@@ -975,7 +996,7 @@ api.post("/buy", async (c) => {
   const body = z.object({ kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, "the shop");
+    const shopTown = requireTown(ctx, "the shop", ["brightwater", "ironhold"]);
     await requireNoEncounter(ctx);
     if (body.kind === "bag") {
       const nb = Bag.bag(body.id);
@@ -1008,7 +1029,7 @@ api.post("/bank", async (c) => {
   const body = z.object({ op: z.enum(["deposit", "withdraw"]), amount: z.union([z.literal("all"), z.number().int().positive()]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, "the bank");
+    requireTown(ctx, "the bank", ["brightwater", "ironhold"]);
     await requireNoEncounter(ctx);
     if (ctx.t.bank_tx >= GAME.bankTxPerDay) { ctx.events.push({ kind: "bank_closed", reason: "daily transaction limit" }); return; }
     const from = body.op === "deposit" ? ctx.p.gold : ctx.p.bank;
@@ -1038,7 +1059,8 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
 // ---------- tavern ----------
 
 api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  requireInTown(ctx, "the tavern");
+  // One board for the realm: Mabry's couriers carry the Long Hall's posts down to Brightwater and back.
+  requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
   const r = await ctx.c.query("select author, body, ts from tavern where day = $1 and hidden_at is null order by id desc limit 20", [ctx.day]);
   const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
@@ -1170,6 +1192,13 @@ api.post("/move", async (c) => {
     const [x0, y0] = inWild(ctx.p) ? [ctx.p.pos_x!, ctx.p.pos_y!] : [0, 0];
     const [x, y] = [x0 + DIRS[body.dir][0], y0 + DIRS[body.dir][1]];
     if (x === 0 && y === 0) {
+      // Someone from another town walking into Brightwater for the first time meets whatever holds its road.
+      if (!ctx.p.is_bot && !(await passedGate(ctx, 0, 0))) {
+        if (ctx.t.forest_fights <= 0) { ctx.events.push({ kind: "no_fights_left", why: "too tired to go further today" }); return; }
+        await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
+        await startGateFight(ctx, "brightwater");
+        return;
+      }
       await leaveGround(ctx);
       await savePlayer(ctx, { pos_x: null, pos_y: null, cave_depth: null });
       ctx.events.push({ kind: "arrived", place: "town" });
@@ -1216,10 +1245,23 @@ api.post("/travel", async (c) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
     await dropEvent(ctx);
-    if ("to" in body || (body.x === 0 && body.y === 0)) {
+    // "town" means home: where they started. Brightwater by its tile works too, once they've been.
+    const goHome = "to" in body;
+    const toBrightwater = goHome ? (ctx.p.start_town ?? "brightwater") === "brightwater" : body.x === 0 && body.y === 0;
+    if (toBrightwater) {
+      if (!ctx.p.is_bot && !(await passedGate(ctx, 0, 0))) { ctx.events.push({ kind: "unknown_place", x: 0, y: 0, why: "you've never been to Brightwater; walk there the first time" }); return; }
       await leaveGround(ctx);
       await savePlayer(ctx, { pos_x: null, pos_y: null, cave_depth: null });
       ctx.events.push({ kind: "arrived", place: "town" });
+      return;
+    }
+    if (goHome) {
+      const h = homeTile(ctx.p);
+      await leaveGround(ctx);
+      await savePlayer(ctx, { pos_x: h.x, pos_y: h.y, cave_depth: null });
+      const t = tileAt(h.x, h.y);
+      ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true });
+      await arriveInTown(ctx, t);
       return;
     }
     const known = await ctx.c.query("select 1 from explored where player_id = $1 and x = $2 and y = $3", [ctx.p.id, body.x, body.y]);
@@ -1831,9 +1873,23 @@ api.post("/forge", async (c) => {
 /** What waits on the road below a town's walls the first time. Tough for level 5, a real fight at 6, safe by 7 (simulated). */
 const GATE_GUARDS: Partial<Record<TownId, Monster>> = {
   ironhold: { name: "Old Grudge", level: 7, hp: 360, max_hp: 360, str: 70, def: 27, gold: 12000, exp: 9000 },
+  brightwater: { name: "Grey Hob", level: 7, hp: 360, max_hp: 360, str: 70, def: 27, gold: 12000, exp: 9000 },
 };
+const GATE_LINES: Partial<Record<TownId, { note: string; hint: string }>> = {
+  ironhold: { note: "the road to the gate runs under a broken bridge, and something lives there; it won't let anyone through who hasn't beaten it, and there's no running",
+    hint: "A set piece: they've reached the road below the town's walls, and Old Grudge, the troll under the broken bridge, comes up out of the gully. No running, no way round. Make it big, then the fight menu without (R)un." },
+  brightwater: { note: "the old north road into Brightwater crosses a toll-bridge nobody has kept since the Siege, and something keeps it now; it won't let a stranger by until they've beaten it, and there's no running",
+    hint: "A set piece: Brightwater's roofs are in sight, and Grey Hob, the hobgoblin who keeps the old toll-bridge on the north road, steps out to collect. No running, no way round. Make it big, then the fight menu without (R)un." },
+};
+/** Where someone returns to and wakes up: their start town's tile (Brightwater is 0, 0). */
+function homeTile(p: Player): { x: number; y: number } {
+  const t = p.start_town && p.start_town !== "brightwater" ? TOWN_TILES[p.start_town as keyof typeof TOWN_TILES] : null;
+  return t ? { x: t.x, y: t.y } : { x: 0, y: 0 };
+}
 /** You're through once you've stood inside: the town tile is in your explored map. */
 async function passedGate(ctx: Ctx, x: number, y: number): Promise<boolean> {
+  const home = homeTile(ctx.p);
+  if (home.x === x && home.y === y) return true;
   return Boolean((await ctx.c.query("select 1 from explored where player_id = $1 and x = $2 and y = $3", [ctx.p.id, x, y])).rowCount);
 }
 async function startGateFight(ctx: Ctx, town: TownId) {
@@ -1841,9 +1897,8 @@ async function startGateFight(ctx: Ctx, town: TownId) {
   if (!g) return;
   const m: Monster = { ...g };
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'gate',$2)", [ctx.p.id, m]);
-  ctx.events.push({ kind: "gate_ambush", monster: m, town: TOWN_TILES[town as keyof typeof TOWN_TILES].name,
-    note: "the road to the gate runs under a broken bridge, and something lives there; it won't let anyone through who hasn't beaten it, and there's no running" });
-  ctx.hint = "A set piece: they've reached the road below the town's walls, and Old Grudge, the troll under the broken bridge, comes up out of the gully. No running, no way round. Make it big, then the fight menu without (R)un.";
+  ctx.events.push({ kind: "gate_ambush", monster: m, town: town === "brightwater" ? "Brightwater" : TOWN_TILES[town as keyof typeof TOWN_TILES].name, note: GATE_LINES[town]!.note });
+  ctx.hint = GATE_LINES[town]!.hint;
 }
 
 /** What's in a town away from Brightwater, and who's about: its fixed characters, the townsfolk who live there, players seen lately. */
@@ -1861,8 +1916,9 @@ async function townView(ctx: Ctx, id: TownId) {
     people: town.people,
     townsfolk_here: folk.map((f) => ({ name: f.name, class: f.class, level: f.level, ...(f.mind?.goal ? { on_mind: goalLabel(f.name, f.personality, f.mind.goal) } : {}) })),
     players_here: players,
-    services: { healer: "Jessamy Crane, in the Long Hall", inn: "a bunk in the Long Hall (wake up here)", auction: `${town.auctioneer}'s auction house, on the same board as Brightwater's`, forge: `${town.buyer}'s forge`, sell: `${town.buyer} buys gear` },
-    masters: "Masters only teach in Brightwater.",
+    services: { healer: "Jessamy Crane, in the Long Hall", inn: "a bunk in the Long Hall (wake up here)", board: "the Long Hall's board, the same one Brightwater's tavern reads (couriers carry it)", bank: "Mabry's strongbox, the same accounts as Brightwater's bank",
+      weaponry: `${town.buyer}'s weaponry, at the forge`, armory: "Tobin Harrow's armory: armor and bags", forge: `${town.buyer}'s forge`, auction: `${town.auctioneer}'s auction house, on the same board as Brightwater's`, sell: `${town.buyer} buys gear` },
+    masters: casts(ctx.p.class) ? "the training yard teaches only those who fight with steel; magic is taught in Brightwater" : "the training yard: masters for those who fight with steel",
   };
 }
 
@@ -2116,7 +2172,7 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
 api.post("/tavern", async (c) => {
   const body = z.object({ body: z.string().trim().min(1).max(280).transform(cleanText).pipe(z.string().min(1)) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-    requireInTown(ctx, "the tavern");
+    requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
     if (!seasoned(ctx, "post in the tavern")) return;
     if (ctx.t.tavern_posts >= GAME.tavernPostsPerDay) { ctx.events.push({ kind: "tavern_quiet", reason: "you've said enough for one day" }); return; }
     await ctx.c.query("insert into tavern (day, author, body) values ($1,$2,$3)", [ctx.day, ctx.p.name, body.body]);
@@ -2605,7 +2661,7 @@ api.post("/challenge", async (c) => {
   const body = z.object({ name: z.string().min(1) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, "the fields outside town");
+    requireTown(ctx, "the fields outside town", ["brightwater", "ironhold"]);
     await requireNoEncounter(ctx);
     if (ctx.t.player_fights <= 0) { ctx.events.push({ kind: "no_player_fights_left" }); return; }
     if (!seasoned(ctx, "attack another player")) return;
