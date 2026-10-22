@@ -105,6 +105,8 @@ export interface Envelope {
 export type Event = { kind: string } & Record<string, unknown>;
 
 export interface PublicState {
+  /** The realm's time of day right now (Eastern time), so the narrator never guesses. */
+  time_of_day: string;
   name: string;
   class: PlayerClass;
   level: number;
@@ -231,6 +233,12 @@ export function healCost(p: Player, hp: number, spouse: string | null = null): n
   return Math.ceil(hp * GAME.healerCostPerHpPerLevel * p.level * (spouse === "Rowan" ? 0.75 : 1));
 }
 
+/** Same buckets as the square's: early morning, morning, afternoon, evening, night. */
+export function timeOfDayNow(now = new Date()): string {
+  const h = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", hour: "2-digit" }).format(now));
+  return h >= 5 && h < 8 ? "early morning" : h < 12 && h >= 8 ? "morning" : h >= 12 && h < 17 ? "afternoon" : h >= 17 && h < 21 ? "evening" : "night";
+}
+
 export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0, spouse: string | null = null, suitorsAround: { name: string; pronouns: string; where: string }[] = []): PublicState {
   const b = GAME.bags.find((x) => x.id === p.bag_id) ?? GAME.bags[0];
   return {
@@ -277,6 +285,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id), attributeName(p.class))})` : null,
     pickaxe: Boolean(p.pickaxe),
     cave_depth: p.cave_depth ?? null,
+    time_of_day: timeOfDayNow(),
     place: p.pos_x === null || p.pos_x === undefined ? null : (() => { const t = tileAt(p.pos_x!, p.pos_y!); return { x: t.x, y: t.y, name: t.name, terrain: t.terrain, level: t.level, poi: t.poi }; })(),
   };
 }
