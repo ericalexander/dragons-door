@@ -1,8 +1,8 @@
 [
   {
-    "version": "0.14.0",
-    "lore": "Now and then a traveller comes in from somewhere far past the forest, smelling of coal smoke, and won't say where they've been. You'd have to be strong to walk that far and come back. And word is that somewhere out there a sword can be made better than any smith in Brightwater sells.",
-    "plain": "There's more of the world to find if you explore far enough (it's dangerous out there below level 5). Weapons and armor now come in rarities, Common to Mythic, shown in their names."
+    "version": "0.14.1",
+    "lore": "Everyone in Brightwater has heard of Ironhold, the hillfort far out in the hills with the best steel in the realm. Hardly anyone has been. The road is long, and they say something lives under the old bridge below the walls that doesn't let strangers by. And word is a sword can be made there better than anything Brightwater's smith sells.",
+    "plain": "Ironhold is out there, far past the forest: a second town with a forge and an auction house. The first time you go, you'll have to fight your way in (tough below level 6). Weapons and armor now come in rarities, Common to Mythic."
   },
   {
     "version": "0.13.0",

@@ -638,7 +638,8 @@ function aOrAn(item: string): string {
 export function newsLine(n: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }): string {
   switch (n.kind) {
     case "joins": return String(n.detail.line);
-    case "discovery": return n.detail.poi === "town" ? `${n.actor} found ${n.detail.place}, a town nobody in Brightwater knew was there.` : `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;
+    case "gate_won": return `${n.actor} fought past ${n.detail.monster} on the road and walked into ${n.detail.place}.`;
+    case "discovery": return n.detail.poi === "town" ? `${n.actor} made it to ${n.detail.place}, the hillfort few in Brightwater have ever seen, past Old Grudge on the road below the walls.` : `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;
     case "join": return `${n.actor} has entered the realm.`;
     case "pvp_kill": return `${n.actor} slew ${n.target} in the fields and took ${n.detail.gold} gold.`;
     case "pvp_survived": return `${n.target} fought off an attack from ${n.actor}.`;
@@ -735,6 +736,7 @@ api.post("/fight", async (c) => {
 
     if (body.action === "run") {
       if (enc.kind === "master") { ctx.events.push({ kind: "cannot_run", reason: "your master will not let you leave" }); return; }
+      if (enc.kind === "gate") { ctx.events.push({ kind: "cannot_run", reason: "it has the road, and there's no way round it" }); return; }
       if (fleeSucceeds(ctx.p)) {
         await ctx.c.query("delete from encounters where id = $1", [enc.id]);
         ctx.events.push({ kind: "fled", monster: m.name });
@@ -826,6 +828,23 @@ api.post("/fight", async (c) => {
 });
 
 async function win(ctx: Ctx, kind: string, m: Monster) {
+  if (kind === "gate") {
+    // Through: into the town, which counts as found (and the first ever to get there makes the news).
+    const id = ((Object.keys(GATE_GUARDS) as (keyof typeof TOWN_TILES)[]).find((t) => GATE_GUARDS[t]?.name === m.name) ?? "ironhold");
+    const at = TOWN_TILES[id];
+    await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp, pos_x: at.x, pos_y: at.y, cave_depth: null });
+    ctx.events.push({ kind: "gate_won", monster: m.name, gold: m.gold, exp: m.exp, town: at.name });
+    const t = tileAt(at.x, at.y);
+    await ctx.c.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing", [ctx.p.id, at.x, at.y]);
+    const first = ctx.p.is_test ? { rowCount: 0 } : await ctx.c.query(
+      "insert into discoveries (x, y, name, terrain, poi, found_by) values ($1,$2,$3,$4,$5,$6) on conflict do nothing returning 1", [at.x, at.y, t.name, t.terrain, t.poi, ctx.p.id]);
+    if (first.rowCount) await post(ctx, "discovery", ctx.p.name, null, { place: t.name, poi: t.poi });
+    else await post(ctx, "gate_won", ctx.p.name, null, { monster: m.name, place: t.name });
+    await logEvent(ctx, "gate", { town: id, monster: m.name });
+    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: true, first_ever: Boolean(first.rowCount) });
+    await arriveInTown(ctx, t);
+    return;
+  }
   if (kind === "forest") {
     const next = expForLevel(ctx.p.level + 1);
     await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp });
@@ -1163,6 +1182,12 @@ api.post("/move", async (c) => {
       await savePlayer(ctx, { ground: null });
     }
     await saveTurns(ctx, { forest_fights: ctx.t.forest_fights - 1 });
+    // The first time anyone walks up to a town out in the world, something on the road stops them. No way round it.
+    const gateTown = townAt(x, y);
+    if (gateTown && gateTown !== "brightwater" && !ctx.p.is_bot && !(await passedGate(ctx, x, y))) {
+      await startGateFight(ctx, gateTown);
+      return;
+    }
     await savePlayer(ctx, { pos_x: x, pos_y: y, cave_depth: null });
     const t = tileAt(x, y);
     const mine = await ctx.c.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing returning 1", [ctx.p.id, x, y]);
@@ -1802,6 +1827,24 @@ api.post("/forge", async (c) => {
 });
 
 // ---------- other towns ----------
+
+/** What waits on the road below a town's walls the first time. Tough for level 5, a real fight at 6, safe by 7 (simulated). */
+const GATE_GUARDS: Partial<Record<TownId, Monster>> = {
+  ironhold: { name: "Old Grudge", level: 7, hp: 360, max_hp: 360, str: 70, def: 27, gold: 12000, exp: 9000 },
+};
+/** You're through once you've stood inside: the town tile is in your explored map. */
+async function passedGate(ctx: Ctx, x: number, y: number): Promise<boolean> {
+  return Boolean((await ctx.c.query("select 1 from explored where player_id = $1 and x = $2 and y = $3", [ctx.p.id, x, y])).rowCount);
+}
+async function startGateFight(ctx: Ctx, town: TownId) {
+  const g = GATE_GUARDS[town];
+  if (!g) return;
+  const m: Monster = { ...g };
+  await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'gate',$2)", [ctx.p.id, m]);
+  ctx.events.push({ kind: "gate_ambush", monster: m, town: TOWN_TILES[town as keyof typeof TOWN_TILES].name,
+    note: "the road to the gate runs under a broken bridge, and something lives there; it won't let anyone through who hasn't beaten it, and there's no running" });
+  ctx.hint = "A set piece: they've reached the road below the town's walls, and Old Grudge, the troll under the broken bridge, comes up out of the gully. No running, no way round. Make it big, then the fight menu without (R)un.";
+}
 
 /** What's in a town away from Brightwater, and who's about: its fixed characters, the townsfolk who live there, players seen lately. */
 async function townView(ctx: Ctx, id: TownId) {
