@@ -8,6 +8,7 @@ import {
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
+import { AUCTION, TOWNS, bidCeiling, houseCut, listingFee, nextBid, priceProblem, worth, type ListSlot, type Town } from "./auctions.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
 import { weatherAt } from "./weather.js";
 import { bardFor, pickGift } from "./bards.js";
@@ -601,6 +602,7 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
     case "goal": return String(n.detail.line);
     case "respec": return String(n.detail.line);
     case "quest_news": return String(n.detail.line);
+    case "auction_sale": return `${n.actor} sold ${n.detail.item} at auction to ${n.target} for ${n.detail.price} gold.`;
     case "mined_out": return `${n.detail.place} was mined out today; ${n.actor} took the last of it.`;
     case "crafted": return `Odile made ${n.actor} ${aOrAn(String(n.detail.item))}.`;
     case "loot": return `${n.actor} pried ${aOrAn(String(n.detail.item))} off a dead ${n.detail.monster}.`;
@@ -1732,7 +1734,7 @@ api.post("/talk", async (c) => {
       if (s && !available(s)) { ctx.events.push({ kind: "not_around", name: who.name, hours: s.hours ?? null, days: s.days ?? null }); return; }
       const bardNames = ["Fennick Reed", "Dunstan the Unfinished", "Corwin Lark", "Wren"];
       if (bardNames.includes(who.name) && bardFor(ctx.day).name !== who.name) { ctx.events.push({ kind: "not_around", name: who.name, where: "not playing tonight" }); return; }
-      where = who.name === "Odile" ? "her workshop" : who.name === "Mother Quill" ? "the library" : who.name === "Prior Hale" ? "the chapel" : s ? s.where : "the tavern";
+      where = who.name === "Odile" ? "her workshop" : who.name === "Mother Quill" ? "the library" : who.name === "Prior Hale" ? "the chapel" : who.name === "Cass Marrow" ? "the auction house" : s ? s.where : "the tavern";
     }
 
     const talked = (ctx.t.talked ?? []) as string[];
@@ -2102,6 +2104,234 @@ api.get("/mail/peek", async (c) => {
   if (!r.rowCount) return c.json({ error: "unauthorized" }, 401);
   const row = r.rows[0];
   return c.json({ unread: Number(row.unread), latest: row.latest ? Number(row.latest) : 0, from: (row.senders ?? []).filter(Boolean).slice(0, 5), news: Number(row.news) });
+});
+
+// ---------- the auction house ----------
+
+interface ARow {
+  id: string; town: string; seller_id: string | null; slot: ListSlot; item_id: number; qty: number; min_bid: number; buy_now: number | null;
+  high_bid: number | null; high_bidder: string | null; status: string; listed_day: string; ends_day: string; collected: boolean;
+  seller: string | null; seller_role: string | null; bidder: string | null;
+}
+const A_SELECT = `select a.id::text, a.town, a.seller_id, a.slot, a.item_id, a.qty, a.min_bid, a.buy_now, a.high_bid, a.high_bidder, a.status,
+  a.listed_day::text, a.ends_day::text, a.collected, s.name as seller, s.role as seller_role, b.name as bidder
+  from auctions a left join players s on s.id = a.seller_id left join players b on b.id = a.high_bidder`;
+
+const lotName = (r: { slot: ListSlot; item_id: number; qty: number }) => { const n = worth(r.slot, r.item_id).name; return r.qty > 1 ? `${r.qty} × ${n}${r.slot === "gem" ? "s" : ""}` : n; };
+function lotStats(slot: ListSlot, id: number, cls: Player["class"]) {
+  if (slot === "weapon") return { power: weapon(id).str, ...(casts(cls) ? { for_you: `Scroll of ${weaponName(cls, id)}` } : {}) };
+  if (slot === "armor") return { def: armor(id).def };
+  if (slot === "trinket") return { bonus: bonusText(trinket(id), attributeName(cls)) };
+  return {};
+}
+function listingView(ctx: Ctx, r: ARow) {
+  const w = worth(r.slot, r.item_id);
+  return {
+    id: Number(r.id), item: lotName(r), slot: r.slot, tier: r.item_id, ...lotStats(r.slot, r.item_id, ctx.p.class), worth: w.value * r.qty,
+    town: TOWNS[r.town as Town] ?? r.town, seller: r.seller ?? "the house",
+    min_bid: r.min_bid, ...(r.buy_now ? { buy_now: r.buy_now } : {}), high_bid: r.high_bid, next_bid: nextBid(r.min_bid, r.high_bid),
+    closes_after: r.ends_day, days_left: Math.max(0, daysBetween(ctx.day, r.ends_day)),
+    ...(r.seller_id === ctx.p.id ? { yours: true } : {}), ...(r.high_bidder === ctx.p.id ? { you_lead: true } : {}),
+  };
+}
+
+/** Take gold for a bid or purchase: from the bank first, then the purse. False if they can't cover it. */
+async function payFrom(ctx: Ctx, amount: number): Promise<boolean> {
+  if (ctx.p.bank + ctx.p.gold < amount) return false;
+  const fromBank = Math.min(ctx.p.bank, amount);
+  await savePlayer(ctx, { bank: ctx.p.bank - fromBank, gold: ctx.p.gold - (amount - fromBank) });
+  return true;
+}
+async function mail(c: Client, playerId: string, event: Record<string, unknown>) {
+  await c.query("insert into mailbox (player_id, event) values ($1, $2)", [playerId, event]);
+}
+/** Give back an outbid player's gold, into their bank, with a note. */
+async function refundBid(c: Client, r: ARow, why: "outbid" | "bought_out") {
+  if (!r.high_bidder || !r.high_bid) return;
+  await c.query("update players set bank = bank + $2 where id = $1", [r.high_bidder, r.high_bid]);
+  await mail(c, r.high_bidder, { kind: "auction_outbid", item: lotName(r), refund: r.high_bid, why });
+}
+/** Pay a seller for a sale, less the house's cut. Characters and the house itself aren't paid: that gold leaves the realm. */
+async function paySeller(c: Client, r: ARow, price: number, day: string) {
+  if (!r.seller_id || r.seller_role === "npc") return;
+  const cut = houseCut(price);
+  await c.query("update players set bank = bank + $2 where id = $1", [r.seller_id, price - cut]);
+  await mail(c, r.seller_id, { kind: "auction_sold", item: lotName(r), price, house_cut: cut, paid_to_bank: price - cut, buyer: r.bidder });
+  if (price >= 500) await c.query("insert into news (day, kind, actor, target, detail) select $1, 'auction_sale', s.name, b.name, $4 from players s, players b where s.id = $2 and b.id = $3 and not s.is_test and not b.is_test",
+    [day, r.seller_id, r.high_bidder, { item: lotName(r), price }]);
+}
+
+/** Close listings whose time is up, and keep a few of the house's own lots on the board. Safe to call often. */
+export async function settleAuctions(c: Client, day: string): Promise<string[]> {
+  const out: string[] = [];
+  const due = (await c.query<ARow>(`${A_SELECT} where a.status = 'open' and a.ends_day <= $1 for update of a skip locked`, [day])).rows;
+  for (const r of due) {
+    if (r.high_bid && r.high_bidder) {
+      await c.query("update auctions set status = 'sold', settled_at = now() where id = $1", [r.id]);
+      await paySeller(c, r, r.high_bid, day);
+      await mail(c, r.high_bidder, { kind: "auction_won", item: lotName(r), price: r.high_bid, collect: "at the auction house on Market Row" });
+      out.push(`sold ${lotName(r)} for ${r.high_bid}`);
+    } else {
+      const npc = !r.seller_id || r.seller_role === "npc";
+      await c.query("update auctions set status = 'expired', settled_at = now(), collected = $2 where id = $1", [r.id, npc]);
+      if (!npc) await mail(c, r.seller_id!, { kind: "auction_unsold", item: lotName(r), collect: "at the auction house on Market Row" });
+      out.push(`unsold ${lotName(r)}`);
+    }
+  }
+  // The house's own lots: Odile's jewelry and Cass's ore and gems, priced a little under and over what they're worth.
+  const open = Number((await c.query<{ n: string }>(
+    "select count(*)::text as n from auctions a join players s on s.id = a.seller_id where a.status = 'open' and s.role = 'npc'")).rows[0].n);
+  const sellers = (await c.query<{ id: string; name: string }>("select id, name from players where name in ('Odile', 'Cass Marrow')")).rows;
+  const odile = sellers.find((s) => s.name === "Odile"), cass = sellers.find((s) => s.name === "Cass Marrow");
+  for (let k = open; k < AUCTION.houseStock && odile && cass; k++) {
+    const r = Math.random();
+    const lot: { seller: string; slot: ListSlot; item_id: number; qty: number } =
+      r < 0.45 ? { seller: odile.id, slot: "trinket", item_id: [1, 2, 3, 1, 2, 3, 4, 5, 6][Math.floor(Math.random() * 9)], qty: 1 }
+      : r < 0.8 ? { seller: cass.id, slot: "ore", item_id: Math.random() < 0.7 ? 0 : 1, qty: 1 + Math.floor(Math.random() * 3) }
+      : { seller: cass.id, slot: "gem", item_id: 0, qty: 1 + Math.floor(Math.random() * 2) };
+    const v = worth(lot.slot, lot.item_id).value * lot.qty;
+    const ends = new Date(day + "T00:00:00Z"); ends.setUTCDate(ends.getUTCDate() + 2);
+    await c.query(
+      "insert into auctions (seller_id, slot, item_id, qty, min_bid, buy_now, listed_day, ends_day) values ($1,$2,$3,$4,$5,$6,$7,$8)",
+      [lot.seller, lot.slot, lot.item_id, lot.qty, Math.max(1, Math.ceil(v * 0.6)), Math.ceil(v * 1.15), day, ends.toISOString().slice(0, 10)]);
+    out.push(`house listed ${lotName(lot)}`);
+  }
+  return out;
+}
+
+/** Hand over everything waiting for them at the house that fits in their bag. */
+async function collectLots(ctx: Ctx) {
+  const rows = (await ctx.c.query<ARow>(
+    `${A_SELECT} where not a.collected and ((a.status = 'sold' and a.high_bidder = $1) or (a.status in ('expired', 'cancelled') and a.seller_id = $1)) order by a.id for update of a`, [ctx.p.id])).rows;
+  const got: string[] = [], waiting: string[] = [];
+  let room = Bag.bag(ctx.p.bag_id).capacity - await Bag.used(ctx.c, ctx.p.id);
+  for (const r of rows) {
+    if (r.slot === "gem") {
+      await savePlayer(ctx, { gems: ctx.p.gems + r.qty });
+    } else {
+      const w = worth(r.slot, r.item_id).weight * r.qty;
+      if (w > room) { waiting.push(lotName(r)); continue; }
+      room -= w;
+      for (let i = 0; i < r.qty; i++) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, r.slot, r.item_id]);
+    }
+    await ctx.c.query("update auctions set collected = true where id = $1", [r.id]);
+    got.push(lotName(r));
+  }
+  return { got, waiting };
+}
+
+async function lotFor(ctx: Ctx, id: number): Promise<ARow> {
+  const r = (await ctx.c.query<ARow>(`${A_SELECT} where a.id = $1 for update of a`, [id])).rows[0];
+  if (!r) throw new GameError("no_such_lot", "there's no lot with that number");
+  return r;
+}
+const atTheHouse = (ctx: Ctx) => { requireAlive(ctx); requireInTown(ctx, "the auction house"); };
+
+/** The board: what's up for sale, your own lots and bids, and anything waiting for you. */
+api.get("/auction", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  atTheHouse(ctx);
+  await settleAuctions(ctx.c, ctx.day);
+  const slot = c.req.query("slot");
+  const board = (await ctx.c.query<ARow>(
+    `${A_SELECT} where a.status = 'open' and (s.is_test is not true or a.seller_id = $1) ${slot ? "and a.slot = $2" : ""} order by a.ends_day, a.id limit 30`,
+    slot ? [ctx.p.id, slot] : [ctx.p.id])).rows;
+  const mine = (await ctx.c.query<ARow>(`${A_SELECT} where a.seller_id = $1 and a.status = 'open' order by a.id`, [ctx.p.id])).rows;
+  const waiting = Number((await ctx.c.query<{ n: string }>(
+    "select count(*)::text as n from auctions where not collected and ((status = 'sold' and high_bidder = $1) or (status in ('expired','cancelled') and seller_id = $1))", [ctx.p.id])).rows[0].n);
+  ctx.events.push({
+    kind: "auction_house", keeper: "Cass Marrow", listings: board.map((r) => listingView(ctx, r)), your_lots: mine.map((r) => listingView(ctx, r)),
+    waiting_for_you: waiting, purse: ctx.p.gold, bank: ctx.p.bank,
+    rules: { days: `${AUCTION.minDays}-${AUCTION.maxDays}`, listing_fee: `${Math.round(AUCTION.feeShare * 100)}% of the minimum bid, at least ${AUCTION.feeMin} gold`, house_cut: `${Math.round(AUCTION.cut * 100)}% of the sale`, max_lots: AUCTION.maxOpen, bids_from: "bank first, then purse; outbid gold comes back to your bank" },
+  });
+})));
+
+api.post("/auction", async (c) => {
+  const body = z.discriminatedUnion("op", [
+    z.object({ op: z.literal("list"), id: z.number().int().optional(), gems: z.number().int().min(1).optional(), qty: z.number().int().min(1).max(10).optional(), min_bid: z.number().int().min(1), buy_now: z.number().int().min(1).optional(), days: z.number().int().optional() }),
+    z.object({ op: z.literal("bid"), lot: z.number().int(), amount: z.number().int().min(1).optional() }),
+    z.object({ op: z.literal("buy"), lot: z.number().int() }),
+    z.object({ op: z.literal("cancel"), lot: z.number().int() }),
+    z.object({ op: z.literal("collect") }),
+  ]).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    atTheHouse(ctx);
+    await requireNoEncounter(ctx);
+    await settleAuctions(ctx.c, ctx.day);
+
+    if (body.op === "collect") {
+      const { got, waiting } = await collectLots(ctx);
+      ctx.events.push({ kind: "auction_collected", got, ...(waiting.length ? { waiting, why: "no room in your bag" } : {}) });
+      return;
+    }
+
+    if (body.op === "list") {
+      if (ctx.p.role !== "player" && ctx.p.role !== "townsfolk") throw new GameError("no", "only players and townsfolk can sell here");
+      const open = Number((await ctx.c.query<{ n: string }>("select count(*)::text as n from auctions where seller_id = $1 and status = 'open'", [ctx.p.id])).rows[0].n);
+      if (open >= AUCTION.maxOpen) { ctx.events.push({ kind: "auction_refused", reason: `you already have ${AUCTION.maxOpen} lots up` }); return; }
+      const days = Math.max(AUCTION.minDays, Math.min(AUCTION.maxDays, body.days ?? 2));
+      let slot: ListSlot, itemId = 0, qty = 1, rows: number[] = [];
+      if (body.gems) {
+        if (ctx.p.gems < body.gems) { ctx.events.push({ kind: "auction_refused", reason: `you have ${ctx.p.gems} gems` }); return; }
+        slot = "gem"; qty = body.gems;
+      } else {
+        if (body.id === undefined) throw new GameError("what", "say which item (its bag id) or how many gems");
+        const row = await ownRow(ctx, body.id);
+        if (row.slot === "quest") { ctx.events.push({ kind: "auction_refused", reason: "Cass won't sell that; it isn't yours to sell" }); return; }
+        slot = row.slot; itemId = row.item_id;
+        qty = row.slot === "ore" ? body.qty ?? 1 : 1;
+        rows = (await Bag.contents(ctx.c, ctx.p.id)).filter((x) => x.slot === row.slot && x.item_id === row.item_id).map((x) => x.id).slice(0, qty);
+        if (rows.length < qty) { ctx.events.push({ kind: "auction_refused", reason: `you only have ${rows.length} of those` }); return; }
+      }
+      const problem = priceProblem(slot, itemId, qty, body.min_bid, body.buy_now ?? null);
+      if (problem) { ctx.events.push({ kind: "auction_refused", reason: problem }); return; }
+      const fee = listingFee(body.min_bid);
+      if (!(await payFrom(ctx, fee))) { ctx.events.push({ kind: "auction_refused", reason: `the listing fee is ${fee} gold` }); return; }
+      if (slot === "gem") await savePlayer(ctx, { gems: ctx.p.gems - qty });
+      else await ctx.c.query("delete from inventory where id = any($1::bigint[])", [rows]);
+      const ends = new Date(ctx.day + "T00:00:00Z"); ends.setUTCDate(ends.getUTCDate() + days);
+      const ins = await ctx.c.query<{ id: string }>(
+        "insert into auctions (seller_id, slot, item_id, qty, min_bid, buy_now, listed_day, ends_day) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id::text",
+        [ctx.p.id, slot, itemId, qty, body.min_bid, body.buy_now ?? null, ctx.day, ends.toISOString().slice(0, 10)]);
+      ctx.events.push({ kind: "auction_listed", lot: Number(ins.rows[0].id), item: lotName({ slot, item_id: itemId, qty }), min_bid: body.min_bid, buy_now: body.buy_now ?? null, fee, closes_after: ends.toISOString().slice(0, 10) });
+      await logEvent(ctx, "auction", { op: "list", slot, item_id: itemId, qty, min_bid: body.min_bid, buy_now: body.buy_now ?? null });
+      return;
+    }
+
+    const r = await lotFor(ctx, body.lot);
+    if (r.status !== "open") { ctx.events.push({ kind: "auction_refused", reason: "that lot has closed" }); return; }
+
+    if (body.op === "cancel") {
+      if (r.seller_id !== ctx.p.id) throw new GameError("not_yours", "that isn't your lot");
+      if (r.high_bid) { ctx.events.push({ kind: "auction_refused", reason: "someone has already bid; it has to run its course" }); return; }
+      await ctx.c.query("update auctions set status = 'cancelled', settled_at = now() where id = $1", [r.id]);
+      const { got, waiting } = await collectLots(ctx);
+      ctx.events.push({ kind: "auction_cancelled", item: lotName(r), got, ...(waiting.length ? { waiting } : {}), note: "the listing fee isn't refunded" });
+      return;
+    }
+
+    if (r.seller_id === ctx.p.id) { ctx.events.push({ kind: "auction_refused", reason: "you can't bid on your own lot" }); return; }
+    const price = body.op === "buy" ? r.buy_now : Math.max(body.amount ?? 0, nextBid(r.min_bid, r.high_bid));
+    if (price === null) { ctx.events.push({ kind: "auction_refused", reason: "that lot has no buy-now price; bid instead" }); return; }
+    const buyingOut = body.op === "buy" || (r.buy_now !== null && price >= r.buy_now);
+    const final = buyingOut ? r.buy_now! : price;
+    if (!buyingOut && final > bidCeiling(r.slot, r.item_id, r.qty)) { ctx.events.push({ kind: "auction_refused", reason: `Cass won't take a bid over ${bidCeiling(r.slot, r.item_id, r.qty)} gold for that` }); return; }
+    // Raising your own bid costs only the difference.
+    const owed = r.high_bidder === ctx.p.id ? final - (r.high_bid ?? 0) : final;
+    if (!(await payFrom(ctx, owed))) { ctx.events.push({ kind: "auction_refused", reason: `that takes ${owed} gold and you have ${ctx.p.gold + ctx.p.bank} between purse and bank` }); return; }
+    if (r.high_bidder && r.high_bidder !== ctx.p.id) await refundBid(ctx.c, r, buyingOut ? "bought_out" : "outbid");
+
+    if (buyingOut) {
+      await ctx.c.query("update auctions set status = 'sold', high_bid = $2, high_bidder = $3, settled_at = now() where id = $1", [r.id, final, ctx.p.id]);
+      await paySeller(ctx.c, { ...r, high_bidder: ctx.p.id, bidder: ctx.p.name }, final, ctx.day);
+      const { got, waiting } = await collectLots(ctx);
+      ctx.events.push({ kind: "auction_bought", item: lotName(r), price: final, from: r.seller ?? "the house", got, ...(waiting.length ? { waiting, why: "no room in your bag; collect it later" } : {}) });
+      await logEvent(ctx, "auction", { op: "buy", slot: r.slot, item_id: r.item_id, qty: r.qty, price: final });
+    } else {
+      await ctx.c.query("update auctions set high_bid = $2, high_bidder = $3 where id = $1", [r.id, final, ctx.p.id]);
+      ctx.events.push({ kind: "auction_bid", lot: Number(r.id), item: lotName(r), bid: final, closes_after: r.ends_day, note: "held by the house until it closes; if you're outbid, it comes back to your bank" });
+      await logEvent(ctx, "auction", { op: "bid", slot: r.slot, item_id: r.item_id, qty: r.qty, bid: final });
+    }
+  }));
 });
 
 // ---------- pvp ----------

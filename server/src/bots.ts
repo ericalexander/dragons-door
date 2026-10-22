@@ -11,11 +11,11 @@
  */
 import { Hono } from "hono";
 import { timingSafeEqual } from "node:crypto";
-import { api } from "./api.js";
+import { api, settleAuctions } from "./api.js";
 import { INTERNAL_TOKEN } from "./request.js";
 import { PLAN, sessionTime, type Personality } from "./schedule.js";
 export { sessionTime } from "./schedule.js";
-import { pool } from "./db.js";
+import { pool, tx } from "./db.js";
 import { catchUp, writeEntry } from "./chronicle.js";
 import { answerLetters } from "./letters.js";
 import { roll } from "./combat.js";
@@ -409,6 +409,36 @@ async function shop(b: Bot) {
       if (!isErr(r) && kinds(r).includes("bought")) b.log.push(`bought ${best.name}`);
     }
   }
+  await auctionBids(b);
+}
+
+/** Sir Pomfrey at the auction house: collects what he won, then bids on anything finer than what he wears, if he can spare it. */
+async function auctionBids(b: Bot) {
+  await b.post("/auction", { op: "collect" });
+  const board = await b.get("/auction");
+  if (isErr(board)) return;
+  const ev = board.events.find((e) => e.kind === "auction_house") as unknown as { listings: { id: number; slot: string; tier: number; item: string; next_bid: number; buy_now?: number; yours?: boolean; you_lead?: boolean }[]; purse: number; bank: number } | undefined;
+  if (!ev) return;
+  const cats: Record<string, number> = {};
+  for (const kind of ["weapon", "armor"] as const) {
+    const cat = await b.get(`/shop?kind=${kind}`);
+    if (!isErr(cat)) cats[kind] = (cat.events.find((e) => e.kind === "catalog") as unknown as { owned: number }).owned;
+  }
+  const spare = Math.floor((ev.purse + ev.bank) * 0.6);
+  const want = ev.listings.filter((l) => !l.yours && !l.you_lead && cats[l.slot] !== undefined && l.tier > cats[l.slot] && l.next_bid <= spare)
+    .sort((a, z) => z.tier - a.tier)[0];
+  if (!want) return;
+  const r = await b.post("/auction", { op: "bid", lot: want.id });
+  if (!isErr(r) && kinds(r).some((k) => k === "auction_bid" || k === "auction_bought")) b.log.push(`bid ${want.next_bid} on ${want.item} at auction`);
+}
+
+/** Vesper fences a gem now and then. Nobody asks where it came from. */
+async function fence(b: Bot) {
+  const s = await b.get("/status");
+  if (isErr(s) || !s.state.alive || (s.state.gems ?? 0) < 2) return;
+  await b.post("/auction", { op: "collect" });
+  const r = await b.post("/auction", { op: "list", gems: 1, min_bid: 70, buy_now: 120, days: 2 });
+  if (!isErr(r) && kinds(r).includes("auction_listed")) b.log.push("put a gem up at auction");
 }
 
 async function boast(b: Bot) {
@@ -559,6 +589,7 @@ async function tavernTalk(b: Bot, row: Row, mind: Mind, f: Facts) {
     b.log.push("talked about their goal");
     return;
   }
+  if (row.personality === "raider" && Math.random() < 0.3) await fence(b);
   if (own) return own(b);
   if (row.personality === "drunk") { await say(b, pick(["Anyone seen my boots?", "Violet says I've had enough. Violet is not the boss of me.", "Another round. For me. I'm the round."])); return; }
   b.log.push("kept to themselves in the tavern");
@@ -866,6 +897,9 @@ bots.on(["GET", "POST"], "/bots/run", async (c) => {
   // A fake clock is for local testing only.
   const fake = (process.env.DRAGONS_DOOR_ALLOW_FAKE_CLOCK ?? process.env.LORD_ALLOW_FAKE_CLOCK) ? c.req.query("now") : undefined;
   const when = fake ? new Date(fake) : new Date();
+  // Close any auctions whose time is up, even if nobody visits the house today.
+  let auctions: string[] = [];
+  try { auctions = await tx(async (cl) => settleAuctions(cl, realmDay((await realmSettings(cl)).resetHourUtc, when))); } catch (e) { auctions = [`error: ${(e as Error).message}`]; }
   const out = await runBots(when);
   // Yesterday's chronicle, once the day is over. Never lets a failure stop the townsfolk.
   let chronicle: string[] = [];
@@ -873,5 +907,5 @@ bots.on(["GET", "POST"], "/bots/run", async (c) => {
   // Townsfolk and characters answer their mail.
   let letters: string[] = [];
   try { letters = await answerLetters(when); } catch (e) { letters = [`error: ${(e as Error).message}`]; }
-  return c.json({ ...out, chronicle, letters });
+  return c.json({ ...out, auctions, chronicle, letters });
 });

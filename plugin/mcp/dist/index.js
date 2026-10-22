@@ -21957,6 +21957,28 @@ server.tool(
   async ({ op, id, count }) => text(await call("POST", "/v1/workshop", op === "craft" ? { op, id } : op === "sell_gems" ? { op, ...count ? { count } : {} } : { op }))
 );
 server.tool(
+  "auction",
+  "Cass Marrow's auction house on Market Row: the board of lots for sale (optionally one slot: weapon, armor, ore, trinket, gem), your own lots, what's waiting for you to collect, and the rules.",
+  { slot: external_exports.enum(["weapon", "armor", "ore", "trinket", "gem"]).optional() },
+  async ({ slot }) => text(await call("GET", `/v1/auction${slot ? `?slot=${slot}` : ""}`))
+);
+server.tool(
+  "auction_act",
+  "At the auction house. bid: on a lot (amount optional; defaults to the next bid). buy: take a lot at its buy-now price. list: put up a bag item by id (ore may take qty) or some gems, with min_bid, optional buy_now and days (1-3). cancel: one of your lots with no bids. collect: pick up what you won or what didn't sell.",
+  {
+    op: external_exports.enum(["bid", "buy", "list", "cancel", "collect"]),
+    lot: external_exports.number().int().optional(),
+    amount: external_exports.number().int().positive().optional(),
+    id: external_exports.number().int().optional(),
+    qty: external_exports.number().int().positive().optional(),
+    gems: external_exports.number().int().positive().optional(),
+    min_bid: external_exports.number().int().positive().optional(),
+    buy_now: external_exports.number().int().positive().optional(),
+    days: external_exports.number().int().min(1).max(3).optional()
+  },
+  async (a) => text(await call("POST", "/v1/auction", Object.fromEntries(Object.entries(a).filter(([, v]) => v !== void 0))))
+);
+server.tool(
   "fight",
   "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: their big spell, named for the spell they know (state.special), which costs more mana). staff: a caster's free, weaker swing. heal: a priest's prayer, mana for health (the monster still swings). run: try to flee.",
   { action: external_exports.enum(["attack", "special", "staff", "heal", "run"]) },

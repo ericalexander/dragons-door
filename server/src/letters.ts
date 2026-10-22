@@ -42,6 +42,7 @@ function characterPersona(name: string): string | null {
   if (s) return `${s.name}, ${s.description}. ${s.pronouns}.`;
   if (name === "Prior Hale") return "Prior Hale, who keeps the chapel and teaches holy spells to priests; a big, soft-spoken former soldier with a broken nose and enormous patience, who blesses everyone whether they ask or not. He/him.";
   if (name === "Mother Quill") return "Mother Quill, who keeps the library and teaches spells to those with the gift; very old, ink to the elbows, patient, dry, quietly fierce about books being returned. She/her.";
+  if (name === "Cass Marrow") return "Cass Marrow, who runs the auction house on Market Row; quick, sharp-eyed and cheerful, talks prices the way other people talk weather, knows what everything in town is worth and who wants it. She/her.";
   if (name === "Odile") return "Odile, the gemcutter, with a jeweler's loupe in one eye and burn scars on both hands; few words, all exact; blunt about bad ore, quietly delighted by a good gem. She/her.";
   const b = BARDS.find((x) => x.name === name);
   if (b) return `${b.name}, a bard who plays the tavern some nights: ${b.style}. Writes a little like they sing.`;

@@ -300,7 +300,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     if (p.pending_event && p.pending_event.x === p.pos_x && p.pending_event.y === p.pos_y) w.unshift("event");
     return w;
   }
-  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop"];
+  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop", "auction"];
   // Everyone can visit the library and the chapel; only their own class can learn there.
   a.push("library", "chapel");
   if (p.ground) a.unshift("take", "equip ground");

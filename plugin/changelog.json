@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.13.0",
+    "lore": "There's a new door open on Market Row, and a woman behind a counter who can tell you what your sword is worth before you've finished drawing it. Cass Marrow runs the auction house now. Bring her something worth selling, or bring gold and see what other people have let go of.",
+    "plain": "The Auction House is open on Market Row: list gear, ore, jewelry or gems for 1 to 3 days with a minimum bid and an optional buy-now price, or bid on what others are selling. Lots close at the daily reset; collect what you win at the house."
+  },
+  {
     "version": "0.12.0",
     "lore": "The town has a name, it turns out: Brightwater. People here have been carrying things around for a long time, and some of them might tell you, a little at a time, if you keep coming back. Others wrote it down and left it lying about. Keep your eyes open.",
     "plain": "Talk to the same townsfolk on different days and they may open up about their past. Old journals and pages can turn up in the wild, in caves and around town; ask the narrator for your journal to reread them. The masters have new names."
