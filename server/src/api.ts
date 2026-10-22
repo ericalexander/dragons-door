@@ -17,7 +17,8 @@ import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk
 import { DIRS, LEGEND, renderMap, tileAt, type Dir, type Tile } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
-import { QUESTS, questById, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
+import { loadLore, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE } from "./lore.js";
+import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
@@ -50,6 +51,7 @@ interface Ctx {
 async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Promise<void>, opts: { quiet?: boolean; weather?: boolean } = {}): Promise<Envelope> {
   const key = authHeader?.replace(/^Bearer\s+/i, "").trim();
   if (!key) throw new GameError("unauthorized", "missing api key", 401);
+  await loadLore();
   const info = current();
   // Off unless MIN_PLUGIN_VERSION is set: only raised for releases that old plugins can't play against.
   const min = process.env.MIN_PLUGIN_VERSION;
@@ -598,6 +600,7 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
     }
     case "goal": return String(n.detail.line);
     case "respec": return String(n.detail.line);
+    case "quest_news": return String(n.detail.line);
     case "mined_out": return `${n.detail.place} was mined out today; ${n.actor} took the last of it.`;
     case "crafted": return `Odile made ${n.actor} ${aOrAn(String(n.detail.item))}.`;
     case "loot": return `${n.actor} pried ${aOrAn(String(n.detail.item))} off a dead ${n.detail.monster}.`;
@@ -851,10 +854,11 @@ api.post("/train", async (c) => c.json(await withPlayer(c.req.header("authorizat
   if (ctx.p.exp < next) { ctx.events.push({ kind: "not_ready", exp: ctx.p.exp, needed: next }); return; }
   await leaveInn(ctx);
   const ms = master(ctx.p.level)!;
-  const m: Monster = { name: ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 };
+  const known = lore().masters[ms.level];
+  const m: Monster = { name: known?.name || ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 };
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'master',$2)", [ctx.p.id, m]);
-  ctx.events.push({ kind: "master_challenge", master: m, level: ctx.p.level + 1 });
-  ctx.hint = "The master is testing them. Losing to a master is not fatal in the fiction; the server handles it.";
+  ctx.events.push({ kind: "master_challenge", master: m, about: known?.about ?? null, level: ctx.p.level + 1 });
+  ctx.hint = "The master is testing them: introduce the master with `about`, in a sentence. Losing to a master is not fatal in the fiction; the server handles it.";
 })));
 
 api.post("/dragon", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
@@ -988,6 +992,23 @@ async function maybeEvent(ctx: Ctx, x: number, y: number, chance = EVENT_CHANCE,
   ctx.hint = "Something besides a fight. Describe it in two or three sentences from `description`, then offer its choices numbered (1), (2)… with their labels (and any gold cost), plus the usual Wild menu below. Call `event` with the choice id only when they pick one; anything else they do walks away from it.";
 }
 
+/** Now and then an old journal, a letter or a page turns up: one a day at most, each found once. The words come from the lore. */
+async function maybeJournal(ctx: Ctx, where: "wild" | "cave" | "town", ring = 0) {
+  if (ctx.p.role !== "player") return;
+  if (Math.random() >= JOURNAL_CHANCE[where] * JOURNAL_CHANCE.scale) return;
+  const pool = lore().journals.filter((j) => j.where === where && j.min_ring <= ring);
+  if (!pool.length) return;
+  const mine = (await ctx.c.query<{ key: string; day: string }>("select key, day::text from player_lore where player_id = $1 and key like 'journal:%'", [ctx.p.id])).rows;
+  if (mine.some((r) => r.day === ctx.day)) return;
+  const have = new Set(mine.map((r) => r.key));
+  const left = pool.filter((j) => !have.has(j.key)).sort((a, z) => a.min_ring - z.min_ring || Math.random() - 0.5);
+  const j = left[0];
+  if (!j) return;
+  await ctx.c.query("insert into player_lore (player_id, key, day, how) values ($1, $2, $3, $4) on conflict do nothing", [ctx.p.id, j.key, ctx.day, where]);
+  ctx.events.push({ kind: "journal_found", title: j.title, author: j.author, text: j.text, where });
+  await logEvent(ctx, "journal", { key: j.key, where });
+}
+
 /** Whatever's lying on the ground stays where it is when you walk off. */
 async function leaveGround(ctx: Ctx) {
   if (!ctx.p.ground) return;
@@ -1001,7 +1022,7 @@ async function exploredSet(ctx: Ctx): Promise<Set<string>> {
 }
 
 function describeTile(x: number, y: number, explored: Set<string>) {
-  if (x === 0 && y === 0) return { x, y, name: "the town", terrain: "town", level: 0, poi: null, explored: true };
+  if (x === 0 && y === 0) return { x, y, name: "Brightwater", terrain: "town", level: 0, poi: null, explored: true };
   const t = tileAt(x, y);
   return explored.has(`${x},${y}`) ? { x, y, name: t.name, terrain: t.terrain, level: t.level, poi: t.poi, explored: true } : { x, y, explored: false };
 }
@@ -1097,6 +1118,7 @@ api.post("/move", async (c) => {
       ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
     await questTriggers(ctx, { arrive: { x, y } });
     if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, x, y);
+    if (!ctx.events.some((e) => e.kind === "quest" || e.kind === "wild_event")) await maybeJournal(ctx, "wild", t.ring);
   }));
 });
 
@@ -1207,12 +1229,16 @@ async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]
       const far = Math.max(1, ...[...ex].map((k) => { const [a, b] = k.split(",").map(Number); return Math.max(Math.abs(a), Math.abs(b)); }));
       const ring = Math.max(1, far + fx.place_target.near + Math.floor(Math.random() * (fx.place_target.far - fx.place_target.near + 1)));
       // A spot on that ring, not in town and not too dangerous for them.
+      // A quest can ask for a kind of land or a side of town; it gets them when there's such a spot on the ring.
+      const want = fx.place_target;
+      const sides = ["north", "east", "south", "west"];
+      const score = (t: Tile) => Math.abs(t.level - ctx.p.level) + (want.terrain && t.terrain !== want.terrain ? 10 : 0);
       let best: Tile | null = null;
-      for (let k = 0; k < 40; k++) {
-        const side = Math.floor(Math.random() * 4), off = Math.floor(Math.random() * (2 * ring + 1)) - ring;
+      for (let k = 0; k < 60; k++) {
+        const side = want.side ? sides.indexOf(want.side) : Math.floor(Math.random() * 4), off = Math.floor(Math.random() * (2 * ring + 1)) - ring;
         const [x, y] = side === 0 ? [off, -ring] : side === 1 ? [ring, off] : side === 2 ? [off, ring] : [-ring, off];
         const t = tileAt(x, y);
-        if (t.level <= ctx.p.level + 1 && (!best || Math.abs(t.level - ctx.p.level) < Math.abs(best.level - ctx.p.level))) best = t;
+        if (t.level <= ctx.p.level + 1 && (!best || score(t) < score(best))) best = t;
       }
       best ??= tileAt(ring, 0);
       row.data.target = { x: best.x, y: best.y };
@@ -1290,11 +1316,32 @@ async function expireQuests(ctx: Ctx) {
 
 /** Selling or dropping a quest's item ends that quest, quietly. */
 async function questItemGone(ctx: Ctx, idx: number, how: string) {
-  const q = QUESTS[idx];
+  const q = questByIndex(idx);
   if (!q) return;
   const row = (await activeQuests(ctx)).find((r) => r.quest === q.id);
   if (row) await endQuest(ctx, q, row, how, "abandoned");
 }
+
+/** Everything they've learned of the realm: pieces of people's pasts they've been told, and journals they've found. */
+api.get("/journal", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  const rows = (await ctx.c.query<{ key: string; day: string; how: string | null }>(
+    "select key, day::text, how from player_lore where player_id = $1 order by day, key", [ctx.p.id])).rows;
+  const L = lore();
+  const people: Record<string, string[]> = {};
+  for (const r of rows) {
+    const m = /^person:(.+):(\d+)$/.exec(r.key);
+    if (!m) continue;
+    const text = L.people[m[1]]?.pieces[Number(m[2])];
+    if (text) (people[m[1]] ??= [])[Number(m[2])] = text;
+  }
+  const journals = rows.filter((r) => r.key.startsWith("journal:")).map((r) => {
+    const j = L.journals.find((x) => x.key === r.key);
+    return j ? { title: j.title, author: j.author, text: j.text, found: r.day, where: r.how } : null;
+  }).filter(Boolean);
+  ctx.events.push({ kind: "journal", pasts: Object.entries(people).map(([name, pieces]) => ({ name, told: pieces.filter(Boolean) })), journals,
+    ...(rows.length ? {} : { empty: true }) });
+  ctx.hint = "Show what they've learned as their own notebook: people first (a few lines each, in your words), then the journals they've found, quoted exactly under their titles. Nothing beyond what's here.";
+}, { quiet: true })));
 
 /** Answer the choice a quest is waiting on. */
 api.post("/quest", async (c) => {
@@ -1312,6 +1359,7 @@ api.post("/quest", async (c) => {
       if (cost) await savePlayer(ctx, { gold: ctx.p.gold - cost });
       const { got, monster } = await questEffects(ctx, q, row, ch.effects);
       ctx.events.push({ kind: "quest_choice", quest: q.id, title: q.title, choice: ch.id, label: ch.label, ...(cost ? { paid: cost } : {}), got });
+      if (ch.news) await post(ctx, "quest_news", ctx.p.name, null, { line: ch.news.replaceAll("{name}", ctx.p.name) });
       if (monster !== null) {
         const m = pickMonster(ctx.p.level + monster);
         await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
@@ -1466,6 +1514,7 @@ api.post("/mine", async (c) => c.json(await withPlayer(c.req.header("authorizati
   if (r.kind === "nothing") {
     ctx.events.push({ kind: "mined", found: null, depth, finds_left_today: left.yours, swings_left: SWINGS_PER_DAY - ctx.t.swings });
     await logEvent(ctx, "mine", { x: t.x, y: t.y, depth, found: "nothing" });
+    await maybeJournal(ctx, "cave", t.ring);
     return;
   }
   if (r.kind === "gem") {
@@ -1603,7 +1652,9 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
     players_about: people.rows,
     elsewhere,
     visitor: v ? { name: v.name, description: v.description, talked_today: ctx.t.visitor_talked } : null,
+    ...(lore().world ? { realm: lore().world } : {}),
   });
+  await maybeJournal(ctx, "town");
 }, { weather: true })));
 
 /** Facts behind a rumor, straight from the realm. Null when there's nothing to tell. */
@@ -1706,6 +1757,22 @@ api.post("/talk", async (c) => {
     }
 
     const mind = who.mind ?? {};
+    // A piece of their past, now and then: the next one in order, at most one a day from each person.
+    // Nobody tells their secrets to someone they hold a grudge against.
+    let past: { piece: string; told: string; you_already_know?: string[] } | null = null;
+    const pieces = lore().people[who.name]?.pieces ?? [];
+    let heardPieces = 0;
+    if (pieces.length) {
+      const h = await heardOf(ctx.c, ctx.p.id, who.name, ctx.day);
+      heardPieces = Math.min(h.n, pieces.length);
+      const sore = mind.grudge?.name.toLowerCase() === ctx.p.name.toLowerCase();
+      if (!again && !sore && heardPieces < pieces.length && !h.today && Math.random() < PAST_CHANCE) {
+        await ctx.c.query("insert into player_lore (player_id, key, day, how) values ($1, $2, $3, 'talk') on conflict do nothing", [ctx.p.id, personKey(who.name, heardPieces), ctx.day]);
+        past = { piece: PIECE_NAMES[heardPieces] ?? "more", told: pieces[heardPieces], ...(heardPieces ? { you_already_know: pieces.slice(0, heardPieces) } : {}) };
+        heardPieces++;
+        await logEvent(ctx, "past", { from: who.name, piece: heardPieces });
+      }
+    }
     ctx.events.push({
       kind: "talk", name: who.name, where, again,
       ...(who.role === "townsfolk" ? {
@@ -1716,13 +1783,17 @@ api.post("/talk", async (c) => {
         ...(mind.done?.[0] ? { last_achievement: mind.done[0].line } : {}),
       } : { character: true }),
       ...(gossip ? { gossip } : {}),
+      ...(past ? { past } : heardPieces ? { you_know_of_their_past: pieces.slice(0, heardPieces) } : {}),
     });
-    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${again ? " You've already talked today; keep it brief." : ""}`;
+    const pastHint = !past ? "" : past.piece === "secret"
+      ? " They also tell you their secret (past.told), in their own words: it costs them something, they lower their voice, and it's plainly not for repeating."
+      : ` Somewhere in it they let you in on a piece of their past (past.told), in their own words, only as much as fits the moment.`;
+    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${again ? " You've already talked today; keep it brief." : ""}`;
     const before = ctx.hint;
     // Talking can move a quest along, or a townsperson might ask a favor.
     await questTriggers(ctx, { talk: { name: who.name, townsfolk: who.role === "townsfolk" } });
     if (!ctx.events.some((e) => e.kind === "quest") && !again) {
-      for (const q of QUESTS) if (q.start_on?.talk.includes(who.name) && Math.random() < q.start_on.chance && await startQuest(ctx, q.id, false)) break;
+      for (const q of QUESTS) if (q.start_on?.talk.includes(who.name) && (!q.start_on.needs_secret || (pieces.length > 0 && heardPieces >= pieces.length)) && !past && Math.random() < q.start_on.chance && await startQuest(ctx, q.id, false)) break;
     }
     if (ctx.events.some((e) => e.kind === "quest")) ctx.hint = `${before} Then the quest moment, in the same conversation: tell its cue, and offer any choices numbered (1), (2)…; call \`quest\` with the choice id only when they pick.`;
   }));

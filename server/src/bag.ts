@@ -6,7 +6,7 @@ import type { Client } from "./db.js";
 import { GAME, armor, weapon, weaponName, casts, attributeName, type Player } from "./game.js";
 import { roll } from "./combat.js";
 import { ore, trinket, bonusText } from "./caves.js";
-import { QUESTS } from "./quests.js";
+import { questByIndex } from "./quests.js";
 
 /** Gear you can wear (weapon, armor, jewelry), plus ore, which you can only carry and sell. */
 export type Slot = "weapon" | "armor" | "ore" | "trinket" | "quest";
@@ -15,7 +15,7 @@ export type GearSlot = "weapon" | "armor";
 export function item(slot: Slot, id: number): { name: string; weight: number; cost: number } {
   if (slot === "ore") return ore(id);
   if (slot === "trinket") return trinket(id);
-  if (slot === "quest") { const q = QUESTS[id]; return { name: q?.item?.name ?? "something odd", weight: 1, cost: (q?.item?.sell ?? 0) * 2 }; }
+  if (slot === "quest") { const q = questByIndex(id); return { name: q?.item?.name ?? "something odd", weight: 1, cost: (q?.item?.sell ?? 0) * 2 }; }
   return slot === "weapon" ? weapon(id) : armor(id);
 }
 export function bag(id: number) {

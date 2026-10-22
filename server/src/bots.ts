@@ -24,6 +24,7 @@ import { realmDay, realmSettings } from "./day.js";
 import { GAME, type Envelope, type Event } from "./game.js";
 import { DIRS, tileAt, type Dir } from "./world.js";
 import { SUITORS, available } from "./romance.js";
+import { loadLore, lore } from "./lore.js";
 import { MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, canMake, caveLevel, trinket, type Trinket } from "./caves.js";
 import { awayToday, choose, doneLine, finished, fraction, goalLabel, goalTalk, pickGoal, type Activity, type Facts, type Mind } from "./minds.js";
 
@@ -543,6 +544,13 @@ async function tavernTalk(b: Bot, row: Row, mind: Mind, f: Facts) {
     b.log.push("muttered about a grudge");
     return;
   }
+  // Now and then the past comes up: never the secret, just what they'd say over a drink.
+  const mentions = lore().people[row.name]?.mentions;
+  if (mentions?.length && Math.random() < 0.15) {
+    await say(b, pick(mentions));
+    b.log.push("talked about the old days");
+    return;
+  }
   if (g && (!own || Math.random() < 0.5)) {
     const frac = fraction(g, f, mind);
     const stage = (frac >= 0.8 ? 2 : frac >= 0.5 ? 1 : 0) as 0 | 1 | 2;
@@ -808,6 +816,7 @@ async function ensureRoster(): Promise<Row[]> {
 }
 
 export async function runBots(now = new Date()): Promise<{ day: string; now: string; results: Record<string, string[]> }> {
+  await loadLore();
   const roster = await ensureRoster();
   const c = await pool.connect();
   let day: string;

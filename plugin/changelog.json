@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.12.0",
+    "lore": "The town has a name, it turns out: Brightwater. People here have been carrying things around for a long time, and some of them might tell you, a little at a time, if you keep coming back. Others wrote it down and left it lying about. Keep your eyes open.",
+    "plain": "Talk to the same townsfolk on different days and they may open up about their past. Old journals and pages can turn up in the wild, in caves and around town; ask the narrator for your journal to reread them. The masters have new names."
+  },
+  {
     "version": "0.11.1",
     "lore": "Fights in the fields are fought properly now. A mage throws her best spell at you, a priest stops to pray when it's going badly, and a thief will slip a blow if you let him. And nobody picks on anyone more than a level away anymore; the town has decided that wasn't fighting, it was collecting.",
     "plain": "When you challenge someone, both of you now use your specials, spells and healing (up to three big moves and one heal each), paid from your own day's supply. You can only challenge players within one level of you."

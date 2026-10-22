@@ -8,6 +8,7 @@
  * reward; the narrator gets a cue and tells it.
  *
  * Quests belong to the player who started them. Each one closes by a deadline if it's left hanging.
+ * Quests tied to the realm's lore aren't here: they live in the lore table and are added at load (lore.ts).
  */
 import type { Effect } from "./events.js";
 
@@ -21,10 +22,12 @@ export type QEffect =
   | { give_item: true }          // the quest item goes in the bag
   | { take_item: true }          // and comes out again
   | { trinket: number }          // a piece of jewelry, straight onto them or into the bag
-  | { place_target: { near: number; far: number } }  // pick a spot this many rings out (relative to their farthest)
+  | { place_target: { near: number; far: number; terrain?: string; side?: "north" | "east" | "south" | "west" } }  // pick a spot this many rings out (relative to their farthest), of a kind of land or on one side of town if it can
   | { mark_target: true };       // and mark it on their map
 
-export interface QChoice { id: string; label: string; cost?: number; effects: QEffect[]; then?: string; end?: string }
+export interface QChoice { id: string; label: string; cost?: number; effects: QEffect[]; then?: string; end?: string;
+  /** A line for the news when this choice is made. {name} is the player. */
+  news?: string }
 
 export interface QStep {
   id: string;
@@ -43,12 +46,14 @@ export interface QStep {
 
 export interface QuestDef {
   id: string;
+  /** Fixed number for its quest item in bags. Quests in code use their place in the list; quests from the lore set one (100 and up). */
+  index?: number;
   title: string;
   item?: { name: string; sell: number };
   /** Days before it closes on its own, from the start. */
   days: number;
   /** How it can start. Events start quests with a { quest } effect; a talk start offers it. */
-  start_on?: { talk: string[]; chance: number };
+  start_on?: { talk: string[]; chance: number; needs_secret?: boolean };
   steps: QStep[];
   /** What the narrator says if it runs out of time, by the step it was on (or "default"). */
   expired: Record<string, string>;
@@ -149,5 +154,6 @@ export const QUESTS: QuestDef[] = [
 ];
 
 export const questById = (id: string) => QUESTS.find((q) => q.id === id) ?? null;
-export const questIndex = (id: string) => QUESTS.findIndex((q) => q.id === id);
+export const questIndex = (id: string) => { const i = QUESTS.findIndex((q) => q.id === id); return QUESTS[i]?.index ?? i; };
+export const questByIndex = (n: number) => QUESTS.find((q, i) => (q.index ?? i) === n) ?? null;
 export const stepOf = (q: QuestDef, id: string) => q.steps.find((s) => s.id === id) ?? null;

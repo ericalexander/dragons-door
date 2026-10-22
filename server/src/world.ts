@@ -62,7 +62,7 @@ const CAVE_NAMES = ["Hollow", "Grotto", "Deeps", "Cave", "Warren"];
 
 export function tileAt(x: number, y: number): Tile {
   const ring = ringOf(x, y);
-  if (ring === 0) return { x, y, terrain: "town", ring, level: 0, name: "the town", poi: null };
+  if (ring === 0) return { x, y, terrain: "town", ring, level: 0, name: "Brightwater", poi: null };
   // Land rises with distance; noise makes it uneven so it never reads as neat circles.
   const height = 0.55 * noise(x, y, 5, "elev") + 0.45 * noise(x, y, 2, "rough");
   const e = height * 0.6 + Math.min(1, ring / 13) * 0.5;

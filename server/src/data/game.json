@@ -120,77 +120,77 @@
   "masters": [
     {
       "level": 1,
-      "name": "Halder",
+      "name": "the Watchman",
       "hp": 15,
       "str": 4,
       "def": 2
     },
     {
       "level": 2,
-      "name": "Barak",
+      "name": "the Yard-Keeper",
       "hp": 30,
       "str": 7,
       "def": 4
     },
     {
       "level": 3,
-      "name": "Aragorn",
+      "name": "the Old Soldier",
       "hp": 50,
       "str": 14,
       "def": 7
     },
     {
       "level": 4,
-      "name": "Olodrin",
+      "name": "the Mine Foreman",
       "hp": 80,
       "str": 21,
       "def": 10
     },
     {
       "level": 5,
-      "name": "Sandtiger",
+      "name": "the Duelist",
       "hp": 120,
       "str": 29,
       "def": 14
     },
     {
       "level": 6,
-      "name": "Sparhawk",
+      "name": "the Fen-Hunter",
       "hp": 170,
       "str": 40,
       "def": 18
     },
     {
       "level": 7,
-      "name": "Atsuko Sensei",
+      "name": "the Warrior-Monk",
       "hp": 240,
       "str": 55,
       "def": 23
     },
     {
       "level": 8,
-      "name": "Aladdin",
+      "name": "the Captain",
       "hp": 320,
       "str": 74,
       "def": 28
     },
     {
       "level": 9,
-      "name": "Prince Caspian",
+      "name": "the Sellsword",
       "hp": 420,
       "str": 96,
       "def": 34
     },
     {
       "level": 10,
-      "name": "Gandalf",
+      "name": "the Hermit",
       "hp": 550,
       "str": 125,
       "def": 40
     },
     {
       "level": 11,
-      "name": "Turgon",
+      "name": "the Last Master",
       "hp": 700,
       "str": 162,
       "def": 47

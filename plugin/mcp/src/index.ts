@@ -131,6 +131,10 @@ server.tool("quest", "Answer a choice a side quest is waiting on (state.quests s
   { choice: z.string().min(1).max(40) },
   async ({ choice }) => text(await call("POST", "/v1/quest", { choice })));
 
+server.tool("journal", "What the player has learned of the realm: pieces of people's pasts they've been told, and old journals and pages they've found. Read-only.",
+  {},
+  async () => text(await call("GET", "/v1/journal")));
+
 server.tool("event", "Answer something the player came upon in the wild (a wild_event): pick one of its choices by id or number. The server rolls what comes of it. Doing anything else walks away from it.",
   { choice: z.string().min(1).max(40) },
   async ({ choice }) => text(await call("POST", "/v1/event", { choice })));
