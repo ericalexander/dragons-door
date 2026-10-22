@@ -119,6 +119,8 @@ const MINE_FIGHTS = Number(process.env.MINE_FIGHTS ?? SWINGS_PER_DAY); // swings
 const MINED = { trinkets: 0, best: 0 };
 const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, number> = {}; const DEATH_L: Record<number, number> = {};
 type Cls = "warrior" | "thief" | "mage" | "priest";
+// SNAP=path: write what each character looked like (stats and gear) the moment they reached each level, for pvp.ts.
+const SNAPS: Record<string, unknown>[] | null = process.env.SNAP ? [] : null;
 
 function fresh(cls: Cls): Player {
   return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null, trinket_id: 0, pickaxe: false, cave_depth: null, pending_event: null, admin: false, is_test: false, banned_at: null, renamed_from: null, respec_at: null };
@@ -253,6 +255,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
           p.level++; p.max_hp += g.hp; p.hp = p.max_hp; p.str += g.str; p.def += g.def;
           LEVEL_DAY[p.level] = (LEVEL_DAY[p.level] ?? 0) + day; LEVEL_N[p.level] = (LEVEL_N[p.level] ?? 0) + 1;
           shop(p);
+          if (SNAPS) SNAPS.push({ class: p.class, level: p.level, max_hp: p.max_hp, str: p.str, def: p.def, weapon_id: p.weapon_id, armor_id: p.armor_id, trinket_id: p.trinket_id });
           continue;
         }
         if (res === "died") { DEATH_L[p.level] = (DEATH_L[p.level] ?? 0) + 1; deaths++; p.alive = false; p.gold = 0; p.exp -= Math.floor(p.exp * 0.1); break; }
@@ -332,3 +335,4 @@ if (process.env.BREAKDOWN) {
 if (MINE) console.log(`  jewelry made per run: ${(MINED.trinkets / trials).toFixed(1)}, best ever: ${trinket(MINED.best).name}`);
 console.log(`  drops per run: ${(DROPS.n / trials).toFixed(1)} (${(DROPS.equipped / trials).toFixed(1)} equipped)`);
 if (EXTRAS) console.log(`  married ${CHARM.married}/${trials} runs (avg day ${CHARM.married ? (CHARM.marriedDay / CHARM.married).toFixed(0) : "-"}); avg charm across days ${(CHARM.total / runs.reduce((a, r) => a + r.days, 0)).toFixed(0)}`);
+if (SNAPS) { (await import("node:fs")).writeFileSync(process.env.SNAP!, JSON.stringify(SNAPS)); console.log(`  wrote ${SNAPS.length} level snapshots to ${process.env.SNAP}`); }
