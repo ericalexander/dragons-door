@@ -61,10 +61,10 @@ const ADJECTIVES = ["Whispering", "Ashen", "Crooked", "Grey", "Weeping", "Old", 
 const CAVE_NAMES = ["Hollow", "Grotto", "Deeps", "Cave", "Warren"];
 
 /** Towns out in the world, by tile. Brightwater is the centre; the others sit where the land put them. */
-export const TOWN_TILES = { ironhold: { x: -4, y: -6, name: "Ironhold" } } as const;
+export const TOWN_TILES = { ironhold: { x: -4, y: -11, name: "Ironhold" } } as const;
 export type TownId = "brightwater" | keyof typeof TOWN_TILES;
 /** How far the gentle land around a town out in the world reaches. */
-export const POCKET = 3;
+export const POCKET = 4;
 /** Which town a tile is, if any. */
 export function townAt(x: number | null | undefined, y: number | null | undefined): TownId | null {
   if (x === null || x === undefined) return "brightwater";
@@ -86,12 +86,13 @@ export function tileAt(x: number, y: number): Tile {
   else if (e < 0.58) terrain = wet > 0.7 ? "marsh" : wet > 0.36 ? "forest" : "meadow";
   else if (e < 0.78) terrain = wet > 0.74 ? "marsh" : "hills";
   else terrain = "crags";
-  // Around a town out in the world there's a small patch of gentler land, for the people who start there.
-  // Beyond it the land is as wild as its distance from Brightwater, so the road between towns stays dangerous.
+  // Around a town out in the world there's a patch of gentle land for the people who start there, as easy
+  // ring for ring as Brightwater's (whatever the terrain). Beyond it the land is as wild as its distance from
+  // Brightwater, so the road between towns stays dangerous: the easiest crossing goes through level 6.
   let level = Math.max(1, Math.min(12, ring + LEVEL_MOD[terrain]));
   for (const t of Object.values(TOWN_TILES)) {
     const d = Math.max(Math.abs(x - t.x), Math.abs(y - t.y));
-    if (d <= POCKET) level = Math.min(level, Math.max(1, d + LEVEL_MOD[terrain]));
+    if (d <= POCKET) level = Math.min(level, Math.max(1, d));
   }
   const poi = (terrain === "hills" || terrain === "crags") && hashInt(22, "cave", x, y) === 0 ? "cave" : null;
   // Names belong to small regions of the same terrain, so neighbouring tiles share them.
