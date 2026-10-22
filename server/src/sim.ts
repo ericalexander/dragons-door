@@ -52,6 +52,8 @@ if (process.env.MAGE_SPD) GAME.classes.mage.specialsPerDay = Number(process.env.
   if (process.env.PMANA_BASE) pr.mana.base = Number(process.env.PMANA_BASE);
   if (process.env.PMANA_LVL) pr.mana.perLevel = Number(process.env.PMANA_LVL); }
 const HEALAT = Number(process.env.HEALAT ?? 0.4);
+// Praying outside a fight: OOC_PRAY=1 turns it on; OOC_COST multiplies the mana cost; OOC_MAX caps prayers a day.
+const OOC = { on: process.env.OOC_PRAY === "1", costMult: Number(process.env.OOC_COST ?? 1), max: Number(process.env.OOC_MAX ?? 99), prayers: 0 };
 // mana knobs: MANA_BASE, MANA_LVL, CAST, FIREBALL, STAFF; MANA=0 plays the old mage (dagger and specials)
 const MANA_ON = process.env.MANA !== "0";
 { const m = (GAME.classes.mage as { mana?: Record<string, number> }).mana!;
@@ -112,6 +114,7 @@ function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
 const EXPLORE = process.env.EXPLORE !== "0";
 
 const DROPS = { n: 0, equipped: 0 };
+const HEALER = { gold: 0 };
 // MINE=1: from MINE_FROM onward, spend MINE_FIGHTS fights a day mining, and have Odile make the best jewelry you can.
 const MINE = process.env.MINE === "1";
 const MINE_FROM = Number(process.env.MINE_FROM ?? 4);
@@ -201,6 +204,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
     // For casters this is the day's mana; for everyone else, specials.
     const specials = { n: manaRules(p.class) ? manaMax(p) : GAME.classes[p.class].specialsPerDay };
     const extra = { n: 0 };
+    const oocUsed = { n: 0 };
     dailyExtras(p, day, extra);
     let fights = 10 + extra.n;
     CHARM.total += p.charm;
@@ -297,11 +301,20 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
         }
       }
       if (res === "died") { DEATH_L[p.level] = (DEATH_L[p.level] ?? 0) + 1; deaths++; p.alive = false; p.gold = 0; p.exp -= Math.floor(p.exp * 0.1); break; }
+      // A priest can pray between fights (OOC_PRAY=1): mana for health instead of the healer's gold.
+      if (OOC.on && p.class === "priest") {
+        const mr = manaRules(p.class)!;
+        const cost = Math.ceil((mr.heal ?? 3) * OOC.costMult);
+        while (p.hp / p.max_hp < 0.8 && specials.n >= cost && oocUsed.n < OOC.max) {
+          specials.n -= cost; oocUsed.n++; OOC.prayers++;
+          p.hp = Math.min(p.max_hp, p.hp + Math.ceil(p.max_hp * (mr.healPct ?? 0.35)));
+        }
+      }
       // heal if under 80%
       if (p.hp / p.max_hp < 0.8) {
         const want = p.max_hp - p.hp;
         const cost = healCost(p, want);
-        if (p.gold >= cost) { p.gold -= cost; p.hp = p.max_hp; }
+        if (p.gold >= cost) { p.gold -= cost; p.hp = p.max_hp; HEALER.gold += cost; }
       }
       // bank what we don't need to carry (a careful player does this every couple of fights)
       const keep = GAME.innCostPerLevel * p.level + p.max_hp * p.level;
@@ -333,6 +346,7 @@ if (process.env.BREAKDOWN) {
 }
 
 if (MINE) console.log(`  jewelry made per run: ${(MINED.trinkets / trials).toFixed(1)}, best ever: ${trinket(MINED.best).name}`);
+console.log(`  healer gold per run: ${Math.round(HEALER.gold / trials)}${OOC.on ? `; prayers outside fights per run: ${(OOC.prayers / trials).toFixed(0)}` : ""}`);
 console.log(`  drops per run: ${(DROPS.n / trials).toFixed(1)} (${(DROPS.equipped / trials).toFixed(1)} equipped)`);
 if (EXTRAS) console.log(`  married ${CHARM.married}/${trials} runs (avg day ${CHARM.married ? (CHARM.marriedDay / CHARM.married).toFixed(0) : "-"}); avg charm across days ${(CHARM.total / runs.reduce((a, r) => a + r.days, 0)).toFixed(0)}`);
 if (SNAPS) { (await import("node:fs")).writeFileSync(process.env.SNAP!, JSON.stringify(SNAPS)); console.log(`  wrote ${SNAPS.length} level snapshots to ${process.env.SNAP}`); }
