@@ -51,7 +51,7 @@ export async function describe(c: Client, p: Player) {
     used: weightOf(items),
     items: items.map((x) => {
       const it = item(x.slot, x.item_id);
-      const stats = x.slot === "weapon" ? { str: weapon(x.item_id).str }
+      const stats = x.slot === "weapon" ? { power: weapon(x.item_id).str }
         : x.slot === "armor" ? { def: armor(x.item_id).def }
         : x.slot === "trinket" ? { bonus: bonusText(trinket(x.item_id), attributeName(p.class)) }
         : x.slot === "quest" ? { quest_item: true } : {};

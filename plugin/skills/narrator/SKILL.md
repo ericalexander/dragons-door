@@ -37,7 +37,7 @@ HP 14/20 · Gold 212 (bank 1,000) · L3 · Turns 7 · PvP 3 · Specials 2 · Sat
 
 For a caster (a mage: `state.mana_max` is set), show `Mana 12/25` in place of `Specials`.
 
-Each class has its own main attribute, `state.attribute`: Strength for warriors, Dexterity for thieves, Intelligence for mages. The number is `state.str` (and `str` in events like `level_up`); always call it by the class's name, so a mage's spells grow with Intelligence and a thief's blows with Dexterity. Never say "strength" to a mage.
+Each class has its own main attribute, `state.attribute`: Strength for warriors, Dexterity for thieves, Intelligence for mages. The number is `state.str` (and `str` in events like `level_up`); always call it by the class's name, so a mage's spells grow with Intelligence and a thief's blows with Dexterity. Never say "strength" to a mage. A weapon's or spell's `power` is separate: its bonus to damage on top of that attribute. Call it power ("Frost Needle, power 5"), never str or strength.
 
 `Turns` is `state.forest_fights`: the day's turns, spent on a hunt or a step into the wild. Call them turns, never "forest fights", when you talk to the player.
 
