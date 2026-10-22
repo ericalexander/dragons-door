@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Auction House · Dragon's Door</title>
+<meta name="description" content="What's for sale at the auction house in Brightwater, what sold lately, and what things are going for.">
+<meta property="og:title" content="The Auction House · Dragon's Door">
+<meta property="og:description" content="What's on the board, what sold, and what things are going for.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23efe4c9'/><path d='M4 15V7a4 4 0 0 1 8 0v8' fill='none' stroke='%232a1c10' stroke-width='1.5'/><circle cx='7' cy='11' r='1' fill='%238f2a1c'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #efe4c9;
+    --paper-hi: #f7efdc;
+    --ink: #2a1c10;
+    --ink-soft: #4a3322;
+    --ink-faint: #6b4a2e;
+    --rule: #b89c70;
+    --rule-soft: #d6c39f;
+    --wax: #8f2a1c;
+    --wax-dark: #5c1a10;
+    --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--wax); text-decoration: underline; text-underline-offset: 3px; }
+  a:hover, a:focus-visible { color: var(--wax-dark); }
+  :focus-visible { outline: 2px solid var(--wax); outline-offset: 3px; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+  .kicker { font-size: 14px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+
+  header.mast { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 22px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+  .mast .name { font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .mast .name a { color: var(--ink); text-decoration: none; }
+  .mast nav { display: flex; gap: 26px; flex-wrap: wrap; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+  .mast nav a { color: var(--ink); text-decoration: none; }
+  .mast nav a:hover, .mast nav a[aria-current] { text-decoration: underline; }
+
+  .head { padding-top: 56px; padding-bottom: 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; border-bottom: 2px solid var(--ink); }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(48px, 7vw, 72px); line-height: .95; margin: 0; }
+  .sub { margin: 0; font-size: 19px; color: var(--ink-soft); max-width: 60ch; }
+
+  main { padding-bottom: 48px; }
+  section.part { padding: 40px 0 8px; }
+  section.part + section.part { border-top: 1px solid var(--rule); }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0 0 6px; }
+  .lede { margin: 0 0 18px; color: var(--ink-soft); }
+  .quiet { color: var(--ink-faint); }
+
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  th { text-align: left; font-weight: 500; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); padding: 0 12px 8px 0; border-bottom: 2px solid var(--ink); white-space: nowrap; }
+  td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-size: 15px; white-space: nowrap; }
+  td .stat { display: block; font-size: 14px; color: var(--ink-faint); }
+  td .who { white-space: nowrap; }
+  .tag { display: inline-block; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--wax); border: 1px solid var(--wax); padding: 0 6px; margin-left: 6px; vertical-align: 1px; }
+
+  .prices { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+  .card { background: var(--paper-hi); border: 1px solid var(--rule); padding: 16px 18px 12px; position: relative; }
+  .card h3 { font-family: var(--display); font-weight: 700; font-size: 24px; margin: 0; line-height: 1.1; }
+  .card .row { display: flex; align-items: baseline; gap: 10px; margin-top: 6px; }
+  .card .big { font-family: var(--mono); font-size: 28px; font-weight: 500; }
+  .card .vs { font-size: 14px; color: var(--ink-faint); }
+  .card .facts { font-size: 14px; color: var(--ink-faint); margin: 4px 0 6px; }
+  .card svg { display: block; width: 100%; height: 96px; overflow: visible; }
+  .card .axis { font-family: var(--mono); font-size: 11px; fill: var(--ink-faint); }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--paper-hi); font-size: 13px; line-height: 1.35; padding: 6px 9px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); }
+  .tip[hidden] { display: none; }
+  .key { font-size: 14px; color: var(--ink-faint); margin: 0 0 14px; }
+  .key i { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--wax); vertical-align: 4px; margin-right: 6px; }
+  .key b { display: inline-block; width: 18px; height: 0; border-top: 1px dashed var(--ink-faint); vertical-align: 4px; margin: 0 6px 0 14px; font-weight: normal; }
+
+  footer { border-top: 2px solid var(--ink); }
+  footer .wrap { padding-top: 24px; padding-bottom: 32px; font-size: 14px; color: var(--ink-faint); }
+  footer p { margin: 0; max-width: 90ch; }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .head { padding-top: 40px; }
+    h2 { font-size: 30px; }
+    .mast nav { gap: 16px; }
+    .wide { display: none; }
+    td, th { padding-right: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="mast wrap">
+  <div class="name"><a href="/">Dragon's Door</a></div>
+  <nav aria-label="Site">
+    <a href="/#changes">Changes</a>
+    <a href="/chronicle">Chronicle</a>
+    <a href="/auction" aria-current="page">Auction House</a>
+    <a href="/#fromrealm">Rankings</a>
+    <a href="https://github.com/ericalexander/dragons-door">Source</a>
+  </nav>
+</header>
+
+<div class="head wrap">
+  <div class="kicker">Market Row, Brightwater</div>
+  <h1>The Auction House</h1>
+  <p class="sub">Cass Marrow's board: what's for sale today, what sold lately, and what things are really going for.</p>
+</div>
+
+<main class="wrap">
+  <section class="part" aria-labelledby="board-h">
+    <h2 id="board-h">On the board</h2>
+    <p class="lede" id="board-lede">Lots close at the daily reset after their last day.</p>
+    <div class="scroll" id="board"><p class="quiet">Asking Cass…</p></div>
+  </section>
+
+  <section class="part" aria-labelledby="sold-h">
+    <h2 id="sold-h">Recently sold</h2>
+    <div class="scroll" id="sold"><p class="quiet">…</p></div>
+  </section>
+
+  <section class="part" aria-labelledby="prices-h">
+    <h2 id="prices-h">What things go for</h2>
+    <p class="lede">Average sale price for one of each item, by day, over the last 30 days, against what it costs new.</p>
+    <p class="key"><i></i>average sale price<b></b>shop price</p>
+    <div class="prices" id="prices"><p class="quiet">…</p></div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Live from the realm, a minute or so behind. Names are characters in the game; bidders stay anonymous until a lot sells. <a href="/">Play Dragon's Door</a> in Claude Code.</p>
+  </div>
+</footer>
+
+<script>
+  const API = new URLSearchParams(location.search).get("api") || "https://dragons-door-api.vercel.app";
+  const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  const gold = (n) => n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US");
+  const short = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const daysLeft = (today, d) => Math.max(0, Math.round((Date.parse(d) - Date.parse(today)) / 864e5));
+  const statLine = (x) => x.power ? `power ${x.power}` : x.def ? `defense ${x.def}` : x.bonus ? esc(x.bonus) : "";
+
+  function board(d) {
+    const box = document.getElementById("board");
+    if (!d.open.length) { box.innerHTML = '<p class="quiet">Nothing on the board right now. Cass is polishing the counter.</p>'; return; }
+    const rows = d.open.map((x) => {
+      const left = daysLeft(d.day, x.closes_after);
+      return `<tr><td>${esc(x.item)}${statLine(x) ? `<span class="stat">${statLine(x)}</span>` : ""}</td>
+        <td class="who wide">${esc(x.seller)}</td>
+        <td class="num">${x.high_bid ? gold(x.high_bid) : `<span class="quiet">min ${gold(x.min_bid)}</span>`}</td>
+        <td class="num">${gold(x.buy_now)}</td>
+        <td class="num wide">${gold(x.worth)}</td>
+        <td class="num">${left === 0 ? "tonight" : left === 1 ? "1 day" : left + " days"}</td></tr>`;
+    }).join("");
+    box.innerHTML = `<table><thead><tr><th>Item</th><th class="wide">Seller</th><th class="num">Bid</th><th class="num">Buy now</th><th class="num wide">Shop price</th><th class="num">Closes</th></tr></thead><tbody>${rows}</tbody></table>`;
+    document.getElementById("board-lede").textContent = `${d.open.length} lot${d.open.length === 1 ? "" : "s"} up. Prices in gold. Lots close at the daily reset after their last day.`;
+  }
+
+  function sold(d) {
+    const box = document.getElementById("sold");
+    if (!d.sold.length) { box.innerHTML = '<p class="quiet">Nothing has sold yet.</p>'; return; }
+    const rows = d.sold.slice(0, 15).map((x) => `<tr><td class="num">${esc(short(x.day))}</td><td>${esc(x.item)}${x.bought_outright ? '<span class="tag" title="bought at the buy-now price">outright</span>' : ""}</td>
+      <td class="who wide">${esc(x.seller)}</td><td class="who">${esc(x.buyer)}</td><td class="num">${gold(x.price)}</td></tr>`).join("");
+    box.innerHTML = `<table><thead><tr><th class="num">Day</th><th>Item</th><th class="wide">Seller</th><th>Buyer</th><th class="num">Price</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  // One small line chart per item: daily average per unit, with the shop price as a dashed reference.
+  function spark(t, card) {
+    const W = 300, H = 96, L = 4, R = 4, T = 10, B = 18;
+    const days = t.days;
+    const lo = Math.min(t.worth, ...days.map((p) => p.avg)), hi = Math.max(t.worth, ...days.map((p) => p.avg));
+    const pad = (hi - lo) * 0.15 || hi * 0.1 || 1;
+    const y0 = lo - pad, y1 = hi + pad;
+    const t0 = Date.parse(days[0].day), t1 = Date.parse(days[days.length - 1].day);
+    const x = (d) => days.length === 1 ? (L + W - R) / 2 : L + (Date.parse(d) - t0) / (t1 - t0) * (W - L - R);
+    const y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+    const pts = days.map((p) => [x(p.day), y(p.avg)]);
+    const path = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("");
+    const svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(t.item)}: average sale price by day">
+      <line x1="${L}" x2="${W - R}" y1="${y(t.worth).toFixed(1)}" y2="${y(t.worth).toFixed(1)}" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>
+      ${days.length > 1 ? `<path d="${path}" fill="none" stroke="var(--wax)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>` : ""}
+      <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--ink)" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden"/>
+      <text class="axis" x="${L}" y="${H - 3}">${esc(short(days[0].day))}</text>
+      ${days.length > 1 ? `<text class="axis" x="${W - R}" y="${H - 3}" text-anchor="end">${esc(short(days[days.length - 1].day))}</text>` : ""}
+    </svg>`;
+    card.insertAdjacentHTML("beforeend", svg);
+    // Dots drawn as HTML so they stay round when the chart stretches.
+    const el = card.querySelector("svg");
+    const dot = (p, i) => { const s = document.createElement("span"); s.style.cssText = `position:absolute;width:8px;height:8px;border-radius:50%;background:var(--wax);box-shadow:0 0 0 2px var(--paper-hi);transform:translate(-50%,-50%);pointer-events:none`; s.dataset.i = i; card.appendChild(s); return s; };
+    const dots = pts.map(dot);
+    const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; card.appendChild(tip);
+    const cross = el.querySelector(".cross");
+    const place = () => {
+      const r = el.getBoundingClientRect(), c = card.getBoundingClientRect();
+      dots.forEach((s, i) => { s.style.left = (r.left - c.left + pts[i][0] / W * r.width) + "px"; s.style.top = (r.top - c.top + pts[i][1] / H * r.height) + "px"; });
+    };
+    place(); window.addEventListener("resize", place);
+    const show = (i) => {
+      const p = days[i], r = el.getBoundingClientRect(), c = card.getBoundingClientRect();
+      cross.setAttribute("x1", pts[i][0]); cross.setAttribute("x2", pts[i][0]); cross.setAttribute("visibility", "visible");
+      tip.innerHTML = `<b>${esc(short(p.day))}</b> · ${gold(p.avg)} gold<br>${p.sales} sale${p.sales === 1 ? "" : "s"}${p.low !== p.high ? `, ${gold(p.low)}–${gold(p.high)}` : ""}`;
+      tip.style.left = (r.left - c.left + pts[i][0] / W * r.width) + "px"; tip.style.top = (r.top - c.top + pts[i][1] / H * r.height) + "px"; tip.hidden = false;
+    };
+    const near = (clientX) => { const r = el.getBoundingClientRect(); const fx = (clientX - r.left) / r.width * W; let best = 0; pts.forEach((p, i) => { if (Math.abs(p[0] - fx) < Math.abs(pts[best][0] - fx)) best = i; }); return best; };
+    el.addEventListener("pointermove", (e) => show(near(e.clientX)));
+    el.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  }
+
+  function prices(d) {
+    const box = document.getElementById("prices");
+    if (!d.trends.length) { box.innerHTML = '<p class="quiet">No sales in the last 30 days yet, so no prices to show.</p>'; return; }
+    box.innerHTML = "";
+    for (const t of d.trends) {
+      const card = document.createElement("article"); card.className = "card";
+      const pct = Math.round((t.last / t.worth) * 100);
+      card.innerHTML = `<h3>${esc(t.item)}</h3>
+        <div class="row"><span class="big">${gold(t.last)}</span><span class="vs">last sold · ${pct}% of the ${gold(t.worth)} shop price</span></div>
+        <p class="facts">${t.sales} sale${t.sales === 1 ? "" : "s"} · average ${gold(t.avg)} · range ${gold(t.low)}–${gold(t.high)}</p>`;
+      box.appendChild(card);
+      spark(t, card);
+    }
+  }
+
+  fetch(API + "/v1/public/auctions").then((r) => r.json()).then((d) => { board(d); sold(d); prices(d); })
+    .catch(() => { document.getElementById("board").innerHTML = '<p class="quiet">The auction house isn\'t answering right now. Cass will be back.</p>'; document.getElementById("sold").innerHTML = ""; document.getElementById("prices").innerHTML = ""; });
+</script>
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>

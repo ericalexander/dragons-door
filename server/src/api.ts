@@ -535,6 +535,46 @@ api.get("/public/realm", async (c) => {
   return c.json(out);
 });
 
+/** The auction house, for the website: what's on the board, what sold lately, and prices over time. Names only. */
+api.get("/public/auctions", async (c) => {
+  const out = await tx(async (db) => {
+    const today = realmDay((await realmSettings(db)).resetHourUtc);
+    await settleAuctions(db, today);
+    const stats = (slot: ListSlot, id: number) =>
+      slot === "weapon" ? { power: weapon(id).str } : slot === "armor" ? { def: armor(id).def } : slot === "trinket" ? { bonus: bonusText(trinket(id)) } : {};
+    const open = (await db.query<ARow>(`${A_SELECT} where a.status = 'open' and s.is_test is not true order by a.ends_day, a.id limit 60`)).rows;
+    const sold = (await db.query<ARow & { day: string }>(
+      `${A_SELECT.replace("a.collected,", "a.collected, a.settled_at::date::text as day,")} where a.status = 'sold' and s.is_test is not true and b.is_test is not true order by a.settled_at desc limit 25`)).rows;
+    // Every sale in the last 30 days, per item, priced per unit.
+    const hist = (await db.query<{ slot: ListSlot; item_id: number; day: string; n: string; unit: string; lo: string; hi: string }>(
+      `select a.slot, a.item_id, a.settled_at::date::text as day, count(*)::text as n,
+              round(avg(a.high_bid::numeric / a.qty))::text as unit, min(a.high_bid / a.qty)::text as lo, max(a.high_bid / a.qty)::text as hi
+       from auctions a left join players s on s.id = a.seller_id left join players b on b.id = a.high_bidder
+       where a.status = 'sold' and a.settled_at > now() - interval '30 days' and s.is_test is not true and b.is_test is not true
+       group by 1, 2, 3 order by 1, 2, 3`)).rows;
+    const items = new Map<string, { item: string; slot: ListSlot; worth: number; days: { day: string; sales: number; avg: number; low: number; high: number }[] }>();
+    for (const h of hist) {
+      const k = `${h.slot}:${h.item_id}`;
+      if (!items.has(k)) items.set(k, { item: worth(h.slot, h.item_id).name, slot: h.slot, worth: worth(h.slot, h.item_id).value, days: [] });
+      items.get(k)!.days.push({ day: h.day, sales: Number(h.n), avg: Number(h.unit), low: Number(h.lo), high: Number(h.hi) });
+    }
+    const trends = [...items.values()].map((t) => {
+      const sales = t.days.reduce((n, d) => n + d.sales, 0);
+      return { ...t, sales, avg: Math.round(t.days.reduce((n, d) => n + d.avg * d.sales, 0) / sales), low: Math.min(...t.days.map((d) => d.low)), high: Math.max(...t.days.map((d) => d.high)), last: t.days[t.days.length - 1].avg };
+    }).sort((a, z) => z.sales - a.sales || a.item.localeCompare(z.item));
+    return {
+      day: today,
+      open: open.map((r) => ({ lot: Number(r.id), item: lotName(r), slot: r.slot, ...stats(r.slot, r.item_id), worth: worth(r.slot, r.item_id).value * r.qty,
+        seller: r.seller ?? "the house", town: TOWNS[r.town as Town] ?? r.town, min_bid: r.min_bid, high_bid: r.high_bid, buy_now: r.buy_now, closes_after: r.ends_day })),
+      sold: sold.map((r) => ({ item: lotName(r), slot: r.slot, price: r.high_bid, seller: r.seller ?? "the house", buyer: r.bidder, day: r.day, bought_outright: r.buy_now !== null && r.high_bid === r.buy_now })),
+      trends,
+    };
+  });
+  c.header("access-control-allow-origin", "*");
+  c.header("cache-control", "public, max-age=60, s-maxage=60, stale-while-revalidate=60");
+  return c.json(out);
+});
+
 // ---------- read-only ----------
 
 api.get("/status", async (c) => c.json(await withPlayer(c.req.header("authorization"), async () => {}, { weather: true })));
