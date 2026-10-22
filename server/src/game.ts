@@ -299,7 +299,8 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     return w;
   }
   const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop"];
-  { const v = spellVendor(p.class); if (v) a.push(v.place); }
+  // Everyone can visit the library and the chapel; only their own class can learn there.
+  a.push("library", "chapel");
   if (p.ground) a.unshift("take", "equip ground");
   // Everyone heads out into the world to hunt.
   a.unshift("explore");

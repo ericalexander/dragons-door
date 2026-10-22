@@ -142,8 +142,9 @@ server.tool("cave", "Caves, from a cave mouth in the wild. descend: go in (free)
 server.tool("mine", "Swing a pickaxe inside a cave. A few swings a day, apart from turns. Ore goes in the bag (heavy), gems in the pouch; sometimes something in the dark attacks. Each cave gives up only so much a day.", {},
   async () => text(await call("POST", "/v1/mine")));
 
-server.tool("library", "Where casters learn spells: Mother Quill's library (mages) or Prior Hale's chapel (priests): the spells for sale (each needs a level and costs gold, and the old spellbook trades in at half), which they know, and their mana.", {},
-  async () => text(await call("GET", "/v1/library")));
+server.tool("library", "Visit Mother Quill's library (place: library, mages learn here) or Prior Hale's chapel (place: chapel, priests learn here). Anyone may visit and look; only that class can learn. Shows the spells (each needs a level and costs gold; the old spellbook trades in at half), and for the player's own class which they know and their mana. Defaults to the player's own teacher.",
+  { place: z.enum(["library", "chapel"]).optional() },
+  async ({ place }) => text(await call("GET", `/v1/library${place ? `?place=${place}` : ""}`)));
 
 server.tool("learn_spell", "Learn a spell by id at the caster's teacher (Mother Quill's library for mages, Prior Hale's chapel for priests). It replaces the spell they cast now.",
   { id: z.number().int() },

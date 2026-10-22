@@ -21922,9 +21922,9 @@ server.tool(
 );
 server.tool(
   "library",
-  "Where casters learn spells: Mother Quill's library (mages) or Prior Hale's chapel (priests): the spells for sale (each needs a level and costs gold, and the old spellbook trades in at half), which they know, and their mana.",
-  {},
-  async () => text(await call("GET", "/v1/library"))
+  "Visit Mother Quill's library (place: library, mages learn here) or Prior Hale's chapel (place: chapel, priests learn here). Anyone may visit and look; only that class can learn. Shows the spells (each needs a level and costs gold; the old spellbook trades in at half), and for the player's own class which they know and their mana. Defaults to the player's own teacher.",
+  { place: external_exports.enum(["library", "chapel"]).optional() },
+  async ({ place }) => text(await call("GET", `/v1/library${place ? `?place=${place}` : ""}`))
 );
 server.tool(
   "learn_spell",

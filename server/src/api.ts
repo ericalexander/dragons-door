@@ -309,14 +309,25 @@ api.post("/register", async (c) => {
 
 /** The spells for sale, tier for tier with the smith's weapons: each needs a level and costs gold, and your old spellbook trades in at half. */
 api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  requireInTown(ctx, `the ${spellVendor(ctx.p.class)?.place ?? "library"}`);
-  if (!casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "only those with the gift learn spells here" }); return; }
+  // ?place=library|chapel picks whose door you walk through; your own class's teacher by default.
+  const want = c.req.query("place");
+  const own = spellVendor(ctx.p.class);
+  const place = want ?? own?.place;
+  const cls = place ? (Object.keys(GAME.classes) as Player["class"][]).find((k) => spellVendor(k)?.place === place) ?? null : null;
+  if (!cls) { ctx.events.push({ kind: "not_for_you", reason: "there's no such teacher in town", places: ["library", "chapel"] }); return; }
+  const v = spellVendor(cls)!;
+  requireInTown(ctx, `the ${v.place}`);
+  const mine = cls === ctx.p.class;
   const discount = charmDiscount(charmOf(ctx.p));
+  const mr = manaRules(cls)!;
   ctx.events.push({
-    kind: "library", teacher: spellVendor(ctx.p.class)?.name, place: spellVendor(ctx.p.class)?.place, known: weaponName(ctx.p.class, ctx.p.weapon_id),
-    mana: { per_day: manaMax(ctx.p), cast: manaRules(ctx.p.class)!.cast, greater: manaRules(ctx.p.class)!.fireball, ...(manaRules(ctx.p.class)!.heal ? { heal: manaRules(ctx.p.class)!.heal } : {}) },
-    spells: GAME.weapons.map((w) => ({ id: w.id, name: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str, cost: w.cost, needs_level: Math.max(1, w.id), known: w.id === ctx.p.weapon_id, learnable: w.id > ctx.p.weapon_id && ctx.p.level >= Math.max(1, w.id) })),
-    charm_discount_pct: Math.round(discount * 100),
+    kind: "library", teacher: v.name, place: v.place, teaches: cls,
+    // A visitor of another class can look and talk, not learn.
+    ...(mine ? { known: weaponName(cls, ctx.p.weapon_id) } : { visitor: true, note: `only a ${cls} can learn here; ${v.name} will talk to anyone` }),
+    mana: { per_day: mine ? manaMax(ctx.p) : manaMax({ class: cls, level: ctx.p.level }), cast: mr.cast, greater: mr.fireball, ...(mr.heal ? { heal: mr.heal } : {}) },
+    spells: GAME.weapons.map((w) => ({ id: w.id, name: weaponName(cls, w.id), special: specialName(cls, w.id), power: w.str, cost: w.cost, needs_level: Math.max(1, w.id),
+      ...(mine ? { known: w.id === ctx.p.weapon_id, learnable: w.id > ctx.p.weapon_id && ctx.p.level >= Math.max(1, w.id) } : {}) })),
+    ...(mine ? { charm_discount_pct: Math.round(discount * 100) } : {}),
   });
 })));
 
