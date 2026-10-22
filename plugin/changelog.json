@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.15.2",
+    "lore": "The wild was never all boars and mosquitoes; you just hadn't been looking. The marshes have their own things, the hills have theirs, and the slag heaps round Ironhold have grown a few creatures nobody's proud of. Down in the caves, something bigger is moving.",
+    "plain": "Monsters now depend on where you are: marsh, meadow, hills, crags, the land around Ironhold and the caves each have their own. Same strength as before, level for level."
+  },
+  {
     "version": "0.15.1",
     "lore": "The smith has stopped snatching the old gear off your back before you've said a word. Now he names his price both ways, with your old piece on the pile or still in your pack, and waits. He doesn't like waiting. He'll live.",
     "plain": "Buying gear now shows a price first and lets you keep your old weapon or armor in your bag (to sell or auction) instead of trading it in."

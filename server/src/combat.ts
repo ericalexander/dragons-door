@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { BESTIARY, type Region } from "./bestiary.js";
 import { GAME, armor, effective, manaRules, specialName, weapon, weaponName, type Event, type Monster, type Player } from "./game.js";
 
 /** rand in [0, n], inclusive. Server RNG only; never trust the client. */
@@ -75,7 +76,7 @@ export function specialDodges(p: Player): boolean {
 }
 
 /** Pick a forest monster at or near the player's level. */
-export function pickMonster(level: number): Monster {
+export function pickMonster(level: number, region?: Region): Monster {
   // Mostly your level. Sometimes easier. Rarely one up, and never at level 1.
   const r = roll(99);
   let want = level;
@@ -83,10 +84,13 @@ export function pickMonster(level: number): Monster {
   else if (r >= 95 && level > 1) want = level + 1;
   want = Math.max(1, Math.min(12, want));
   const pool = GAME.monsters.filter((m) => m.level === want);
-  const m = pool[roll(pool.length - 1)];
+  // Where you are decides who it is; the old monster at the same place in the level's list decides how it fights.
+  const names = region && region !== "forest" ? BESTIARY[region][want] : undefined;
+  const i = roll((names?.length ?? pool.length) - 1);
+  const m = pool[i % pool.length];
   // jitter so two fights are never identical
   const hp = Math.round(m.hp * (0.9 + roll(20) / 100));
-  return { name: m.name, level: m.level, hp, max_hp: hp, str: m.str, def: m.def, gold: m.gold, exp: m.exp };
+  return { name: names?.[i] ?? m.name, level: m.level, hp, max_hp: hp, str: m.str, def: m.def, gold: m.gold, exp: m.exp };
 }
 
 /**

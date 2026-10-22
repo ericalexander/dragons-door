@@ -17,6 +17,7 @@ import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
+import { regionAt } from "./bestiary.js";
 import { DIRS, LEGEND, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
@@ -728,7 +729,7 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
     ctx.events.push({ kind: "found_gold", gold });
     return;
   }
-  const m = pickMonster(level);
+  const m = pickMonster(level, regionHere(ctx));
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
   ctx.events.push({ kind: "encounter", monster: m, ...(here ? { place: here.name, terrain: here.terrain } : {}), ...(depth ? { in_cave: true, depth } : {}) });
 }, { weather: true })));
@@ -1418,6 +1419,11 @@ async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]
   return { got, monster };
 }
 
+/** What lives where the player is standing, if they're out in the wild (in town, the old familiar ones). */
+function regionHere(ctx: Ctx) {
+  return inWild(ctx.p) ? regionAt(ctx.p.pos_x!, ctx.p.pos_y!, ctx.p.cave_depth !== null && ctx.p.cave_depth !== undefined) : undefined;
+}
+
 /** A step's moment has come: tell it, apply what it does, and either offer its choices or move on. */
 async function fireStep(ctx: Ctx, q: QuestDef, row: QRow, st: QStep) {
   const { got, monster } = st.effects ? await questEffects(ctx, q, row, st.effects) : { got: {}, monster: null };
@@ -1428,7 +1434,7 @@ async function fireStep(ctx: Ctx, q: QuestDef, row: QRow, st: QStep) {
   });
   ctx.hint = `A side quest moves: tell the cue in two to four sentences, in the scene.${st.choices ? " Then offer its choices numbered (1), (2)… and call `quest` with the choice id only when they pick." : ""}`;
   if (monster !== null) {
-    const m = pickMonster(ctx.p.level + monster);
+    const m = pickMonster(ctx.p.level + monster, regionHere(ctx));
     await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
     ctx.events.push({ kind: "encounter", monster: m, from_quest: q.id });
   }
@@ -1528,7 +1534,7 @@ api.post("/quest", async (c) => {
       ctx.events.push({ kind: "quest_choice", quest: q.id, title: q.title, choice: ch.id, label: ch.label, ...(cost ? { paid: cost } : {}), got });
       if (ch.news) await post(ctx, "quest_news", ctx.p.name, null, { line: ch.news.replaceAll("{name}", ctx.p.name) });
       if (monster !== null) {
-        const m = pickMonster(ctx.p.level + monster);
+        const m = pickMonster(ctx.p.level + monster, regionHere(ctx));
         await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
         ctx.events.push({ kind: "encounter", monster: m, from_quest: q.id });
       }
@@ -1592,7 +1598,7 @@ api.post("/event", async (c) => {
     await savePlayer(ctx, { pending_event: null, ...(cost ? { gold: ctx.p.gold - cost } : {}) });
     const out = rollOutcome(choice);
     const { got, monster: m0, quest } = await applyEffects(ctx, out.effects, lvl, [pe.x, pe.y], e.id === "hermit" ? "a hermit" : "what you saw");
-    const monster = m0 !== null ? pickMonster(t.level + m0) : null;
+    const monster = m0 !== null ? pickMonster(t.level + m0, regionAt(t.x, t.y)) : null;
     ctx.events.push({ kind: "event_outcome", event: e.id, choice: choice.id, outcome: out.key, ...(cost ? { paid: cost } : {}), got });
     if (quest) await startQuest(ctx, quest, true);
     if (monster) {
@@ -1672,7 +1678,7 @@ api.post("/mine", async (c) => c.json(await withPlayer(c.req.header("authorizati
     if (left.cave === 1) await post(ctx, "mined_out", ctx.p.name, null, { place: t.name });
   };
   if (r.kind === "ambush") {
-    const m = pickMonster(caveLevel(t.level, depth));
+    const m = pickMonster(caveLevel(t.level, depth), "cave");
     await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
     ctx.events.push({ kind: "encounter", monster: m, place: t.name, in_cave: true, depth, ambush: true });
     await logEvent(ctx, "mine", { x: t.x, y: t.y, depth, found: "ambush" });
