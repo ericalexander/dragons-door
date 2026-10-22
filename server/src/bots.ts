@@ -172,6 +172,10 @@ async function toHuntingGround(b: Bot, row: Row, mind: Mind, budget: number): Pr
 
 /** Townsfolk aren't sentimental: wear anything better, sell the rest, grab what's on the ground if it's better. */
 async function tidyBag(b: Bot) {
+  // In town, first pick up anything the auction house is holding for them (won lots, unsold ones back).
+  const where = await b.get("/status");
+  const inTown = !isErr(where) && (!where.state.place || where.state.place.poi === "town");
+  if (inTown) await b.post("/auction", { op: "collect" });
   const r = await b.get("/bag");
   if (isErr(r)) return;
   const bagEv = r.events.find((e) => e.kind === "bag") as unknown as { items: { id: number; upgrade: boolean }[]; ground: unknown } | undefined;
@@ -180,9 +184,91 @@ async function tidyBag(b: Bot) {
   for (const it of bagEv.items) if (it.upgrade) await b.post("/equip", { id: it.id });
   const again = await b.get("/bag");
   if (isErr(again)) return;
-  const left = (again.events.find((e) => e.kind === "bag") as unknown as { items: { id: number; slot: string }[] }).items;
-  // Ore is kept while they're saving it up for Odile; otherwise everything goes.
-  for (const it of left) if (!(b.keepOre && it.slot === "ore")) await b.post("/sell", { id: it.id });
+  const left = (again.events.find((e) => e.kind === "bag") as unknown as { items: BagItem[] }).items;
+  // Ore is kept while they're saving it up for Odile. The rest goes up at the auction house if it's worth it
+  // and the board isn't already full of the same thing; otherwise to the smith.
+  const listed = inTown ? await listSpares(b, left.filter((it) => !(b.keepOre && it.slot === "ore"))) : new Set<number>();
+  for (const it of left) if (!(b.keepOre && it.slot === "ore") && !listed.has(it.id) && it.slot !== "quest") await b.post("/sell", { id: it.id });
+  if (inTown) await listGems(b);
+}
+
+// ---------- the auction house ----------
+
+interface BagItem { id: number; slot: string; name: string; sells_for: number }
+interface Lot { id: number; slot: string; tier: number; item: string; worth: number; seller: string; buy_now?: number; next_bid: number; yours?: boolean; you_lead?: boolean }
+/** How many lots of their own a townsperson keeps up at once. */
+const BOT_LOTS = 2;
+
+async function readBoard(b: Bot): Promise<{ listings: Lot[]; mine: Lot[]; purse: number; bank: number } | null> {
+  const r = await b.get("/auction");
+  if (isErr(r)) return null;
+  const ev = r.events.find((e) => e.kind === "auction_house") as unknown as { listings: Lot[]; your_lots: Lot[]; purse: number; bank: number } | undefined;
+  return ev ? { listings: ev.listings, mine: ev.your_lots ?? [], purse: ev.purse, bank: ev.bank } : null;
+}
+
+/** Put spare gear and ore up for sale: a fifth over what the smith pays to open, nine-tenths of shop worth to buy now. Returns what got listed. */
+async function listSpares(b: Bot, items: BagItem[]): Promise<Set<number>> {
+  const done = new Set<number>();
+  const board = await readBoard(b);
+  if (!board) return done;
+  let open = board.mine.length;
+  const seen = new Set<string>();
+  for (const it of items) {
+    if (open >= BOT_LOTS) break;
+    if (!["weapon", "armor", "ore", "trinket"].includes(it.slot) || it.sells_for < 20) continue;
+    if (seen.has(`${it.slot}:${it.name}`)) continue;
+    seen.add(`${it.slot}:${it.name}`);
+    // Don't flood the board: two lots of the same thing already up and they sell to the smith instead.
+    if (board.listings.filter((l) => l.slot === it.slot && l.item.startsWith(it.name.replace(/^Scroll of /, ""))).length >= 2) continue;
+    const same = it.slot === "ore" ? items.filter((x) => x.slot === "ore" && x.name === it.name) : [it];
+    const qty = Math.min(3, same.length);
+    const smith = it.sells_for * qty;
+    const r = await b.post("/auction", { op: "list", id: it.id, ...(it.slot === "ore" ? { qty } : {}), min_bid: Math.ceil(smith * 1.2), buy_now: Math.ceil(smith * 1.8), days: 3, confirm: true });
+    if (!isErr(r) && kinds(r).includes("auction_listed")) {
+      for (const x of same.slice(0, qty)) done.add(x.id);
+      open++;
+      b.log.push(`put ${qty > 1 ? `${qty} ${it.name}` : it.name} up at auction`);
+    }
+  }
+  return done;
+}
+
+/** A pouch with more gems than they've a use for: one or two go up at auction. Anyone saving for jewelry keeps theirs. */
+async function listGems(b: Bot) {
+  if (b.keepOre) return;
+  const s = await b.get("/status");
+  if (isErr(s) || (s.state.gems ?? 0) < 3) return;
+  const board = await readBoard(b);
+  if (!board || board.mine.length >= BOT_LOTS || board.listings.filter((l) => l.slot === "gem").length >= 2) return;
+  const n = Math.min(2, (s.state.gems ?? 0) - 1);
+  const r = await b.post("/auction", { op: "list", gems: n, min_bid: 60 * n, buy_now: 90 * n, days: 3, confirm: true });
+  if (!isErr(r) && kinds(r).includes("auction_listed")) b.log.push(`put ${n} gem${n > 1 ? "s" : ""} up at auction`);
+}
+
+/** Buy a lot outright, if it's still there. True if they got it. */
+async function buyLot(b: Bot, lot: Lot): Promise<boolean> {
+  const r = await b.post("/auction", { op: "buy", lot: lot.id, confirm: true });
+  const ok = !isErr(r) && kinds(r).includes("auction_bought");
+  if (ok) b.log.push(`bought ${lot.item} at auction for ${lot.buy_now}`);
+  return ok;
+}
+
+/**
+ * Materials from the board: an Ironholder short of ore for the forge, or anyone saving up for Odile's
+ * jewelry, buys what's for sale if the price is fair (no more than shop worth) and they can spare it.
+ */
+async function buyMaterials(b: Bot, mind: Mind, spare: number) {
+  const native = b.native ?? b.home;
+  const forge = native === "ironhold";
+  const jewel = mind.goal?.kind === "jewel";
+  if (!forge && !jewel) return;
+  const board = await readBoard(b);
+  if (!board) return;
+  const wanted = (l: Lot) => !l.yours && l.buy_now !== undefined && l.buy_now <= l.worth && l.buy_now <= spare
+    && (l.slot === "ore" ? true : l.slot === "gem" ? jewel : false);
+  // Cheapest first; one purchase a day is plenty.
+  const pick = board.listings.filter(wanted).sort((a, z) => (a.buy_now ?? 0) - (z.buy_now ?? 0))[0];
+  if (pick) await buyLot(b, pick);
 }
 
 // ---------- session building blocks ----------
@@ -920,14 +1006,39 @@ async function kitOut(b: Bot, row: Row, mind: Mind, day: string) {
       if (best) { picks.push({ kind: "spell", id: best.id, name: best.name, net: best.cost - tradeIn }); budget -= best.cost - tradeIn; }
     }
   }
+  // The auction board first: a piece someone else is selling can beat the smith's price.
+  const board = await readBoard(b);
+  const lots: Lot[] = [];
   for (const kind of (caster ? ["armor"] : ["weapon", "armor"]) as ("weapon" | "armor")[]) {
     const cat = await b.get(`/shop?kind=${kind}`);
     const ev = isErr(cat) ? undefined : cat.events.find((e) => e.kind === "catalog") as unknown as { owned: number; items: { id: number; cost: number; name: string }[] } | undefined;
     if (!ev) continue;
     const tradeIn = Math.floor((ev.items.find((i) => i.id === ev.owned)?.cost ?? 0) / 2);
     const best = ev.items.filter((i) => i.id > ev.owned && i.cost - tradeIn <= budget).sort((a, z) => z.id - a.id)[0];
-    if (best) { picks.push({ kind, id: best.id, name: best.name, net: best.cost - tradeIn }); budget -= best.cost - tradeIn; }
+    // On the board: the same slot, better than what they wear, bought outright for less than the smith's full price
+    // (their old piece then goes to the smith or the board, which comes to the same as a trade-in).
+    const lot = (board?.listings ?? []).filter((l) => l.slot === kind && !l.yours && l.buy_now !== undefined && l.tier > ev.owned
+      && l.buy_now <= budget && l.buy_now < (ev.items.find((i) => i.id === l.tier)?.cost ?? 0))
+      .sort((a, z) => z.tier - a.tier || (a.buy_now ?? 0) - (z.buy_now ?? 0))[0];
+    if (lot && (!best || lot.tier >= best.id)) { lots.push(lot); budget -= lot.buy_now!; }
+    else if (best) { picks.push({ kind, id: best.id, name: best.name, net: best.cost - tradeIn }); budget -= best.cost - tradeIn; }
+    else {
+      // Nothing they can buy outright: a bid on an upgrade they can afford, if it's under the smith's price.
+      // The house holds the gold; it settles at the reset and they pick it up next time they're in town.
+      const bid = (board?.listings ?? []).filter((l) => l.slot === kind && !l.yours && !l.you_lead && l.tier > ev.owned
+        && l.next_bid <= budget && l.next_bid < (ev.items.find((i) => i.id === l.tier)?.cost ?? 0))
+        .sort((a, z) => z.tier - a.tier || a.next_bid - z.next_bid)[0];
+      if (bid) {
+        const r = await b.post("/auction", { op: "bid", lot: bid.id, confirm: true });
+        if (!isErr(r) && kinds(r).some((k) => k === "auction_bid" || k === "auction_bought")) { b.log.push(`bid ${bid.next_bid} on ${bid.item} at auction`); budget -= bid.next_bid; }
+      }
+    }
   }
+  // Lots are paid from the bank first, so no trip to the counter for those.
+  let boughtLot = false;
+  for (const lot of lots) if (await buyLot(b, lot)) boughtLot = true;
+  if (boughtLot) await tidyBag(b);
+  await buyMaterials(b, mind, Math.max(0, budget));
   if (!picks.length) return;
   // Draw what's needed from the bank, buy, and put the rest back.
   const need = picks.reduce((n, p) => n + p.net, 0) + 20;
