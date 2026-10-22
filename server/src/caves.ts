@@ -69,8 +69,8 @@ export const trinket = (id: number) => TRINKETS.find((x) => x.id === id) ?? TRIN
 export const ore = (id: number) => ORES.find((x) => x.id === id) ?? ORES[0];
 
 /** How a piece of jewelry reads in a sentence: "+10 strength". */
-export function bonusText(x: Trinket): string {
-  return [x.str && `+${x.str} strength`, x.def && `+${x.def} defense`, x.charm && `+${x.charm} charm`].filter(Boolean).join(", ");
+export function bonusText(x: Trinket, attribute = "strength"): string {
+  return [x.str && `+${x.str} ${attribute.toLowerCase()}`, x.def && `+${x.def} defense`, x.charm && `+${x.charm} charm`].filter(Boolean).join(", ");
 }
 
 export type MineResult =

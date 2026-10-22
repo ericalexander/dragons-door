@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, charmOf, casts, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
+  GAME, armor, weapon, charmOf, attributeName, casts, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -711,7 +711,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     if (mrLvl) await saveTurns(ctx, { mana: (ctx.t.mana ?? 0) + mrLvl.perLevel });
     await post(ctx, "level_up", ctx.p.name, null, { level: lvl });
     await logEvent(ctx, "level_up", { to: lvl, exp: ctx.p.exp });
-    ctx.events.push({ kind: "level_up", level: lvl, max_hp: ctx.p.max_hp, str: ctx.p.str, def: ctx.p.def });
+    ctx.events.push({ kind: "level_up", level: lvl, max_hp: ctx.p.max_hp, str: ctx.p.str, attribute: attributeName(ctx.p.class), def: ctx.p.def });
   } else if (kind === "dragon") {
     await savePlayer(ctx, { dragon_kills: ctx.p.dragon_kills + 1, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, weapon_id: 0, armor_id: 0, gold: 0, charm: ctx.p.charm + 10 });
     await ctx.c.query("insert into realm (key, value) values ('dragon_slain_day', $1::jsonb) on conflict (key) do update set value = excluded.value", [JSON.stringify(ctx.day)]);
@@ -1262,7 +1262,7 @@ async function applyEffects(ctx: Ctx, effects: (Effect | QEffect)[], lvl: number
       const x = trinket(fx.trinket);
       if (ctx.p.trinket_id === 0) await savePlayer(ctx, { trinket_id: x.id });
       else await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,'trinket',$2)", [ctx.p.id, x.id]);
-      got.jewelry = { name: x.name, bonus: bonusText(x), worn: ctx.p.trinket_id === x.id };
+      got.jewelry = { name: x.name, bonus: bonusText(x, attributeName(ctx.p.class)), worn: ctx.p.trinket_id === x.id };
     }
   }
   return { got, monster, quest };
@@ -1413,12 +1413,12 @@ api.get("/workshop", async (c) => c.json(await withPlayer(c.req.header("authoriz
   ctx.events.push({
     kind: "workshop",
     pickaxe: { owned: ctx.p.pickaxe, cost: PICKAXE_COST },
-    wearing: ctx.p.trinket_id ? { name: trinket(ctx.p.trinket_id).name, bonus: bonusText(trinket(ctx.p.trinket_id)) } : null,
+    wearing: ctx.p.trinket_id ? { name: trinket(ctx.p.trinket_id).name, bonus: bonusText(trinket(ctx.p.trinket_id), attributeName(ctx.p.class)) } : null,
     your_ore: Object.entries(m.ore).map(([id, n]) => ({ name: oreOf(Number(id)).name, count: n })),
     gems: ctx.p.gems,
     gem_sells_for: GEM_SELL,
     recipes: TRINKETS.filter((x) => x.id > 0 && !x.quest).map((x) => ({
-      id: x.id, name: x.name, bonus: bonusText(x),
+      id: x.id, name: x.name, bonus: bonusText(x, attributeName(ctx.p.class)),
       needs: { ore: Object.entries(x.needs.ore).map(([id, n]) => `${n} ${oreOf(Number(id)).name}`), gems: x.needs.gems, fee: x.needs.fee },
       can_make: canMake(x, { ore: m.ore, gems: ctx.p.gems, gold: ctx.p.gold }),
     })),
@@ -1465,7 +1465,7 @@ api.post("/workshop", async (c) => {
     const wearNow = ctx.p.trinket_id === 0;
     await savePlayer(ctx, { gems: ctx.p.gems - x.needs.gems, gold: ctx.p.gold - x.needs.fee, ...(wearNow ? { trinket_id: x.id } : {}) });
     if (!wearNow) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,'trinket',$2)", [ctx.p.id, x.id]);
-    ctx.events.push({ kind: "crafted", item: x.name, bonus: bonusText(x), fee: x.needs.fee, worn: wearNow, ...(wearNow ? {} : { in_bag: true, wearing: trinket(ctx.p.trinket_id).name }) });
+    ctx.events.push({ kind: "crafted", item: x.name, bonus: bonusText(x, attributeName(ctx.p.class)), fee: x.needs.fee, worn: wearNow, ...(wearNow ? {} : { in_bag: true, wearing: trinket(ctx.p.trinket_id).name }) });
     await logEvent(ctx, "craft", { item: x.name, fee: x.needs.fee });
     if (x.id >= 7) await post(ctx, "crafted", ctx.p.name, null, { item: x.name });
   }));

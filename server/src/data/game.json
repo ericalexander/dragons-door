@@ -7,7 +7,8 @@
       "hpPerLevel": 10,
       "strPerLevel": 4,
       "defPerLevel": 2,
-      "critChance": 0.03
+      "critChance": 0.03,
+      "attribute": "Strength"
     },
     "thief": {
       "special": "Sneak Attack",
@@ -18,7 +19,8 @@
       "defPerLevel": 3,
       "dropChance": 0.05,
       "specialDodge": 0.5,
-      "critChance": 0.03
+      "critChance": 0.03,
+      "attribute": "Dexterity"
     },
     "mage": {
       "special": "Fireball",
@@ -34,7 +36,8 @@
         "cast": 1,
         "fireball": 4,
         "staff": 0.6
-      }
+      },
+      "attribute": "Intelligence"
     }
   },
   "levels": [

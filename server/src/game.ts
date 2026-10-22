@@ -130,6 +130,8 @@ export interface PublicState {
   /** What things cost right now, so the narrator can quote before the player commits. */
   prices: { inn: number; heal_per_hp: number; heal_all: number };
   bank_trips_left: number;
+  /** What `str` is called for their class: Strength, Dexterity or Intelligence. */
+  attribute: string;
   /** The name of their special: a caster's is named for the spell they know. */
   special: string;
   /** Casters: mana left today out of the day's pool. */
@@ -196,6 +198,9 @@ export function specialName(cls: PlayerClass, id: number): string {
   return casts(cls) ? (GAME.spellSpecials[id] ?? GAME.classes[cls].special) : GAME.classes[cls].special;
 }
 
+/** What a class calls its main attribute (the number the game stores as str): Strength, Dexterity, Intelligence. */
+export const attributeName = (cls: PlayerClass): string => (GAME.classes[cls] as { attribute?: string }).attribute ?? "Strength";
+
 /** Player's total strength and defense including gear. */
 export function effective(p: Player) {
   const j = trinket(p.trinket_id ?? 0);
@@ -255,9 +260,10 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     swings_left: Math.max(0, SWINGS_PER_DAY - (t.swings ?? 0)),
     ...(casts(p.class) ? { mana: t.mana ?? 0, mana_max: manaMax(p) } : {}),
     special: specialName(p.class, p.weapon_id),
+    attribute: attributeName(p.class),
     spouse,
     suitors_around: suitorsAround,
-    jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id))})` : null,
+    jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id), attributeName(p.class))})` : null,
     pickaxe: Boolean(p.pickaxe),
     cave_depth: p.cave_depth ?? null,
     place: p.pos_x === null || p.pos_x === undefined ? null : (() => { const t = tileAt(p.pos_x!, p.pos_y!); return { x: t.x, y: t.y, name: t.name, terrain: t.terrain, level: t.level, poi: t.poi }; })(),

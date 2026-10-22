@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.9.2",
+    "lore": "Mother Quill has been telling anyone who'll listen that a mage's power comes from the mind, not the arm. The town clerk, tired of arguing, has updated the register: warriors are measured by their Strength, thieves by their Dexterity, and mages by their Intelligence.",
+    "plain": "Each class now names its main attribute: Strength for warriors, Dexterity for thieves, Intelligence for mages. Same numbers as before."
+  },
+  {
     "version": "0.9.1",
     "lore": "Mother Quill would like it known that a mage who has learned Frost Needle does not go about throwing Fireballs. Every spell has its greater form, and now you'll know its name: Frost Nova, Thunderclap, Blizzard, and on up.",
     "plain": "A mage's special is now named for the spell they know (Frost Needle unleashes Frost Nova, Firebolt unleashes Fireball). Same power and mana cost as before; press (U) to unleash it."
