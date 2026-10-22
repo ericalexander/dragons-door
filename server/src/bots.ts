@@ -875,12 +875,77 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
   const camper = ["reckless", "drunk", "seer"].includes(row.personality);
   if (now.state.place && camper && Math.random() < 0.4) { b.log.push(`camped out at ${now.state.place.name}`); return; }
   await home(b);
+  await kitOut(b, row, mind, day);
   if (b.home === "ironhold") { await tidyBag(b); await b.post("/inn"); b.log.push("a bunk in the Long Hall"); return; }
   if (row.personality === "drunk") return drunkNight(b);
   if (row.personality === "reckless") return sleepRough(b);
   if (INN_SLEEPERS.includes(row.personality) && Math.random() < 0.95) return bedInn(b);
   await tidyBag(b);
   b.log.push("couldn't be bothered with the inn tonight");
+}
+
+/** Of everything they have, what share they won't spend on gear. Savers keep a lot back; Pomfrey keeps nothing. */
+const GEAR_RESERVE: Record<Personality, number> = {
+  banker: 0.5, drunk: 0.1, raider: 0.25, gossip: 0.3, pious: 0.3, reckless: 0.1, seer: 0.3, braggart: 0, veteran: 0.2, scout: 0.25, scholar: 0.3,
+};
+
+/**
+ * Once a day, back in town at bedtime: if they can afford better kit, they buy it. A weapon (or, for the
+ * gifted, the next spell at the library or chapel) and armor, the best they can manage while keeping their
+ * reserve and enough for the healer. Without this, buying gear only happened when "shop" came up by chance,
+ * and most of them went for days fighting with their fists.
+ */
+async function kitOut(b: Bot, row: Row, mind: Mind, day: string) {
+  if (mind.kitted === day) return;
+  mind.kitted = day;
+  const st = await b.get("/status");
+  if (isErr(st) || !st.state.alive) return;
+  const inTown = b.home === "ironhold" ? st.state.place?.x === IRON.x && st.state.place?.y === IRON.y : !st.state.place;
+  if (!inTown) return;
+  const saving = mind.goal?.kind === "save" || mind.goal?.kind === "rich";
+  const reserve = Math.min(0.8, GEAR_RESERVE[row.personality] + (saving ? 0.3 : 0));
+  let budget = Math.floor((st.state.gold + st.state.bank) * (1 - reserve)) - 20 * st.state.level;
+  if (budget <= 0) return;
+  const caster = ["mage", "priest"].includes(st.state.class);
+  // What to buy, cheapest need first: the weapon or spell, then armor.
+  type Pick = { kind: "weapon" | "armor" | "spell"; id: number; name: string; net: number };
+  const picks: Pick[] = [];
+  if (caster) {
+    const lib = await b.get("/library");
+    const ev = isErr(lib) ? undefined : lib.events.find((e) => e.kind === "library") as unknown as { spells: { id: number; name: string; cost: number; known?: boolean; learnable?: boolean }[] } | undefined;
+    if (ev) {
+      const known = ev.spells.find((x) => x.known);
+      const tradeIn = Math.floor((known?.cost ?? 0) / 2);
+      const best = ev.spells.filter((x) => x.learnable && x.cost - tradeIn <= budget).sort((a, z) => z.id - a.id)[0];
+      if (best) { picks.push({ kind: "spell", id: best.id, name: best.name, net: best.cost - tradeIn }); budget -= best.cost - tradeIn; }
+    }
+  }
+  for (const kind of (caster ? ["armor"] : ["weapon", "armor"]) as ("weapon" | "armor")[]) {
+    const cat = await b.get(`/shop?kind=${kind}`);
+    const ev = isErr(cat) ? undefined : cat.events.find((e) => e.kind === "catalog") as unknown as { owned: number; items: { id: number; cost: number; name: string }[] } | undefined;
+    if (!ev) continue;
+    const tradeIn = Math.floor((ev.items.find((i) => i.id === ev.owned)?.cost ?? 0) / 2);
+    const best = ev.items.filter((i) => i.id > ev.owned && i.cost - tradeIn <= budget).sort((a, z) => z.id - a.id)[0];
+    if (best) { picks.push({ kind, id: best.id, name: best.name, net: best.cost - tradeIn }); budget -= best.cost - tradeIn; }
+  }
+  if (!picks.length) return;
+  // Draw what's needed from the bank, buy, and put the rest back.
+  const need = picks.reduce((n, p) => n + p.net, 0) + 20;
+  if (st.state.gold < need) await b.post("/bank", { op: "withdraw", amount: Math.min(st.state.bank, need - st.state.gold) });
+  for (const p of picks) {
+    if (p.kind === "spell") {
+      // Spells are taught in Brightwater; an Ironholder walks down for it and back up after.
+      if (b.home === "ironhold") await b.post("/travel", { x: 0, y: 0 });
+      const r = await b.post("/library", { id: p.id });
+      if (!isErr(r) && kinds(r).includes("learned")) b.log.push(`learned ${p.name}`);
+      if (b.home === "ironhold") await home(b);
+    } else {
+      const r = await b.post("/buy", { kind: p.kind, id: p.id });
+      if (!isErr(r) && kinds(r).includes("bought")) b.log.push(`bought ${p.name}`);
+    }
+  }
+  const after = await b.get("/status");
+  if (!isErr(after) && after.state.gold > 40 * after.state.level) await b.post("/bank", { op: "deposit", amount: after.state.gold - 20 * after.state.level });
 }
 
 const song: Step = async (b) => { await b.post("/bard"); };

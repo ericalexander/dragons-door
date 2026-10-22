@@ -31,6 +31,8 @@ export interface Goal {
 
 export interface Mind {
   goal?: Goal;
+  /** The day they last looked over their kit at bedtime. */
+  kitted?: string;
   /** Goals they've finished, newest first. */
   done?: { kind: GoalKind; line: string; day: string }[];
   /** Gold given to the shrine so far (Brother Ansel). */
