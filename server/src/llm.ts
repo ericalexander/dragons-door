@@ -10,7 +10,7 @@ export async function write(opts: { system: string; content: string; maxTokens?:
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: opts.model ?? process.env.CHRONICLE_MODEL ?? "claude-sonnet-5-5",
+        model: opts.model ?? "claude-sonnet-5-5",
         max_tokens: opts.maxTokens ?? 4000,
         system: opts.system,
         messages: [{ role: "user", content: opts.content }],
