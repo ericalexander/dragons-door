@@ -64,6 +64,10 @@ class Bot {
   keepOre = false;
   /** Where they live: where they heal, sleep and go about town. */
   home: "brightwater" | "ironhold" = "brightwater";
+  /** Where they really live, when an errand has them living somewhere else for now. */
+  native: "brightwater" | "ironhold" | null = null;
+  /** Things they might say in the tavern while an errand (theirs, or a friend's) is on. */
+  errandLines: string[] = [];
   constructor(public name: string, public personality: Personality, private key: string) {}
 
   async call(method: "GET" | "POST", path: string, body?: unknown): Promise<Envelope | { error: string; message?: string }> {
@@ -495,7 +499,8 @@ export const FIGHTS: Record<Personality, number[]> = {
   scholar: [3, 3, 2],
 };
 
-interface Row { player_id: string; name: string; personality: Personality; api_key: string; mind: Mind; home?: string }
+interface Errand { to: "brightwater" | "ironhold"; until: string; why: string; lines?: Record<string, string[]> }
+interface Row { player_id: string; name: string; personality: Personality; api_key: string; mind: Mind; home?: string; errand?: Errand | null }
 
 type Gathered = Facts & { pos: [number, number] | null; location: string; class: string; pickaxe: boolean; gems: number; ore: Record<number, number>; cave: { name: string; x: number; y: number } | null };
 async function gatherFacts(row: Row, mind: Mind): Promise<Gathered> {
@@ -531,7 +536,16 @@ async function home(b: Bot) {
   const s = await b.get("/status");
   if (isErr(s)) return;
   if (b.home === "ironhold") { if (s.state.place?.x !== IRON.x || s.state.place?.y !== IRON.y) await b.post("/travel", { x: IRON.x, y: IRON.y }); return; }
+  // Brightwater: "town" is their own home, unless they're an Ironholder down on an errand.
+  if (b.native === "ironhold") { if (s.state.place) await b.post("/travel", { x: 0, y: 0 }); return; }
   if (s.state.place) await b.post("/travel", { to: "town" });
+}
+
+/** Lines for the tavern from any errand that's on and names this townsperson: their own, or a friend's who's come to them. */
+function errandLines(roster: Row[], row: Row, day: string): string[] {
+  const out: string[] = [];
+  for (const r of roster) if (r.errand && r.errand.until >= day) out.push(...(r.errand.lines?.[row.name] ?? []));
+  return out;
 }
 
 /** Ironhold's townsfolk at the forge: take the best piece they can afford up a step. */
@@ -602,6 +616,12 @@ async function tavernTalk(b: Bot, row: Row, mind: Mind, f: Facts) {
       `${grudge.name} owes me. Tell them I said so.`,
     ]));
     b.log.push("muttered about a grudge");
+    return;
+  }
+  // Something's happened: an old friend in town, an errand of their own. It's on their mind more than most things.
+  if (b.errandLines.length && Math.random() < 0.5) {
+    await say(b, pick(b.errandLines));
+    b.log.push("talked about what's happened");
     return;
   }
   // Now and then the past comes up: never the secret, just what they'd say over a drink.
@@ -868,7 +888,7 @@ type Step = (b: Bot) => Promise<void>;
 
 async function ensureRoster(): Promise<Row[]> {
   const existing = await pool.query<Row>(
-    "select b.player_id, p.name, b.personality, b.api_key, b.mind, b.home from bots b join players p on p.id = b.player_id",
+    "select b.player_id, p.name, b.personality, b.api_key, b.mind, b.home, b.errand from bots b join players p on p.id = b.player_id",
   );
   const have = new Set(existing.rows.map((r) => r.name));
   for (const spec of ROSTER) {
@@ -917,6 +937,10 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
     if (!due.length) continue;
     const b = new Bot(row.name, row.personality, row.api_key);
     if (row.home === "ironhold") b.home = "ironhold";
+    // Away on an errand: they live in that town until it's done, then the errand lapses and they go home.
+    if (row.errand && row.errand.until >= day) { b.home = row.errand.to; b.native = row.home === "ironhold" ? "ironhold" : "brightwater"; }
+    else if (row.errand) await pool.query("update bots set errand = null where player_id = $1", [row.player_id]);
+    b.errandLines = errandLines(roster, row, day);
     const mind: Mind = row.mind ?? {};
     const away = awayToday(day, row.name, row.personality);
     for (const { i, at } of due) {

@@ -1429,6 +1429,15 @@ async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]
       await ctx.c.query("update quests set data = $2 where id = $1", [row.id, JSON.stringify(row.data)]);
     } else if ("mark_target" in fx) {
       if (row.data.target) await hearOf(ctx, row.data.target.x, row.data.target.y, q.title);
+    } else if ("errand" in fx) {
+      // The townsperson sets off: they know the way to where they're going, and they're back after `days`.
+      const e = fx.errand;
+      const until = new Date(Date.parse(ctx.day + "T00:00:00Z") + e.days * 86_400_000).toISOString().slice(0, 10);
+      const to = e.to === "ironhold" ? TOWN_TILES.ironhold : { x: 0, y: 0 };
+      const who = (await ctx.c.query<{ id: string }>(
+        "update bots b set errand = $2 from players p where p.id = b.player_id and p.name = $1 returning b.player_id as id",
+        [e.who, JSON.stringify({ to: e.to, until, why: e.why, lines: e.lines ?? {} })])).rows[0];
+      if (who) await ctx.c.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing", [who.id, to.x, to.y]);
     } else plain.push(fx);
   }
   const { got, monster } = await applyEffects(ctx, plain, Math.max(1, ctx.p.level), null, q.title);
@@ -1808,7 +1817,7 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
   requireInTown(ctx, "the town square");
   const now = new Date();
   const folk = await ctx.c.query<{ name: string; personality: Personality; alive: boolean; mind: Mind; pos_x: number | null; pos_y: number | null; location: "inn" | "fields" }>(
-    "select p.name, b.personality, p.alive, b.mind, p.pos_x, p.pos_y, p.location from bots b join players p on p.id = b.player_id where b.home = 'brightwater' order by p.name");
+    "select p.name, b.personality, p.alive, b.mind, p.pos_x, p.pos_y, p.location from bots b join players p on p.id = b.player_id where coalesce(case when b.errand->>'until' >= $1 then b.errand->>'to' end, b.home) = 'brightwater' order by p.name", [ctx.day]);
   const about: { name: string; doing: string; on_mind?: string }[] = [];
   const elsewhere: { name: string; where: string; on_mind?: string }[] = [];
   for (const f of folk.rows) {

@@ -23,7 +23,11 @@ export type QEffect =
   | { take_item: true }          // and comes out again
   | { trinket: number }          // a piece of jewelry, straight onto them or into the bag
   | { place_target: { near: number; far: number; terrain?: string; side?: "north" | "east" | "south" | "west" } }  // pick a spot this many rings out (relative to their farthest), of a kind of land or on one side of town if it can
-  | { mark_target: true };       // and mark it on their map
+  | { mark_target: true }        // and mark it on their map
+  /** A townsperson goes to live in another town for a few days, because of what the player did. `lines` are
+   *  things they (or the people they're with) might say in that town's tavern meanwhile. Keep them vague:
+   *  the tavern board is public, and nobody's secret should land on it. */
+  | { errand: { who: string; to: "brightwater" | "ironhold"; days: number; why: string; lines?: Record<string, string[]> } };
 
 export interface QChoice { id: string; label: string; cost?: number; effects: QEffect[]; then?: string; end?: string;
   /** A line for the news when this choice is made. {name} is the player. */
