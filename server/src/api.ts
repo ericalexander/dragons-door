@@ -2115,7 +2115,7 @@ api.post("/talk", async (c) => {
     // Talking can move a quest along, or a townsperson might ask a favor.
     await questTriggers(ctx, { talk: { name: who.name, townsfolk: who.role === "townsfolk" } });
     if (!ctx.events.some((e) => e.kind === "quest") && !again) {
-      for (const q of QUESTS) if (q.start_on?.talk.includes(who.name) && (!q.start_on.needs_secret || (pieces.length > 0 && heardPieces >= pieces.length)) && !past && Math.random() < q.start_on.chance && await startQuest(ctx, q.id, false)) break;
+      for (const q of QUESTS) if (q.start_on?.talk.includes(who.name) && (!q.start_on.needs_secret || (pieces.length > 0 && heardPieces >= pieces.length)) && (!q.start_on.needs_pieces || heardPieces >= q.start_on.needs_pieces) && !past && Math.random() < q.start_on.chance && await startQuest(ctx, q.id, false)) break;
     }
     if (ctx.events.some((e) => e.kind === "quest")) ctx.hint = `${before} Then the quest moment, in the same conversation: tell its cue, and offer any choices numbered (1), (2)…; call \`quest\` with the choice id only when they pick.`;
   }));

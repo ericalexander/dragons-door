@@ -53,7 +53,7 @@ export interface QuestDef {
   /** Days before it closes on its own, from the start. */
   days: number;
   /** How it can start. Events start quests with a { quest } effect; a talk start offers it. */
-  start_on?: { talk: string[]; chance: number; needs_secret?: boolean };
+  start_on?: { talk: string[]; chance: number; needs_secret?: boolean; /** Or: at least this many pieces of their past heard. */ needs_pieces?: number };
   steps: QStep[];
   /** What the narrator says if it runs out of time, by the step it was on (or "default"). */
   expired: Record<string, string>;
