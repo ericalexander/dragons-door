@@ -19,7 +19,7 @@ import * as Bag from "./bag.js";
 import { GEM_SELL } from "./caves.js";
 
 export type ListSlot = "weapon" | "armor" | "ore" | "trinket" | "gem";
-export const TOWNS = { brightwater: "Brightwater" } as const;
+export const TOWNS = { brightwater: "Brightwater", ironhold: "Ironhold" } as const;
 export type Town = keyof typeof TOWNS;
 
 export const AUCTION = {
@@ -45,10 +45,10 @@ export const AUCTION = {
 };
 
 /** What one of the item is worth at the shop, and what the smith (or Odile, for gems) pays for it. */
-export function worth(slot: ListSlot, id: number): { value: number; smith: number; name: string; weight: number } {
+export function worth(slot: ListSlot, id: number, r = 0): { value: number; smith: number; name: string; weight: number } {
   if (slot === "gem") return { value: GEM_SELL * 2, smith: GEM_SELL, name: "Gem", weight: 0 };
-  const it = Bag.item(slot, id);
-  return { value: it.cost, smith: Bag.sellPrice(slot, id), name: it.name, weight: it.weight };
+  const it = Bag.item(slot, id, r);
+  return { value: it.cost, smith: Bag.sellPrice(slot, id, r), name: it.name, weight: it.weight };
 }
 
 export const listingFee = (minBid: number) => Math.max(AUCTION.feeMin, Math.ceil(minBid * AUCTION.feeShare));
@@ -56,8 +56,8 @@ export const houseCut = (price: number) => Math.floor(price * AUCTION.cut);
 export const nextBid = (minBid: number, high: number | null) => high === null ? minBid : high + Math.max(1, Math.ceil(high * AUCTION.raise));
 
 /** Why a listing's prices aren't allowed, or null if they are. */
-export function priceProblem(slot: ListSlot, id: number, qty: number, minBid: number, buyNow: number | null): string | null {
-  const w = worth(slot, id);
+export function priceProblem(slot: ListSlot, id: number, qty: number, minBid: number, buyNow: number | null, r = 0): string | null {
+  const w = worth(slot, id, r);
   const cap = Math.max(10, w.value * qty * AUCTION.ceiling);
   if (minBid < 1) return "the minimum bid has to be at least 1 gold";
   if (minBid > cap) return `no price can go above ${cap} gold for that (three times what it's worth)`;
@@ -68,6 +68,6 @@ export function priceProblem(slot: ListSlot, id: number, qty: number, minBid: nu
   }
   return null;
 }
-export const bidCeiling = (slot: ListSlot, id: number, qty: number) => Math.max(10, worth(slot, id).value * qty * AUCTION.ceiling);
+export const bidCeiling = (slot: ListSlot, id: number, qty: number, r = 0) => Math.max(10, worth(slot, id, r).value * qty * AUCTION.ceiling);
 
 export const sellFraction = GAME.sellFraction;

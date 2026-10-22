@@ -8,6 +8,8 @@ import {
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
+import { TOWNS as TOWN_INFO, homeOf } from "./towns.js";
+import { boosted, forgeCost, MAX_RARITY, rarity, RARITY, withRarity } from "./rarity.js";
 import { AUCTION, TOWNS, bidCeiling, houseCut, listingFee, nextBid, priceProblem, worth, type ListSlot, type Town } from "./auctions.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
 import { weatherAt } from "./weather.js";
@@ -15,7 +17,7 @@ import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
-import { DIRS, LEGEND, renderMap, tileAt, type Dir, type Tile } from "./world.js";
+import { DIRS, LEGEND, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { loadLore, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
@@ -247,6 +249,14 @@ function requireInTown(ctx: Ctx, what: string) {
   if (ctx.p.pos_x !== null && ctx.p.pos_x !== undefined) throw new GameError("not_in_town", `${what} is back in town; return to town first (it costs nothing)`, 409);
 }
 const inWild = (p: Player) => p.pos_x !== null && p.pos_x !== undefined;
+/** Services some towns have: you must be in one of them. Returns which town you're in. */
+function requireTown(ctx: Ctx, what: string, towns: TownId[]): TownId {
+  const here = townAt(ctx.p.pos_x, ctx.p.pos_y);
+  if (here && towns.includes(here)) return here;
+  if (towns.length === 1 && towns[0] === "brightwater") requireInTown(ctx, what);
+  // Never names a town the player may not have found.
+  throw new GameError("not_here", towns.includes("brightwater") ? `${what} is back in town; return to town first (it costs nothing)` : `${what} isn't here`, 409);
+}
 
 /** Going out to fight means leaving your room: you're back in the fields and fair game tonight. */
 async function leaveInn(ctx: Ctx) {
@@ -384,8 +394,9 @@ api.post("/respec", async (c) => {
     const fee = Math.max(100, RESPEC_PER_LEVEL * (ctx.p.level - 1));
     const items = await Bag.contents(ctx.c, ctx.p.id);
     const gear = items.filter((x) => x.slot === "weapon" || x.slot === "armor");
-    const buyback = gear.reduce((n, x) => n + Bag.sellPrice(x.slot, x.item_id), 0)
-      + (ctx.p.weapon_id ? Bag.sellPrice("weapon", ctx.p.weapon_id) : 0) + (ctx.p.armor_id ? Bag.sellPrice("armor", ctx.p.armor_id) : 0);
+    const buyback = gear.reduce((n, x) => n + Bag.sellPrice(x.slot, x.item_id, x.rarity), 0)
+      + (ctx.p.weapon_id && !casts(ctx.p.class) ? Bag.sellPrice("weapon", ctx.p.weapon_id, ctx.p.weapon_rarity ?? 0) : ctx.p.weapon_id ? Bag.sellPrice("weapon", ctx.p.weapon_id) : 0)
+      + (ctx.p.armor_id ? Bag.sellPrice("armor", ctx.p.armor_id, ctx.p.armor_rarity ?? 0) : 0);
     const have = ctx.p.gold + ctx.p.bank + buyback;
     const quote = {
       from: ctx.p.class, to: body.class, from_level: ctx.p.level, fee, buyback, can_afford: have >= fee,
@@ -400,9 +411,9 @@ api.post("/respec", async (c) => {
     const fromGold = Math.min(gold, fee); gold -= fromGold; bank -= fee - fromGold;
     await ctx.c.query("delete from inventory where player_id = $1 and slot in ('weapon','armor')", [ctx.p.id]);
     // What the smith bought back goes on his shelf: bagged gear, worn armor, and a worn weapon (a caster's "weapon" is a spell, not a thing).
-    if (!ctx.p.is_test) await toStorehouse(ctx.c, [...gear, { slot: "armor", item_id: ctx.p.armor_id }, ...(casts(ctx.p.class) ? [] : [{ slot: "weapon", item_id: ctx.p.weapon_id }])]);
+    if (!ctx.p.is_test) await toStorehouse(ctx.c, [...gear, { slot: "armor", item_id: ctx.p.armor_id, rarity: ctx.p.armor_rarity ?? 0 }, ...(casts(ctx.p.class) ? [] : [{ slot: "weapon", item_id: ctx.p.weapon_id, rarity: ctx.p.weapon_rarity ?? 0 }])]);
     const old = ctx.p.class;
-    await savePlayer(ctx, { class: body.class, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, weapon_id: 0, armor_id: 0, gold, bank, ground: null, respec_at: new Date().toISOString() });
+    await savePlayer(ctx, { class: body.class, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, weapon_id: 0, armor_id: 0, weapon_rarity: 0, armor_rarity: 0, gold, bank, ground: null, respec_at: new Date().toISOString() });
     await saveTurns(ctx, { specials: GAME.classes[body.class].specialsPerDay, mana: manaMax(ctx.p) });
     await post(ctx, "respec", ctx.p.name, null, { from: old, to: body.class, line: `${ctx.p.name} has ${PUT_DOWN[old]} and ${TAKE_UP[body.class]}.` });
     await logEvent(ctx, "respec", { from: old, to: body.class, from_level: quote.from_level, fee, buyback });
@@ -542,22 +553,22 @@ api.get("/public/auctions", async (c) => {
   const out = await tx(async (db) => {
     const today = realmDay((await realmSettings(db)).resetHourUtc);
     await settleAuctions(db, today);
-    const stats = (slot: ListSlot, id: number) =>
-      slot === "weapon" ? { power: weapon(id).str } : slot === "armor" ? { def: armor(id).def } : slot === "trinket" ? { bonus: bonusText(trinket(id)) } : {};
+    const stats = (slot: ListSlot, id: number, r = 0) =>
+      slot === "weapon" ? { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}) } : slot === "armor" ? { def: boosted(armor(id).def, r), ...(r ? { rarity: rarity(r).name } : {}) } : slot === "trinket" ? { bonus: bonusText(trinket(id)) } : {};
     const open = (await db.query<ARow>(`${A_SELECT} where a.status = 'open' and s.is_test is not true order by a.ends_day, a.id limit 60`)).rows;
     const sold = (await db.query<ARow & { day: string }>(
       `${A_SELECT.replace("a.collected,", "a.collected, a.settled_at::date::text as day,")} where a.status = 'sold' and s.is_test is not true and b.is_test is not true order by a.settled_at desc limit 25`)).rows;
     // Every sale in the last 30 days, per item, priced per unit.
-    const hist = (await db.query<{ slot: ListSlot; item_id: number; day: string; n: string; unit: string; lo: string; hi: string }>(
-      `select a.slot, a.item_id, a.settled_at::date::text as day, count(*)::text as n,
+    const hist = (await db.query<{ slot: ListSlot; item_id: number; rarity: number; day: string; n: string; unit: string; lo: string; hi: string }>(
+      `select a.slot, a.item_id, a.rarity, a.settled_at::date::text as day, count(*)::text as n,
               round(avg(a.high_bid::numeric / a.qty))::text as unit, min(a.high_bid / a.qty)::text as lo, max(a.high_bid / a.qty)::text as hi
        from auctions a left join players s on s.id = a.seller_id left join players b on b.id = a.high_bidder
        where a.status = 'sold' and a.settled_at > now() - interval '30 days' and s.is_test is not true and b.is_test is not true
-       group by 1, 2, 3 order by 1, 2, 3`)).rows;
+       group by 1, 2, 3, 4 order by 1, 2, 3, 4`)).rows;
     const items = new Map<string, { item: string; slot: ListSlot; worth: number; days: { day: string; sales: number; avg: number; low: number; high: number }[] }>();
     for (const h of hist) {
-      const k = `${h.slot}:${h.item_id}`;
-      if (!items.has(k)) items.set(k, { item: worth(h.slot, h.item_id).name, slot: h.slot, worth: worth(h.slot, h.item_id).value, days: [] });
+      const k = `${h.slot}:${h.item_id}:${h.rarity}`;
+      if (!items.has(k)) items.set(k, { item: worth(h.slot, h.item_id, h.rarity).name, slot: h.slot, worth: worth(h.slot, h.item_id, h.rarity).value, days: [] });
       items.get(k)!.days.push({ day: h.day, sales: Number(h.n), avg: Number(h.unit), low: Number(h.lo), high: Number(h.hi) });
     }
     const trends = [...items.values()].map((t) => {
@@ -566,7 +577,7 @@ api.get("/public/auctions", async (c) => {
     }).sort((a, z) => z.sales - a.sales || a.item.localeCompare(z.item));
     return {
       day: today,
-      open: open.map((r) => ({ lot: Number(r.id), item: lotName(r), slot: r.slot, ...stats(r.slot, r.item_id), worth: worth(r.slot, r.item_id).value * r.qty,
+      open: open.map((r) => ({ lot: Number(r.id), item: lotName(r), slot: r.slot, ...stats(r.slot, r.item_id, r.rarity), worth: worth(r.slot, r.item_id, r.rarity).value * r.qty,
         seller: r.seller ?? "the house", town: TOWNS[r.town as Town] ?? r.town, min_bid: r.min_bid, high_bid: r.high_bid, buy_now: r.buy_now, closes_after: r.ends_day })),
       sold: sold.map((r) => ({ item: lotName(r), slot: r.slot, price: r.high_bid, seller: r.seller ?? "the house", buyer: r.bidder, day: r.day, bought_outright: r.buy_now !== null && r.high_bid === r.buy_now })),
       trends,
@@ -627,7 +638,7 @@ function aOrAn(item: string): string {
 export function newsLine(n: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }): string {
   switch (n.kind) {
     case "joins": return String(n.detail.line);
-    case "discovery": return `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;
+    case "discovery": return n.detail.poi === "town" ? `${n.actor} found ${n.detail.place}, a town nobody in Brightwater knew was there.` : `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;
     case "join": return `${n.actor} has entered the realm.`;
     case "pvp_kill": return `${n.actor} slew ${n.target} in the fields and took ${n.detail.gold} gold.`;
     case "pvp_survived": return `${n.target} fought off an attack from ${n.actor}.`;
@@ -644,6 +655,7 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
     case "goal": return String(n.detail.line);
     case "respec": return String(n.detail.line);
     case "quest_news": return String(n.detail.line);
+    case "forged": return `${n.actor} had Brannagh Steel forge ${/^[AEIOU]/.test(String(n.detail.item)) ? "an" : "a"} ${n.detail.item} in Ironhold.`;
     case "auction_sale": return `${n.actor} sold ${n.detail.item} at auction to ${n.target} for ${n.detail.price} gold.`;
     case "mined_out": return `${n.detail.place} was mined out today; ${n.actor} took the last of it.`;
     case "crafted": return `Odile made ${n.actor} ${aOrAn(String(n.detail.item))}.`;
@@ -683,6 +695,7 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
   await requireNoEncounter(ctx);
   await dropEvent(ctx);
   if (ctx.t.forest_fights <= 0) { ctx.events.push({ kind: "no_fights_left" }); return; }
+  if (inWild(ctx.p) && townAt(ctx.p.pos_x, ctx.p.pos_y)) throw new GameError("in_town", "there's nothing to hunt inside the walls: step outside first", 409);
   await leaveInn(ctx);
   if (ctx.p.ground) {
     ctx.events.push({ kind: "left_behind", item: Bag.item(ctx.p.ground.slot, ctx.p.ground.item_id).name });
@@ -926,7 +939,7 @@ api.post("/healer", async (c) => {
   const body = z.object({ hp: z.union([z.literal("all"), z.number().int().positive()]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, "the healer");
+    requireTown(ctx, "the healer", ["brightwater", "ironhold"]);
     await requireNoEncounter(ctx);
     const missing = ctx.p.max_hp - ctx.p.hp;
     const want = Math.min(missing, body.hp === "all" ? missing : body.hp);
@@ -960,12 +973,13 @@ api.post("/buy", async (c) => {
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
-    const tradeIn = Math.floor(current.cost / 2);
+    const curRar = body.kind === "weapon" ? ctx.p.weapon_rarity ?? 0 : ctx.p.armor_rarity ?? 0;
+    const tradeIn = Math.floor(Bag.item(body.kind, current.id, curRar).cost / 2);
     const discount = charmDiscount(charmOf(ctx.p));
     const cost = Math.ceil((item.cost - tradeIn) * (1 - discount));
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
-    await savePlayer(ctx, { gold: ctx.p.gold - cost, ...(body.kind === "weapon" ? { weapon_id: item.id } : { armor_id: item.id }) });
-    if (current.id > 0 && !ctx.p.is_test) await toStorehouse(ctx.c, [{ slot: body.kind, item_id: current.id }]);
+    await savePlayer(ctx, { gold: ctx.p.gold - cost, ...(body.kind === "weapon" ? { weapon_id: item.id, weapon_rarity: 0 } : { armor_id: item.id, armor_rarity: 0 }) });
+    if (current.id > 0 && !ctx.p.is_test) await toStorehouse(ctx.c, [{ slot: body.kind, item_id: current.id, rarity: curRar }]);
     ctx.events.push({ kind: "bought", shop: body.kind, item: item.name, cost, trade_in: tradeIn, ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
     await logEvent(ctx, "spend", { on: body.kind, item: item.name, tier: item.id, gold: cost });
   }));
@@ -990,14 +1004,14 @@ api.post("/bank", async (c) => {
 
 api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
-    requireInTown(ctx, "the inn");
+    const innTown = requireTown(ctx, "a bed for the night", ["brightwater", "ironhold"]);
   await requireNoEncounter(ctx);
   if (ctx.t.inn_used) { ctx.events.push({ kind: "already_at_inn" }); return; }
   const cost = innCost(ctx.p, ctx.spouse);
   if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold }); return; }
   await savePlayer(ctx, { gold: ctx.p.gold - cost, location: "inn" });
   await saveTurns(ctx, { inn_used: true });
-  ctx.events.push({ kind: "inn_sleep", cost });
+  ctx.events.push({ kind: "inn_sleep", cost, ...(innTown === "ironhold" ? { where: "a bunk in the Long Hall at Ironhold", wake_here: true } : {}) });
   await logEvent(ctx, "spend", { on: "inn", gold: cost });
   ctx.hint = "They are safe from other players until the realm resets, and will wake fully healed.";
 })));
@@ -1038,7 +1052,7 @@ async function maybeEvent(ctx: Ctx, x: number, y: number, chance = EVENT_CHANCE,
 }
 
 /** Now and then an old journal, a letter or a page turns up: one every few days at most, each found once. The words come from the lore. */
-async function maybeJournal(ctx: Ctx, where: "wild" | "cave" | "town", ring = 0) {
+async function maybeJournal(ctx: Ctx, where: "wild" | "cave" | "town" | "ironhold", ring = 0) {
   if (ctx.p.role !== "player") return;
   if (Math.random() >= JOURNAL_CHANCE[where] * JOURNAL_CHANCE.scale) return;
   const pool = lore().journals.filter((j) => j.where === where && j.min_ring <= ring);
@@ -1164,6 +1178,7 @@ api.post("/move", async (c) => {
       ...(others.length ? { others_here: others } : {}),
       ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
     await questTriggers(ctx, { arrive: { x, y } });
+    if (t.poi === "town") { await arriveInTown(ctx, t); return; }
     if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, x, y);
     if (!ctx.events.some((e) => e.kind === "quest" || e.kind === "wild_event")) await maybeJournal(ctx, "wild", t.ring);
   }));
@@ -1198,6 +1213,7 @@ api.post("/travel", async (c) => {
     const others = await othersHere(ctx, body.x, body.y);
     ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true, distance, ...(others.length ? { others_here: others } : {}) });
     await questTriggers(ctx, { arrive: { x: body.x, y: body.y } });
+    if (t.poi === "town") { await arriveInTown(ctx, t); return; }
     if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, body.x, body.y, Math.min(ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP * distance), true);
   }));
 });
@@ -1666,7 +1682,7 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
   requireInTown(ctx, "the town square");
   const now = new Date();
   const folk = await ctx.c.query<{ name: string; personality: Personality; alive: boolean; mind: Mind; pos_x: number | null; pos_y: number | null; location: "inn" | "fields" }>(
-    "select p.name, b.personality, p.alive, b.mind, p.pos_x, p.pos_y, p.location from bots b join players p on p.id = b.player_id order by p.name");
+    "select p.name, b.personality, p.alive, b.mind, p.pos_x, p.pos_y, p.location from bots b join players p on p.id = b.player_id where b.home = 'brightwater' order by p.name");
   const about: { name: string; doing: string; on_mind?: string }[] = [];
   const elsewhere: { name: string; where: string; on_mind?: string }[] = [];
   for (const f of folk.rows) {
@@ -1703,6 +1719,124 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
     ...(lore().world ? { realm: lore().world } : {}),
   });
   await maybeJournal(ctx, "town");
+}, { weather: true })));
+
+// ---------- the forge (Ironhold) ----------
+
+type ForgeTarget = { target: "weapon" | "armor" | number; slot: "weapon" | "armor"; item_id: number; rarity: number; row?: number };
+
+/** Everything they could take to the forge: what they're wearing (not a caster's spell) and gear in the bag. */
+async function forgeables(ctx: Ctx): Promise<ForgeTarget[]> {
+  const out: ForgeTarget[] = [];
+  if (ctx.p.weapon_id > 0 && !casts(ctx.p.class)) out.push({ target: "weapon", slot: "weapon", item_id: ctx.p.weapon_id, rarity: ctx.p.weapon_rarity ?? 0 });
+  if (ctx.p.armor_id > 0) out.push({ target: "armor", slot: "armor", item_id: ctx.p.armor_id, rarity: ctx.p.armor_rarity ?? 0 });
+  for (const x of await Bag.contents(ctx.c, ctx.p.id)) if (x.slot === "weapon" || x.slot === "armor") out.push({ target: x.id, slot: x.slot, item_id: x.item_id, rarity: x.rarity ?? 0, row: x.id });
+  return out;
+}
+async function forgeQuote(ctx: Ctx, f: ForgeTarget, ore: Record<number, number>) {
+  const base = f.slot === "weapon" ? weapon(f.item_id) : armor(f.item_id);
+  const stat = (r: number) => f.slot === "weapon" ? { power: boosted((base as { str: number }).str, r) } : { def: boosted((base as { def: number }).def, r) };
+  const cost = forgeCost(base.cost, f.rarity);
+  const missing: string[] = [];
+  if (cost) {
+    if (ctx.p.gold + ctx.p.bank < cost.gold) missing.push(`${cost.gold - ctx.p.gold - ctx.p.bank} more gold`);
+    for (const [o, n] of Object.entries(cost.ore)) if ((ore[Number(o)] ?? 0) < (n ?? 0)) missing.push(`${(n ?? 0) - (ore[Number(o)] ?? 0)} more ${oreOf(Number(o)).name}`);
+    if (ctx.p.gems < cost.gems) missing.push(`${cost.gems - ctx.p.gems} more gems`);
+  }
+  return {
+    target: f.target, worn: typeof f.target === "string", item: withRarity(base.name, f.rarity), rarity: rarity(f.rarity).name, ...stat(f.rarity),
+    ...(cost ? {
+      next: { rarity: RARITY[f.rarity + 1].name, ...stat(f.rarity + 1), item: withRarity(base.name, f.rarity + 1) },
+      cost: { gold: cost.gold, ore: Object.entries(cost.ore).map(([o, n]) => `${n} ${oreOf(Number(o)).name}`), ...(cost.gems ? { gems: cost.gems } : {}) },
+      can_forge: missing.length === 0, ...(missing.length ? { missing } : {}),
+    } : { at_the_top: "Mythic is as far as any forge can take it" }),
+  };
+}
+async function oreCounts(ctx: Ctx) {
+  const ore: Record<number, number> = {};
+  for (const x of await Bag.contents(ctx.c, ctx.p.id)) if (x.slot === "ore") ore[x.item_id] = (ore[x.item_id] ?? 0) + 1;
+  return ore;
+}
+
+api.get("/forge", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAlive(ctx);
+  requireTown(ctx, "The forge", ["ironhold"]);
+  const ore = await oreCounts(ctx);
+  const pieces = [];
+  for (const f of await forgeables(ctx)) pieces.push(await forgeQuote(ctx, f, ore));
+  ctx.events.push({ kind: "forge", smith: "Brannagh Steel", pieces, have: { gold: ctx.p.gold, bank: ctx.p.bank, gems: ctx.p.gems, ore: Object.entries(ore).map(([o, n]) => `${n} ${oreOf(Number(o)).name}`) },
+    tiers: RARITY.map((r) => ({ name: r.name, stat: `x${r.mult}` })), note: casts(ctx.p.class) ? "spells aren't things; armor can be forged" : undefined });
+})));
+
+api.post("/forge", async (c) => {
+  const body = z.object({ target: z.union([z.literal("weapon"), z.literal("armor"), z.number().int()]), confirm: z.boolean().optional() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    requireTown(ctx, "The forge", ["ironhold"]);
+    await requireNoEncounter(ctx);
+    const f = (await forgeables(ctx)).find((x) => x.target === body.target);
+    if (!f) { ctx.events.push({ kind: "forge_refused", reason: body.target === "weapon" && casts(ctx.p.class) ? "a spell isn't something you can put on an anvil" : "you don't have that to forge" }); return; }
+    const ore = await oreCounts(ctx);
+    const q = await forgeQuote(ctx, f, ore);
+    if (!("next" in q) || !q.next) { ctx.events.push({ kind: "forge_refused", reason: "it's already Mythic" }); return; }
+    if (!q.can_forge) { ctx.events.push({ kind: "forge_refused", reason: "not enough to pay for it", missing: q.missing, quote: q }); return; }
+    if (!body.confirm && !ctx.p.is_bot) {
+      ctx.events.push({ kind: "forge_quote", ...q });
+      ctx.hint = "A quote, nothing done yet: say what Brannagh will do to the piece, the stat it goes to, and the cost, then ask them to confirm (y/n). Call again with confirm: true only on a yes.";
+      return;
+    }
+    const base = f.slot === "weapon" ? weapon(f.item_id) : armor(f.item_id);
+    const cost = forgeCost(base.cost, f.rarity)!;
+    if (!(await payFrom(ctx, cost.gold))) { ctx.events.push({ kind: "forge_refused", reason: "not enough gold" }); return; }
+    for (const [o, n] of Object.entries(cost.ore))
+      await ctx.c.query("delete from inventory where id in (select id from inventory where player_id = $1 and slot = 'ore' and item_id = $2 order by id limit $3)", [ctx.p.id, Number(o), n]);
+    if (cost.gems) await savePlayer(ctx, { gems: ctx.p.gems - cost.gems });
+    const to = f.rarity + 1;
+    if (f.row) await ctx.c.query("update inventory set rarity = $2 where id = $1", [f.row, to]);
+    else await savePlayer(ctx, f.slot === "weapon" ? { weapon_rarity: to } : { armor_rarity: to });
+    const made = withRarity(base.name, to);
+    ctx.events.push({ kind: "forged", ...q.next, item: made, from: q.item, rarity: RARITY[to].name, paid: q.cost, worn: !f.row });
+    await logEvent(ctx, "forge", { slot: f.slot, item_id: f.item_id, to, gold: cost.gold });
+    if (to >= 3) await post(ctx, "forged", ctx.p.name, null, { item: made });
+  }));
+});
+
+// ---------- other towns ----------
+
+/** What's in a town away from Brightwater, and who's about: its fixed characters, the townsfolk who live there, players seen lately. */
+async function townView(ctx: Ctx, id: TownId) {
+  const town = TOWN_INFO[id]!;
+  const at = TOWN_TILES[id as keyof typeof TOWN_TILES];
+  const folk = (await ctx.c.query<{ name: string; class: string; level: number; mind: Mind | null; personality: Personality }>(
+    `select p.name, p.class, p.level, b.mind, b.personality from players p join bots b on b.player_id = p.id
+     where p.pos_x = $1 and p.pos_y = $2 and p.alive and p.cave_depth is null order by p.name`, [at.x, at.y])).rows;
+  const players = (await ctx.c.query<{ name: string; class: string; level: number }>(
+    `select name, class, level from players where role = 'player' and not is_test and id <> $3 and alive and pos_x = $1 and pos_y = $2
+     and last_seen > now() - interval '30 minutes' order by last_seen desc limit 3`, [at.x, at.y, ctx.p.id])).rows;
+  return {
+    kind: "town", town: town.name, blurb: town.blurb, time_of_day: timeOfDay(realmHour(new Date())),
+    people: town.people,
+    townsfolk_here: folk.map((f) => ({ name: f.name, class: f.class, level: f.level, ...(f.mind?.goal ? { on_mind: goalLabel(f.name, f.personality, f.mind.goal) } : {}) })),
+    players_here: players,
+    services: { healer: "Jessamy Crane, in the Long Hall", inn: "a bunk in the Long Hall (wake up here)", auction: `${town.auctioneer}'s auction house, on the same board as Brightwater's`, forge: `${town.buyer}'s forge`, sell: `${town.buyer} buys gear` },
+    masters: "Masters only teach in Brightwater.",
+  };
+}
+
+/** Walking in through the gate. The first player ever to find the town makes the news (the discovery is recorded where they stepped in). */
+async function arriveInTown(ctx: Ctx, t: Tile) {
+  const id = townAt(t.x, t.y)!;
+  ctx.events.push(await townView(ctx, id));
+  await maybeJournal(ctx, "ironhold");
+  ctx.hint = `They're inside ${t.name}'s walls. Describe it from \`blurb\` and who's about, then its menu. There's no hunting inside the walls.`;
+}
+
+/** The town you're standing in, if it isn't Brightwater (whose square is /square). Generic on purpose: the plugin never names towns players haven't found. */
+api.get("/town", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  const here = townAt(ctx.p.pos_x, ctx.p.pos_y);
+  if (!here || here === "brightwater") { ctx.events.push({ kind: "no_town_here", note: here === "brightwater" ? "this is Brightwater; use square" : "there's no town here" }); return; }
+  ctx.events.push(await townView(ctx, here));
+  await maybeJournal(ctx, "ironhold");
 }, { weather: true })));
 
 /** Facts behind a rumor, straight from the realm. Null when there's nothing to tell. */
@@ -1772,6 +1906,10 @@ api.post("/talk", async (c) => {
         }
         where = w.where === "tavern" ? "the tavern" : "the square";
       }
+    } else if (homeOf(who.name)) {
+      const t = homeOf(who.name)!;
+      if (townAt(ctx.p.pos_x, ctx.p.pos_y) !== t.id) { ctx.events.push({ kind: "not_around", name: who.name, where: "nowhere you can see" }); return; }
+      where = t.people.find((x) => x.name === who.name)!.where;
     } else {
       requireInTown(ctx, who.name);
       const s = suitor(who.name);
@@ -2010,13 +2148,16 @@ api.post("/equip", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
-    let slot: Bag.Slot; let itemId: number; let rowId: number | null = null;
+    let slot: Bag.Slot; let itemId: number; let rowId: number | null = null; let rar = 0;
     if ("ground" in body) {
       if (!ctx.p.ground) { ctx.events.push({ kind: "nothing_on_ground" }); return; }
-      slot = ctx.p.ground.slot; itemId = ctx.p.ground.item_id;
+      slot = ctx.p.ground.slot; itemId = ctx.p.ground.item_id; rar = ctx.p.ground.rarity ?? 0;
     } else {
-      const row = await ownRow(ctx, body.id); slot = row.slot; itemId = row.item_id; rowId = row.id;
+      const row = await ownRow(ctx, body.id); slot = row.slot; itemId = row.item_id; rowId = row.id; rar = row.rarity ?? 0;
     }
+    // A caster learns a scroll's spell; the scroll's rarity doesn't carry into the spell.
+    if (slot === "weapon" && casts(ctx.p.class)) rar = 0;
+    const oldRar = slot === "weapon" ? ctx.p.weapon_rarity ?? 0 : slot === "armor" ? ctx.p.armor_rarity ?? 0 : 0;
     if (slot === "ore") { ctx.events.push({ kind: "cannot_equip", reason: "ore is for selling or for Odile to work" }); return; }
     if (slot === "quest") { ctx.events.push({ kind: "cannot_equip", reason: "it isn't something you wear; it belongs to a story" }); return; }
     const oldId = slot === "weapon" ? ctx.p.weapon_id : slot === "armor" ? ctx.p.armor_id : ctx.p.trinket_id;
@@ -2025,10 +2166,10 @@ api.post("/equip", async (c) => {
     const cap = Bag.bag(ctx.p.bag_id).capacity;
     if (after > cap) { ctx.events.push({ kind: "bag_full", need: after - cap, holding: Bag.item(slot, oldId).name }); return; }
     if (rowId !== null) await ctx.c.query("delete from inventory where id = $1", [rowId]);
-    if (oldId > 0) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, slot, oldId]);
-    await savePlayer(ctx, { ...(slot === "weapon" ? { weapon_id: itemId } : slot === "armor" ? { armor_id: itemId } : { trinket_id: itemId }), ...("ground" in body ? { ground: null } : {}) });
-    const label = (id: number) => slot === "weapon" && casts(ctx.p.class) ? weaponName(ctx.p.class, id) : Bag.item(slot, id).name;
-    ctx.events.push({ kind: "equipped", slot: slot === "weapon" && casts(ctx.p.class) ? "spell" : slot, item: label(itemId), ...(slot === "weapon" && casts(ctx.p.class) ? { learned_from_scroll: true } : {}), stowed: oldId > 0 ? label(oldId) : null });
+    if (oldId > 0) await ctx.c.query("insert into inventory (player_id, slot, item_id, rarity) values ($1,$2,$3,$4)", [ctx.p.id, slot, oldId, oldRar]);
+    await savePlayer(ctx, { ...(slot === "weapon" ? { weapon_id: itemId, weapon_rarity: rar } : slot === "armor" ? { armor_id: itemId, armor_rarity: rar } : { trinket_id: itemId }), ...("ground" in body ? { ground: null } : {}) });
+    const label = (id: number, r: number) => slot === "weapon" && casts(ctx.p.class) ? weaponName(ctx.p.class, id) : Bag.item(slot, id, r).name;
+    ctx.events.push({ kind: "equipped", slot: slot === "weapon" && casts(ctx.p.class) ? "spell" : slot, item: label(itemId, rar), ...(slot === "weapon" && casts(ctx.p.class) ? { learned_from_scroll: true } : {}), stowed: oldId > 0 ? label(oldId, oldRar) : null });
   }));
 });
 
@@ -2040,23 +2181,23 @@ api.post("/take", async (c) => c.json(await withPlayer(c.req.header("authorizati
   const usedNow = await Bag.used(ctx.c, ctx.p.id);
   const cap = Bag.bag(ctx.p.bag_id).capacity;
   if (usedNow + w > cap) { ctx.events.push({ kind: "bag_full", need: usedNow + w - cap }); return; }
-  await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, g.slot, g.item_id]);
+  await ctx.c.query("insert into inventory (player_id, slot, item_id, rarity) values ($1,$2,$3,$4)", [ctx.p.id, g.slot, g.item_id, g.rarity ?? 0]);
   await savePlayer(ctx, { ground: null });
-  ctx.events.push({ kind: "taken", item: Bag.item(g.slot, g.item_id).name, bag_used: usedNow + w, bag_capacity: cap });
+  ctx.events.push({ kind: "taken", item: Bag.item(g.slot, g.item_id, g.rarity ?? 0).name, bag_used: usedNow + w, bag_capacity: cap });
 })));
 
 api.post("/sell", async (c) => {
   const body = z.object({ id: z.number().int() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, "the shop");
+    const sellTown = requireTown(ctx, "someone to sell to", ["brightwater", "ironhold"]);
     await requireNoEncounter(ctx);
     const row = await ownRow(ctx, body.id);
-    const gold = Bag.sellPrice(row.slot, row.item_id);
+    const gold = Bag.sellPrice(row.slot, row.item_id, row.rarity);
     await ctx.c.query("delete from inventory where id = $1", [row.id]);
-    if (!ctx.p.is_test) await toStorehouse(ctx.c, [row]);
+    if (!ctx.p.is_test) await toStorehouse(ctx.c, [row], sellTown);
     await savePlayer(ctx, { gold: ctx.p.gold + gold });
-    ctx.events.push({ kind: "sold", item: Bag.item(row.slot, row.item_id).name, gold });
+    ctx.events.push({ kind: "sold", item: Bag.item(row.slot, row.item_id, row.rarity).name, gold, ...(sellTown === "ironhold" ? { to: "Brannagh Steel" } : {}) });
     if (row.slot === "quest") await questItemGone(ctx, row.item_id, "sold");
   }));
 });
@@ -2066,7 +2207,7 @@ api.post("/drop", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     const row = await ownRow(ctx, body.id);
     await ctx.c.query("delete from inventory where id = $1", [row.id]);
-    ctx.events.push({ kind: "dropped", item: Bag.item(row.slot, row.item_id).name });
+    ctx.events.push({ kind: "dropped", item: Bag.item(row.slot, row.item_id, row.rarity).name });
     if (row.slot === "quest") await questItemGone(ctx, row.item_id, "dropped");
   }));
 });
@@ -2155,24 +2296,24 @@ api.get("/mail/peek", async (c) => {
 
 interface ARow {
   id: string; town: string; seller_id: string | null; slot: ListSlot; item_id: number; qty: number; min_bid: number; buy_now: number | null;
-  high_bid: number | null; high_bidder: string | null; status: string; listed_day: string; ends_day: string; collected: boolean;
+  high_bid: number | null; high_bidder: string | null; status: string; listed_day: string; ends_day: string; collected: boolean; rarity: number;
   seller: string | null; seller_role: string | null; bidder: string | null;
 }
-const A_SELECT = `select a.id::text, a.town, a.seller_id, a.slot, a.item_id, a.qty, a.min_bid, a.buy_now, a.high_bid, a.high_bidder, a.status,
+const A_SELECT = `select a.id::text, a.town, a.seller_id, a.slot, a.item_id, a.qty, a.rarity, a.min_bid, a.buy_now, a.high_bid, a.high_bidder, a.status,
   a.listed_day::text, a.ends_day::text, a.collected, s.name as seller, s.role as seller_role, b.name as bidder
   from auctions a left join players s on s.id = a.seller_id left join players b on b.id = a.high_bidder`;
 
-const lotName = (r: { slot: ListSlot; item_id: number; qty: number }) => { const n = worth(r.slot, r.item_id).name; return r.qty > 1 ? `${r.qty} × ${n}${r.slot === "gem" ? "s" : ""}` : n; };
-function lotStats(slot: ListSlot, id: number, cls: Player["class"]) {
-  if (slot === "weapon") return { power: weapon(id).str, ...(casts(cls) ? { for_you: `Scroll of ${weaponName(cls, id)}` } : {}) };
-  if (slot === "armor") return { def: armor(id).def };
+const lotName = (r: { slot: ListSlot; item_id: number; qty: number; rarity?: number }) => { const n = worth(r.slot, r.item_id, r.rarity ?? 0).name; return r.qty > 1 ? `${r.qty} × ${n}${r.slot === "gem" ? "s" : ""}` : n; };
+function lotStats(slot: ListSlot, id: number, cls: Player["class"], r = 0) {
+  if (slot === "weapon") return { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}), ...(casts(cls) ? { for_you: `Scroll of ${weaponName(cls, id)}` } : {}) };
+  if (slot === "armor") return { def: boosted(armor(id).def, r), ...(r ? { rarity: rarity(r).name } : {}) };
   if (slot === "trinket") return { bonus: bonusText(trinket(id), attributeName(cls)) };
   return {};
 }
 function listingView(ctx: Ctx, r: ARow) {
-  const w = worth(r.slot, r.item_id);
+  const w = worth(r.slot, r.item_id, r.rarity);
   return {
-    id: Number(r.id), item: lotName(r), slot: r.slot, tier: r.item_id, ...lotStats(r.slot, r.item_id, ctx.p.class), worth: w.value * r.qty,
+    id: Number(r.id), item: lotName(r), slot: r.slot, tier: r.item_id, ...lotStats(r.slot, r.item_id, ctx.p.class, r.rarity), worth: w.value * r.qty,
     town: TOWNS[r.town as Town] ?? r.town, seller: r.seller ?? "the house",
     min_bid: r.min_bid, ...(r.buy_now ? { buy_now: r.buy_now } : {}), high_bid: r.high_bid, next_bid: nextBid(r.min_bid, r.high_bid),
     closes_after: r.ends_day, days_left: Math.max(0, daysBetween(ctx.day, r.ends_day)),
@@ -2207,12 +2348,12 @@ async function paySeller(c: Client, r: ARow, price: number, day: string) {
 }
 
 /** Into the house's storeroom: what's been sold to the smith or Odile (or didn't sell at the house), for Cass to list later. */
-async function toStorehouse(c: Client, items: { slot: string; item_id: number; qty?: number }[], town = "brightwater") {
+async function toStorehouse(c: Client, items: { slot: string; item_id: number; qty?: number; rarity?: number }[], town = "brightwater") {
   for (const x of items) {
     // Weapon, armor and jewelry 0 mean "none" (fists, nothing worn); ore 0 is copper and counts.
     if (!["weapon", "armor", "ore", "trinket", "gem"].includes(x.slot) || (["weapon", "armor", "trinket"].includes(x.slot) && x.item_id <= 0)) continue;
-    await c.query(`insert into house_stock (town, slot, item_id, qty) values ($1,$2,$3,$4)
-      on conflict (town, slot, item_id) do update set qty = house_stock.qty + excluded.qty`, [town, x.slot, x.item_id, x.qty ?? 1]);
+    await c.query(`insert into house_stock (town, slot, item_id, qty, rarity) values ($1,$2,$3,$4,$5)
+      on conflict (town, slot, item_id, rarity) do update set qty = house_stock.qty + excluded.qty`, [town, x.slot, x.item_id, x.qty ?? 1, x.rarity ?? 0]);
   }
 }
 
@@ -2229,31 +2370,31 @@ export async function settleAuctions(c: Client, day: string): Promise<string[]> 
     } else {
       const npc = !r.seller_id || r.seller_role === "npc";
       await c.query("update auctions set status = 'expired', settled_at = now(), collected = $2 where id = $1", [r.id, npc]);
-      if (npc) await toStorehouse(c, [{ slot: r.slot, item_id: r.item_id, qty: r.qty }], r.town);
+      if (npc) await toStorehouse(c, [{ slot: r.slot, item_id: r.item_id, qty: r.qty, rarity: r.rarity }], r.town);
       if (!npc) await mail(c, r.seller_id!, { kind: "auction_unsold", item: lotName(r), collect: "at the auction house on Market Row" });
       out.push(`unsold ${lotName(r)}`);
     }
   }
-  // The house's own lots, from its storeroom: one lot per kind of item, at full shop worth, and only while players are quiet.
-  const quiet = Number((await c.query<{ n: string }>(
-    "select count(*)::text as n from auctions a join players s on s.id = a.seller_id where a.status = 'open' and s.role <> 'npc' and not s.is_test")).rows[0].n) < AUCTION.playerQuiet;
-  const cass = (await c.query<{ id: string }>("select id from players where name = 'Cass Marrow'")).rows[0];
-  if (quiet && cass) {
-    const listed = (await c.query<{ slot: ListSlot; item_id: number }>("select slot, item_id from auctions where status = 'open' and seller_id = $1", [cass.id])).rows;
+  // The house's own lots, from each town's storeroom: one lot per kind of item, at full shop worth, and only while players there are quiet.
+  for (const [town, keeper] of [["brightwater", "Cass Marrow"], ["ironhold", "Mabry Locke"]] as const) {
+    const quiet = Number((await c.query<{ n: string }>(
+      "select count(*)::text as n from auctions a join players s on s.id = a.seller_id where a.status = 'open' and a.town = $1 and s.role <> 'npc' and not s.is_test", [town])).rows[0].n) < AUCTION.playerQuiet;
+    const house = (await c.query<{ id: string }>("select id from players where name = $1", [keeper])).rows[0];
+    if (!quiet || !house) continue;
+    const listed = (await c.query<{ slot: ListSlot; item_id: number; rarity: number }>("select slot, item_id, rarity from auctions where status = 'open' and seller_id = $1", [house.id])).rows;
     const room = AUCTION.houseLots - listed.length;
-    if (room > 0) {
-      const have = new Set(listed.map((l) => `${l.slot}:${l.item_id}`));
-      const stock = (await c.query<{ town: string; slot: ListSlot; item_id: number; qty: number }>(
-        "select town, slot, item_id, qty from house_stock where qty > 0 order by random() for update")).rows.filter((x) => !have.has(`${x.slot}:${x.item_id}`)).slice(0, room);
-      for (const x of stock) {
-        const qty = Math.min(x.qty, AUCTION.houseLotMax[x.slot] ?? 1);
-        const v = worth(x.slot, x.item_id).value * qty;
-        const ends = new Date(day + "T00:00:00Z"); ends.setUTCDate(ends.getUTCDate() + 2);
-        await c.query("update house_stock set qty = qty - $4 where town = $1 and slot = $2 and item_id = $3", [x.town, x.slot, x.item_id, qty]);
-        await c.query("insert into auctions (town, seller_id, slot, item_id, qty, min_bid, buy_now, listed_day, ends_day) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-          [x.town, cass.id, x.slot, x.item_id, qty, Math.max(1, v), Math.ceil(v * AUCTION.houseBuyNow), day, ends.toISOString().slice(0, 10)]);
-        out.push(`house listed ${lotName({ slot: x.slot, item_id: x.item_id, qty })}`);
-      }
+    if (room <= 0) continue;
+    const have = new Set(listed.map((l) => `${l.slot}:${l.item_id}:${l.rarity}`));
+    const stock = (await c.query<{ slot: ListSlot; item_id: number; qty: number; rarity: number }>(
+      "select slot, item_id, qty, rarity from house_stock where town = $1 and qty > 0 order by random() for update", [town])).rows.filter((x) => !have.has(`${x.slot}:${x.item_id}:${x.rarity}`)).slice(0, room);
+    for (const x of stock) {
+      const qty = Math.min(x.qty, AUCTION.houseLotMax[x.slot] ?? 1);
+      const v = worth(x.slot, x.item_id, x.rarity).value * qty;
+      const ends = new Date(day + "T00:00:00Z"); ends.setUTCDate(ends.getUTCDate() + 2);
+      await c.query("update house_stock set qty = qty - $4 where town = $1 and slot = $2 and item_id = $3 and rarity = $5", [town, x.slot, x.item_id, qty, x.rarity]);
+      await c.query("insert into auctions (town, seller_id, slot, item_id, qty, rarity, min_bid, buy_now, listed_day, ends_day) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        [town, house.id, x.slot, x.item_id, qty, x.rarity, Math.max(1, v), Math.ceil(v * AUCTION.houseBuyNow), day, ends.toISOString().slice(0, 10)]);
+      out.push(`${keeper} listed ${lotName({ slot: x.slot, item_id: x.item_id, qty, rarity: x.rarity })}`);
     }
   }
   return out;
@@ -2272,7 +2413,7 @@ async function collectLots(ctx: Ctx) {
       const w = worth(r.slot, r.item_id).weight * r.qty;
       if (w > room) { waiting.push(lotName(r)); continue; }
       room -= w;
-      for (let i = 0; i < r.qty; i++) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, r.slot, r.item_id]);
+      for (let i = 0; i < r.qty; i++) await ctx.c.query("insert into inventory (player_id, slot, item_id, rarity) values ($1,$2,$3,$4)", [ctx.p.id, r.slot, r.item_id, r.rarity ?? 0]);
     }
     await ctx.c.query("update auctions set collected = true where id = $1", [r.id]);
     got.push(lotName(r));
@@ -2285,11 +2426,11 @@ async function lotFor(ctx: Ctx, id: number): Promise<ARow> {
   if (!r) throw new GameError("no_such_lot", "there's no lot with that number");
   return r;
 }
-const atTheHouse = (ctx: Ctx) => { requireAlive(ctx); requireInTown(ctx, "the auction house"); };
+const atTheHouse = (ctx: Ctx): TownId => { requireAlive(ctx); return requireTown(ctx, "the auction house", ["brightwater", "ironhold"]); };
 
 /** The board: what's up for sale, your own lots and bids, and anything waiting for you. */
 api.get("/auction", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  atTheHouse(ctx);
+  const town = atTheHouse(ctx);
   await settleAuctions(ctx.c, ctx.day);
   const slot = c.req.query("slot");
   const board = (await ctx.c.query<ARow>(
@@ -2299,7 +2440,7 @@ api.get("/auction", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const waiting = Number((await ctx.c.query<{ n: string }>(
     "select count(*)::text as n from auctions where not collected and ((status = 'sold' and high_bidder = $1) or (status in ('expired','cancelled') and seller_id = $1))", [ctx.p.id])).rows[0].n);
   ctx.events.push({
-    kind: "auction_house", keeper: "Cass Marrow", listings: board.map((r) => listingView(ctx, r)), your_lots: mine.map((r) => listingView(ctx, r)),
+    kind: "auction_house", keeper: town === "ironhold" ? "Mabry Locke" : "Cass Marrow", town: TOWNS[town as Town] ?? town, connected: "one board for every town's house; lots elsewhere are delivered here when you collect", listings: board.map((r) => listingView(ctx, r)), your_lots: mine.map((r) => listingView(ctx, r)),
     waiting_for_you: waiting, purse: ctx.p.gold, bank: ctx.p.bank,
     rules: { days: `${AUCTION.minDays}-${AUCTION.maxDays}`, listing_fee: `${Math.round(AUCTION.feeShare * 100)}% of the minimum bid, at least ${AUCTION.feeMin} gold`, house_cut: `${Math.round(AUCTION.cut * 100)}% of the sale`, max_lots: AUCTION.maxOpen, bids_from: "bank first, then purse; outbid gold comes back to your bank" },
   });
@@ -2314,7 +2455,7 @@ api.post("/auction", async (c) => {
     z.object({ op: z.literal("collect") }),
   ]).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-    atTheHouse(ctx);
+    const town = atTheHouse(ctx);
     await requireNoEncounter(ctx);
     await settleAuctions(ctx.c, ctx.day);
     // Money changes hands only on a confirmed call: without confirm, list, bid and buy return a quote and do nothing.
@@ -2333,7 +2474,7 @@ api.post("/auction", async (c) => {
       const open = Number((await ctx.c.query<{ n: string }>("select count(*)::text as n from auctions where seller_id = $1 and status = 'open'", [ctx.p.id])).rows[0].n);
       if (open >= AUCTION.maxOpen) { ctx.events.push({ kind: "auction_refused", reason: `you already have ${AUCTION.maxOpen} lots up` }); return; }
       const days = Math.max(AUCTION.minDays, Math.min(AUCTION.maxDays, body.days ?? 2));
-      let slot: ListSlot, itemId = 0, qty = 1, rows: number[] = [];
+      let slot: ListSlot, itemId = 0, qty = 1, rows: number[] = [], rar = 0;
       if (body.gems) {
         if (ctx.p.gems < body.gems) { ctx.events.push({ kind: "auction_refused", reason: `you have ${ctx.p.gems} gems` }); return; }
         slot = "gem"; qty = body.gems;
@@ -2341,16 +2482,16 @@ api.post("/auction", async (c) => {
         if (body.id === undefined) throw new GameError("what", "say which item (its bag id) or how many gems");
         const row = await ownRow(ctx, body.id);
         if (row.slot === "quest") { ctx.events.push({ kind: "auction_refused", reason: "Cass won't sell that; it isn't yours to sell" }); return; }
-        slot = row.slot; itemId = row.item_id;
+        slot = row.slot; itemId = row.item_id; rar = row.rarity ?? 0;
         qty = row.slot === "ore" ? body.qty ?? 1 : 1;
-        rows = (await Bag.contents(ctx.c, ctx.p.id)).filter((x) => x.slot === row.slot && x.item_id === row.item_id).map((x) => x.id).slice(0, qty);
+        rows = row.slot === "ore" ? (await Bag.contents(ctx.c, ctx.p.id)).filter((x) => x.slot === row.slot && x.item_id === row.item_id).map((x) => x.id).slice(0, qty) : [row.id];
         if (rows.length < qty) { ctx.events.push({ kind: "auction_refused", reason: `you only have ${rows.length} of those` }); return; }
       }
-      const problem = priceProblem(slot, itemId, qty, body.min_bid, body.buy_now ?? null);
+      const problem = priceProblem(slot, itemId, qty, body.min_bid, body.buy_now ?? null, rar);
       if (problem) { ctx.events.push({ kind: "auction_refused", reason: problem }); return; }
       const fee = listingFee(body.min_bid);
       if (!confirmed) {
-        ctx.events.push({ kind: "auction_quote", op: "list", item: lotName({ slot, item_id: itemId, qty }), min_bid: body.min_bid, buy_now: body.buy_now ?? null, days, fee, house_cut: `${Math.round(AUCTION.cut * 100)}% of the sale`, can_pay: ctx.p.gold + ctx.p.bank >= fee });
+        ctx.events.push({ kind: "auction_quote", op: "list", item: lotName({ slot, item_id: itemId, qty, rarity: rar }), min_bid: body.min_bid, buy_now: body.buy_now ?? null, days, fee, house_cut: `${Math.round(AUCTION.cut * 100)}% of the sale`, can_pay: ctx.p.gold + ctx.p.bank >= fee });
         ctx.hint = "A quote, nothing done yet: show what they'd list, for how long, at what prices, the fee and the house's cut, and ask them to confirm (y/n). Call again with confirm: true only on a yes.";
         return;
       }
@@ -2359,9 +2500,9 @@ api.post("/auction", async (c) => {
       else await ctx.c.query("delete from inventory where id = any($1::bigint[])", [rows]);
       const ends = new Date(ctx.day + "T00:00:00Z"); ends.setUTCDate(ends.getUTCDate() + days);
       const ins = await ctx.c.query<{ id: string }>(
-        "insert into auctions (seller_id, slot, item_id, qty, min_bid, buy_now, listed_day, ends_day) values ($1,$2,$3,$4,$5,$6,$7,$8) returning id::text",
-        [ctx.p.id, slot, itemId, qty, body.min_bid, body.buy_now ?? null, ctx.day, ends.toISOString().slice(0, 10)]);
-      ctx.events.push({ kind: "auction_listed", lot: Number(ins.rows[0].id), item: lotName({ slot, item_id: itemId, qty }), min_bid: body.min_bid, buy_now: body.buy_now ?? null, fee, closes_after: ends.toISOString().slice(0, 10) });
+        "insert into auctions (town, seller_id, slot, item_id, qty, rarity, min_bid, buy_now, listed_day, ends_day) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id::text",
+        [town, ctx.p.id, slot, itemId, qty, rar, body.min_bid, body.buy_now ?? null, ctx.day, ends.toISOString().slice(0, 10)]);
+      ctx.events.push({ kind: "auction_listed", lot: Number(ins.rows[0].id), item: lotName({ slot, item_id: itemId, qty, rarity: rar }), min_bid: body.min_bid, buy_now: body.buy_now ?? null, fee, closes_after: ends.toISOString().slice(0, 10) });
       await logEvent(ctx, "auction", { op: "list", slot, item_id: itemId, qty, min_bid: body.min_bid, buy_now: body.buy_now ?? null });
       return;
     }
@@ -2383,12 +2524,12 @@ api.post("/auction", async (c) => {
     if (price === null) { ctx.events.push({ kind: "auction_refused", reason: "that lot has no buy-now price; bid instead" }); return; }
     const buyingOut = body.op === "buy" || (r.buy_now !== null && price >= r.buy_now);
     const final = buyingOut ? r.buy_now! : price;
-    if (!buyingOut && final > bidCeiling(r.slot, r.item_id, r.qty)) { ctx.events.push({ kind: "auction_refused", reason: `Cass won't take a bid over ${bidCeiling(r.slot, r.item_id, r.qty)} gold for that` }); return; }
+    if (!buyingOut && final > bidCeiling(r.slot, r.item_id, r.qty, r.rarity)) { ctx.events.push({ kind: "auction_refused", reason: `the house won't take a bid over ${bidCeiling(r.slot, r.item_id, r.qty, r.rarity)} gold for that` }); return; }
     // Raising your own bid costs only the difference.
     const owed = r.high_bidder === ctx.p.id ? final - (r.high_bid ?? 0) : final;
     if (!confirmed) {
       const fromBank = Math.min(ctx.p.bank, owed);
-      ctx.events.push({ kind: "auction_quote", op: buyingOut ? "buy" : "bid", lot: Number(r.id), item: lotName(r), ...lotStats(r.slot, r.item_id, ctx.p.class), from: r.seller ?? "the house",
+      ctx.events.push({ kind: "auction_quote", op: buyingOut ? "buy" : "bid", lot: Number(r.id), item: lotName(r), ...lotStats(r.slot, r.item_id, ctx.p.class, r.rarity), from: r.seller ?? "the house",
         price: final, pays: owed, can_pay: ctx.p.gold + ctx.p.bank >= owed,
         ...(ctx.p.gold + ctx.p.bank >= owed ? { after: { bank: ctx.p.bank - fromBank, purse: ctx.p.gold - (owed - fromBank) } } : {}),
         ...(buyingOut ? {} : { closes_after: r.ends_day, note: "held by the house until it closes; if you're outbid, it comes back to your bank" }) });

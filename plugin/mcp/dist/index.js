@@ -21957,6 +21957,24 @@ server.tool(
   async ({ op, id, count }) => text(await call("POST", "/v1/workshop", op === "craft" ? { op, id } : op === "sell_gems" ? { op, ...count ? { count } : {} } : { op }))
 );
 server.tool(
+  "town",
+  "Look around the town you're standing in, when it isn't Brightwater (Brightwater's square is the square tool): who keeps there, who's about, and what it offers.",
+  {},
+  async () => text(await call("GET", "/v1/town"))
+);
+server.tool(
+  "forge",
+  "The forge, in a town that has one: the player's weapon and armor (worn and in the bag) with their rarity, what the next step does, and its cost in gold, ore and gems.",
+  {},
+  async () => text(await call("GET", "/v1/forge"))
+);
+server.tool(
+  "forge_order",
+  `At the forge: take a piece up one rarity step (Common, Uncommon, Rare, Epic, Mythic). target: "weapon" or "armor" for what's worn, or a bag item id. Returns a quote (forge_quote) and does nothing until called again with confirm: true after the player says yes.`,
+  { target: external_exports.union([external_exports.enum(["weapon", "armor"]), external_exports.number().int()]), confirm: external_exports.boolean().optional() },
+  async ({ target, confirm }) => text(await call("POST", "/v1/forge", { target, ...confirm ? { confirm } : {} }))
+);
+server.tool(
   "auction",
   "Cass Marrow's auction house on Market Row: the board of lots for sale (optionally one slot: weapon, armor, ore, trinket, gem), your own lots, what's waiting for you to collect, and the rules.",
   { slot: external_exports.enum(["weapon", "armor", "ore", "trinket", "gem"]).optional() },

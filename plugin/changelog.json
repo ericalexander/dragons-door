@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.14.0",
+    "lore": "Now and then a traveller comes in from somewhere far past the forest, smelling of coal smoke, and won't say where they've been. You'd have to be strong to walk that far and come back. And word is that somewhere out there a sword can be made better than any smith in Brightwater sells.",
+    "plain": "There's more of the world to find if you explore far enough (it's dangerous out there below level 5). Weapons and armor now come in rarities, Common to Mythic, shown in their names."
+  },
+  {
     "version": "0.13.0",
     "lore": "There's a new door open on Market Row, and a woman behind a counter who can tell you what your sword is worth before you've finished drawing it. Cass Marrow runs the auction house now. Bring her something worth selling, or bring gold and see what other people have let go of.",
     "plain": "The Auction House is open on Market Row: list gear, ore, jewelry or gems for 1 to 3 days with a minimum bid and an optional buy-now price, or bid on what others are selling. Lots close at the daily reset; collect what you win at the house."

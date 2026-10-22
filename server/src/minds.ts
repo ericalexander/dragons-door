@@ -77,6 +77,9 @@ const LEANS: Record<Personality, [GoalKind, number][]> = {
   reckless: [["outrank", 4], ["far", 3], ["level", 1]],
   seer:     [["cave", 4], ["jewel", 3], ["save", 2], ["explore", 1]],
   braggart: [["gear", 5], ["jewel", 2], ["outrank", 2], ["wed", 2]],
+  veteran:  [["level", 3], ["rich", 2], ["far", 1]],
+  scout:    [["far", 4], ["cave", 3], ["explore", 2]],
+  scholar:  [["explore", 3], ["cave", 2], ["level", 2]],
 };
 
 const round100 = (n: number) => Math.max(100, Math.round(n / 100) * 100);
@@ -310,6 +313,9 @@ const BASE: Record<Personality, Partial<Record<Activity, number>>> = {
   reckless: { hunt: 3, explore: 2, tavern: 0.8, flirt: 0.3, rest: 0.05 },
   seer:     { hunt: 2, explore: 1, tavern: 2, bard: 0.3, rest: 0.15 },
   braggart: { hunt: 2, explore: 0.6, tavern: 2, shop: 1.2, flirt: 0.5, bard: 0.6, rest: 0.1 },
+  veteran:  { hunt: 3, explore: 0.5, tavern: 0.8, shop: 1, rest: 0.1 },
+  scout:    { hunt: 2, explore: 3, tavern: 0.3, rest: 0.1 },
+  scholar:  { hunt: 1.5, explore: 2, tavern: 1.5, shop: 0.3, rest: 0.2 },
 };
 
 const FIGHTING: Activity[] = ["hunt", "explore", "mine"];
@@ -396,6 +402,9 @@ const AWAY: Record<Personality, string[]> = {
   reckless: ["sent to Ashford with a cart of turnips", "helping at his uncle's farm for the day"],
   seer: ["reading cards at a fair in another town", "communing with something, she says; the door is locked"],
   braggart: ["at a tournament in Ashford, by his own account", "having his armor fitted in the city"],
+  veteran: ["up on the wall all day; it's his watch", "gone hunting alone, the way he does once a month"],
+  scout: ["off somewhere past the ridge; she didn't say where", "mapping a valley nobody's named yet"],
+  scholar: ["copying an inscription in a ruin two days' walk away", "shut in with her notes; the door has a sign on it"],
 };
 
 /** About one day in thirty, each townsperson is simply gone for the day. Stable per day, so the square agrees. */

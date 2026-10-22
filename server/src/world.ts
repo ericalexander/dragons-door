@@ -17,7 +17,7 @@ export interface Tile {
   /** Roughly the level of what lives there. */
   level: number;
   name: string;
-  poi: "cave" | null;
+  poi: "cave" | "town" | null;
 }
 
 export const DIRS = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] } as const;
@@ -60,9 +60,21 @@ const ADJECTIVES = ["Whispering", "Ashen", "Crooked", "Grey", "Weeping", "Old", 
   "Thornback", "Cold", "Wren's", "Hanging", "Bitter", "Lonely", "Red", "Howling", "Broken", "Silver", "Hollow", "Moth", "Kettle"];
 const CAVE_NAMES = ["Hollow", "Grotto", "Deeps", "Cave", "Warren"];
 
+/** Towns out in the world, by tile. Brightwater is the centre; the others sit where the land put them. */
+export const TOWN_TILES = { ironhold: { x: -4, y: -6, name: "Ironhold" } } as const;
+export type TownId = "brightwater" | keyof typeof TOWN_TILES;
+/** Which town a tile is, if any. */
+export function townAt(x: number | null | undefined, y: number | null | undefined): TownId | null {
+  if (x === null || x === undefined) return "brightwater";
+  if (x === 0 && y === 0) return "brightwater";
+  for (const [id, t] of Object.entries(TOWN_TILES)) if (t.x === x && t.y === y) return id as TownId;
+  return null;
+}
+
 export function tileAt(x: number, y: number): Tile {
   const ring = ringOf(x, y);
   if (ring === 0) return { x, y, terrain: "town", ring, level: 0, name: "Brightwater", poi: null };
+  for (const t of Object.values(TOWN_TILES)) if (t.x === x && t.y === y) return { x, y, terrain: "town", ring, level: ring, name: t.name, poi: "town" };
   // Land rises with distance; noise makes it uneven so it never reads as neat circles.
   const height = 0.55 * noise(x, y, 5, "elev") + 0.45 * noise(x, y, 2, "rough");
   const e = height * 0.6 + Math.min(1, ring / 13) * 0.5;
@@ -95,7 +107,7 @@ export function renderMap(cx: number, cy: number, explored: Set<string>, radius 
     for (let x = cx - radius; x <= cx + radius; x++) {
       if (x === cx && y === cy) { line += SYMBOL.you; continue; }
       if (x === 0 && y === 0) { line += SYMBOL.town; continue; }
-      if (explored.has(key(x, y))) { const t = tileAt(x, y); line += t.poi ? SYMBOL.cave : SYMBOL[t.terrain]; continue; }
+      if (explored.has(key(x, y))) { const t = tileAt(x, y); line += t.poi === "cave" ? SYMBOL.cave : SYMBOL[t.terrain]; continue; }
       const near = Object.values(DIRS).some(([dx, dy]) => explored.has(key(x + dx, y + dy)) || (x + dx === 0 && y + dy === 0));
       line += near ? "?" : " ";
     }

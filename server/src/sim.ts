@@ -9,6 +9,7 @@ import { bardFor, pickGift } from "./bards.js";
 import { visitorFor, pickVisitorGift } from "./square.js";
 import { charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
 import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
+import { boosted, forgeCost, rarity as rarityOf, RARITY } from "./rarity.js";
 import { FINDS_PER_PERSON, SWINGS_PER_DAY, GEM_SELL, ORES, PICKAXE_COST, TRINKETS, canMake, caveLevel, swing, trinket } from "./caves.js";
 
 
@@ -114,6 +115,9 @@ function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
 const EXPLORE = process.env.EXPLORE !== "0";
 
 const DROPS = { n: 0, equipped: 0 };
+const FORGE = process.env.FORGE === "1";
+const FORGE_FROM = Number(process.env.FORGE_FROM ?? 5);
+const FORGED = { n: 0, top: 0 };
 const HEALER = { gold: 0 };
 // MINE=1: from MINE_FROM onward, spend MINE_FIGHTS fights a day mining, and have Odile make the best jewelry you can.
 const MINE = process.env.MINE === "1";
@@ -176,17 +180,40 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number)
 
 function shop(p: SimPlayer) {
   // Buy the best weapon we can afford out of gold+bank, then armor. Withdraw only what the purchase costs.
+  // A forged piece is only replaced by something stronger than it is now.
   const reserve = GAME.innCostPerLevel * p.level + 50;
   for (const kind of ["weapon", "armor"] as const) {
     const list = kind === "weapon" ? GAME.weapons : GAME.armor;
     const cur = kind === "weapon" ? weapon(p.weapon_id) : armor(p.armor_id);
+    const r = kind === "weapon" ? p.weapon_rarity ?? 0 : p.armor_rarity ?? 0;
+    const stat = (it: { str?: number; def?: number }, rr: number) => boosted(kind === "weapon" ? it.str ?? 0 : it.def ?? 0, rr);
+    const tradeIn = Math.floor(cur.cost * rarityOf(r).value / 2);
     let best = cur;
-    for (const it of list) if (it.id > cur.id && shopPrice(p, it.cost - Math.floor(cur.cost / 2)) <= p.gold + p.bank - reserve) best = it;
+    for (const it of list) if (stat(it, 0) > stat(cur, r) && it.id > best.id && shopPrice(p, it.cost - tradeIn) <= p.gold + p.bank - reserve) best = it;
     if (best.id !== cur.id) {
-      const price = shopPrice(p, best.cost - Math.floor(cur.cost / 2));
+      const price = shopPrice(p, best.cost - tradeIn);
       if (p.gold < price) { p.bank -= price - p.gold; p.gold = price; }
       p.gold -= price;
-      if (kind === "weapon") p.weapon_id = best.id; else p.armor_id = best.id;
+      if (kind === "weapon") { p.weapon_id = best.id; p.weapon_rarity = 0; } else { p.armor_id = best.id; p.armor_rarity = 0; }
+    }
+  }
+  // FORGE=1: from FORGE_FROM (default 5, when Ironhold is in reach), forge what's worn with gold to spare.
+  // Ore is bought at its full worth (at auction, say), so a non-miner can forge too.
+  if (FORGE && p.level >= FORGE_FROM) {
+    for (const kind of ["weapon", "armor"] as const) {
+      const id = kind === "weapon" ? p.weapon_id : p.armor_id;
+      const r = kind === "weapon" ? p.weapon_rarity ?? 0 : p.armor_rarity ?? 0;
+      if (!id || (kind === "weapon" && manaRules(p.class))) continue;
+      const base = kind === "weapon" ? weapon(id) : armor(id);
+      const c = forgeCost(base.cost, r);
+      if (!c) continue;
+      const oreGold = Object.entries(c.ore).reduce((n, [o, k]) => n + ORES[Number(o)].cost * (k ?? 0), 0) + c.gems * GEM_SELL * 2;
+      const price = c.gold + oreGold;
+      if (p.gold + p.bank - reserve * 3 < price) continue;
+      if (p.gold < price) { p.bank -= price - p.gold; p.gold = price; }
+      p.gold -= price;
+      if (kind === "weapon") p.weapon_rarity = r + 1; else p.armor_rarity = r + 1;
+      FORGED.n++; FORGED.top = Math.max(FORGED.top, r + 1);
     }
   }
 }
@@ -346,6 +373,7 @@ if (process.env.BREAKDOWN) {
 }
 
 if (MINE) console.log(`  jewelry made per run: ${(MINED.trinkets / trials).toFixed(1)}, best ever: ${trinket(MINED.best).name}`);
+if (FORGE) console.log(`  forgings per run: ${(FORGED.n / trials).toFixed(1)}; best reached: ${RARITY[FORGED.top].name}`);
 console.log(`  healer gold per run: ${Math.round(HEALER.gold / trials)}${OOC.on ? `; prayers outside fights per run: ${(OOC.prayers / trials).toFixed(0)}` : ""}`);
 console.log(`  drops per run: ${(DROPS.n / trials).toFixed(1)} (${(DROPS.equipped / trials).toFixed(1)} equipped)`);
 if (EXTRAS) console.log(`  married ${CHARM.married}/${trials} runs (avg day ${CHARM.married ? (CHARM.marriedDay / CHARM.married).toFixed(0) : "-"}); avg charm across days ${(CHARM.total / runs.reduce((a, r) => a + r.days, 0)).toFixed(0)}`);

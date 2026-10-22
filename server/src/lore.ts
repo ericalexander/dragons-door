@@ -13,7 +13,7 @@ import type pg from "pg";
 import { pool } from "./db.js";
 import { QUESTS, type QuestDef } from "./quests.js";
 
-export interface Journal { key: string; title: string; text: string; where: "wild" | "cave" | "town"; author: string | null; min_ring: number }
+export interface Journal { key: string; title: string; text: string; where: "wild" | "cave" | "town" | "ironhold"; author: string | null; min_ring: number }
 export interface Lore {
   /** What anyone in town knows about the realm. Safe for the narrator, letters and the public Chronicle. */
   world: string;
@@ -79,4 +79,4 @@ export async function heardOf(c: pg.PoolClient | pg.Pool, playerId: string, name
 export const PAST_CHANCE = Number(process.env.DRAGONS_DOOR_PAST_CHANCE ?? 0.5);
 /** Days between journal finds, at least. */
 export const JOURNAL_EVERY_DAYS = Number(process.env.DRAGONS_DOOR_JOURNAL_DAYS ?? 3);
-export const JOURNAL_CHANCE = { wild: 0.05, cave: 0.06, town: 0.04, scale: Number(process.env.DRAGONS_DOOR_JOURNAL_SCALE ?? 1) };
+export const JOURNAL_CHANCE = { wild: 0.05, cave: 0.06, town: 0.04, ironhold: 0.08, scale: Number(process.env.DRAGONS_DOOR_JOURNAL_SCALE ?? 1) };

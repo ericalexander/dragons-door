@@ -21,8 +21,8 @@ import { answerLetters } from "./letters.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { realmDay, realmSettings } from "./day.js";
-import { GAME, type Envelope, type Event } from "./game.js";
-import { DIRS, tileAt, type Dir } from "./world.js";
+import { GAME, expForLevel, levelGains, type Envelope, type Event } from "./game.js";
+import { DIRS, TOWN_TILES, tileAt, type Dir } from "./world.js";
 import { SUITORS, available } from "./romance.js";
 import { loadLore, lore } from "./lore.js";
 import { MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, canMake, caveLevel, trinket, type Trinket } from "./caves.js";
@@ -31,7 +31,7 @@ import { awayToday, choose, doneLine, finished, fraction, goalLabel, goalTalk, p
 export const bots = new Hono();
 
 
-const ROSTER: { name: string; class: "warrior" | "thief" | "mage" | "priest"; personality: Personality }[] = [
+const ROSTER: { name: string; class: "warrior" | "thief" | "mage" | "priest"; personality: Personality; home?: "ironhold"; level?: number }[] = [
   { name: "Hilde", class: "warrior", personality: "banker" },
   { name: "Grimwald", class: "warrior", personality: "drunk" },
   { name: "Vesper", class: "thief", personality: "raider" },
@@ -40,6 +40,10 @@ const ROSTER: { name: string; class: "warrior" | "thief" | "mage" | "priest"; pe
   { name: "Pip", class: "thief", personality: "reckless" },
   { name: "Madam Orsolya", class: "mage", personality: "seer" },
   { name: "Sir Pomfrey", class: "warrior", personality: "braggart" },
+  // Ironhold's own, who start seasoned: nobody lives that far out at level 1.
+  { name: "Hask the Unbowed", class: "warrior", personality: "veteran", home: "ironhold", level: 6 },
+  { name: "Nell Thorne", class: "thief", personality: "scout", home: "ironhold", level: 5 },
+  { name: "Sabine Ashe", class: "mage", personality: "scholar", home: "ironhold", level: 5 },
 ];
 
 // ---------- auth ----------
@@ -58,6 +62,8 @@ class Bot {
   log: string[] = [];
   /** Saving ore for jewelry: don't sell it. */
   keepOre = false;
+  /** Where they live: where they heal, sleep and go about town. */
+  home: "brightwater" | "ironhold" = "brightwater";
   constructor(public name: string, public personality: Personality, private key: string) {}
 
   async call(method: "GET" | "POST", path: string, body?: unknown): Promise<Envelope | { error: string; message?: string }> {
@@ -113,11 +119,12 @@ async function trainIfReady(b: Bot, r: Envelope | null) {
 async function healIfNeeded(b: Bot, r: Envelope | null, below: number) {
   if (!r || !r.state.alive) return;
   if (r.state.hp / r.state.max_hp >= below) return;
-  // The healer is in town. Walking home is free, and so is walking back to a place you know.
+  // The healer is at home (Brightwater's, or Jessamy at Ironhold). Walking home is free, and so is walking back.
   const back = r.state.place ? { x: r.state.place.x, y: r.state.place.y } : null;
-  if (back) await b.post("/travel", { to: "town" });
+  const atHome = b.home === "ironhold" ? back?.x === IRON.x && back?.y === IRON.y : !back;
+  if (!atHome) await home(b);
   await b.post("/healer", { hp: "all" });
-  if (back) await b.post("/travel", back);
+  if (back && !atHome) await b.post("/travel", back);
 }
 
 /**
@@ -131,9 +138,10 @@ async function toHuntingGround(b: Bot, row: Row, mind: Mind, budget: number): Pr
   const level = me.state.level;
   const want = Math.max(1, level + ((mind.mood ?? 0) > 0 || row.personality === "reckless" ? 1 : 0));
   const ok = (l: number) => l >= Math.max(1, level - 1) && l <= want;
-  if (me.state.place && ok(me.state.place.level)) return 0;
+  // A town is never hunting ground, even one out in the wild.
+  if (me.state.place && me.state.place.poi !== "town" && ok(me.state.place.level)) return 0;
   const known = (await pool.query<{ x: number; y: number }>("select x, y from explored where player_id = $1", [row.player_id])).rows
-    .map((t) => tileAt(t.x, t.y)).filter((t) => t.level <= want).sort((a, z) => z.level - a.level || Math.random() - 0.5);
+    .map((t) => tileAt(t.x, t.y)).filter((t) => t.level <= want && t.poi !== "town").sort((a, z) => z.level - a.level || Math.random() - 0.5);
   const best = known[0];
   if (best && ok(best.level)) { await b.post("/travel", { x: best.x, y: best.y }); return 0; }
   // Nowhere known is right: start from the best they know and walk out.
@@ -144,9 +152,9 @@ async function toHuntingGround(b: Bot, row: Row, mind: Mind, budget: number): Pr
     const s = await b.get("/status");
     if (isErr(s) || !s.state.alive || s.state.forest_fights <= 0) break;
     const [x, y] = s.state.place ? [s.state.place.x, s.state.place.y] : [0, 0];
-    if (s.state.place && ok(s.state.place.level)) break;
+    if (s.state.place && s.state.place.poi !== "town" && ok(s.state.place.level)) break;
     const steps = (Object.keys(DIRS) as Dir[]).map((d) => ({ d, t: tileAt(x + DIRS[d][0], y + DIRS[d][1]) }))
-      .filter((o) => !(o.t.x === 0 && o.t.y === 0) && o.t.level <= want)
+      .filter((o) => !(o.t.x === 0 && o.t.y === 0) && o.t.poi !== "town" && o.t.level <= want)
       .sort((a, z) => z.t.level - a.t.level || Number(seen.has(`${a.t.x},${a.t.y}`)) - Number(seen.has(`${z.t.x},${z.t.y}`)) || Math.random() - 0.5);
     if (!steps.length) break;
     const m = await b.post("/move", { dir: steps[0].d });
@@ -184,6 +192,9 @@ const STYLE: Record<Personality, FightStyle> = {
   reckless: { healBelow: 0.15 },                                 // never runs, barely heals
   seer: { useSpecial: true, runBelow: 0.35, healBelow: 0.5 },
   braggart: { runBelow: 0.45, healBelow: 0.7 },                  // brave in the tavern, quick in the forest
+  veteran: { useSpecial: true, runBelow: 0.2, healBelow: 0.45 },
+  scout: { runBelow: 0.4, useSpecial: true, healBelow: 0.55 },
+  scholar: { useSpecial: true, runBelow: 0.45, healBelow: 0.6 },
 };
 
 async function fights(b: Bot, n: number, row?: Row, mind?: Mind) {
@@ -422,7 +433,8 @@ async function auctionBids(b: Bot) {
   const cats: Record<string, number> = {};
   for (const kind of ["weapon", "armor"] as const) {
     const cat = await b.get(`/shop?kind=${kind}`);
-    if (!isErr(cat)) cats[kind] = (cat.events.find((e) => e.kind === "catalog") as unknown as { owned: number }).owned;
+    const ev = isErr(cat) ? undefined : (cat.events.find((e) => e.kind === "catalog") as unknown as { owned: number } | undefined);
+    if (ev) cats[kind] = ev.owned;
   }
   const spare = Math.floor((ev.purse + ev.bank) * 0.6);
   const want = ev.listings.filter((l) => !l.yours && !l.you_lead && cats[l.slot] !== undefined && l.tier > cats[l.slot] && l.next_bid <= spare)
@@ -477,9 +489,12 @@ export const FIGHTS: Record<Personality, number[]> = {
   reckless: [10],
   seer: [5, 5],
   braggart: [3, 3, 4],
+  veteran: [4, 3, 3],
+  scout: [5, 5],
+  scholar: [3, 3, 2],
 };
 
-interface Row { player_id: string; name: string; personality: Personality; api_key: string; mind: Mind }
+interface Row { player_id: string; name: string; personality: Personality; api_key: string; mind: Mind; home?: string }
 
 type Gathered = Facts & { pos: [number, number] | null; location: string; class: string; pickaxe: boolean; gems: number; ore: Record<number, number>; cave: { name: string; x: number; y: number } | null };
 async function gatherFacts(row: Row, mind: Mind): Promise<Gathered> {
@@ -510,9 +525,23 @@ async function postNews(kind: string, actor: string, detail: Record<string, unkn
 }
 
 /** Back to town if they're out in the wild. Walking home is free. */
+const IRON = TOWN_TILES.ironhold;
 async function home(b: Bot) {
   const s = await b.get("/status");
-  if (!isErr(s) && s.state.place) await b.post("/travel", { to: "town" });
+  if (isErr(s)) return;
+  if (b.home === "ironhold") { if (s.state.place?.x !== IRON.x || s.state.place?.y !== IRON.y) await b.post("/travel", { x: IRON.x, y: IRON.y }); return; }
+  if (s.state.place) await b.post("/travel", { to: "town" });
+}
+
+/** Ironhold's townsfolk at the forge: take the best piece they can afford up a step. */
+async function forgeVisit(b: Bot) {
+  const r = await b.get("/forge");
+  if (isErr(r)) return;
+  const ev = r.events.find((e) => e.kind === "forge") as unknown as { pieces: { target: string | number; item: string; can_forge?: boolean; next?: { item: string } }[] } | undefined;
+  const pick = ev?.pieces.filter((p) => p.can_forge).sort((a, z) => Number(z.target === "weapon") - Number(a.target === "weapon"))[0];
+  if (!pick) return;
+  const f = await b.post("/forge", { target: pick.target, confirm: true });
+  if (!isErr(f) && kinds(f).includes("forged")) b.log.push(`had Brannagh forge ${pick.next?.item ?? pick.item}`);
 }
 
 /** How far they'll go: a level or so past their own, more if they're bold, less if they're shaken. */
@@ -779,7 +808,7 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
     hp: s.hp, max_hp: s.max_hp, fights_left: s.forest_fights, gold: s.gold,
     can_upgrade: f.gold + f.bank >= nextCost, hint: slot.doing, last_session: last, night, grudge_target: grudgeTarget,
     can_mine: Boolean(f.cave) && (f.pickaxe || f.gold + f.bank >= PICKAXE_COST + 100) && s.swings_left > 0,
-    can_craft: bestCraft(f, row.personality) !== null,
+    can_craft: b.home === "brightwater" && bestCraft(f, row.personality) !== null,
   }, Math.random);
   b.keepOre = mind.goal?.kind === "jewel";
   mind.today!.sessions[String(i)] = acts;
@@ -788,6 +817,16 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
   // Fights for this session; the last one uses whatever's left.
   const share = last ? s.forest_fights : Math.max(1, Math.min(s.forest_fights, (FIGHTS[row.personality][i] ?? 3) + Math.floor(Math.random() * 3) - 1));
   for (const a of acts) {
+    // Ironhold's own do their town things there: the Long Hall for company, the forge and the auction house for shopping.
+    if (b.home === "ironhold" && !["hunt", "explore", "mine", "rest"].includes(a)) {
+      await home(b);
+      if (a === "shop") { await forgeVisit(b); await auctionBids(b); }
+      else if (a === "tavern") b.log.push(pick(["ate in the Long Hall", "drank with the garrison in the Long Hall", "listened to Corra Bell in the Long Hall"]));
+      else b.log.push("kept to Ironhold");
+      const after = await b.get("/status");
+      if (isErr(after) || !after.state.alive) return;
+      continue;
+    }
     switch (a) {
       case "hunt": await fights(b, share, row, mind); break;
       case "explore": await exploreTrip(b, row, mind, share, day); break;
@@ -813,6 +852,7 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
   const camper = ["reckless", "drunk", "seer"].includes(row.personality);
   if (now.state.place && camper && Math.random() < 0.4) { b.log.push(`camped out at ${now.state.place.name}`); return; }
   await home(b);
+  if (b.home === "ironhold") { await tidyBag(b); await b.post("/inn"); b.log.push("a bunk in the Long Hall"); return; }
   if (row.personality === "drunk") return drunkNight(b);
   if (row.personality === "reckless") return sleepRough(b);
   if (INN_SLEEPERS.includes(row.personality) && Math.random() < 0.95) return bedInn(b);
@@ -827,7 +867,7 @@ type Step = (b: Bot) => Promise<void>;
 
 async function ensureRoster(): Promise<Row[]> {
   const existing = await pool.query<Row>(
-    "select b.player_id, p.name, b.personality, b.api_key, b.mind from bots b join players p on p.id = b.player_id",
+    "select b.player_id, p.name, b.personality, b.api_key, b.mind, b.home from bots b join players p on p.id = b.player_id",
   );
   const have = new Set(existing.rows.map((r) => r.name));
   for (const spec of ROSTER) {
@@ -840,10 +880,24 @@ async function ensureRoster(): Promise<Row[]> {
     const j = (await res.json()) as { api_key?: string; error?: string };
     if (!j.api_key) continue; // name taken by a human, or similar; skip rather than fight over it
     const p = await pool.query<{ id: string }>("update players set is_bot = true, role = 'townsfolk' where name = $1 returning id", [spec.name]);
-    await pool.query("insert into bots (player_id, personality, api_key) values ($1,$2,$3)", [p.rows[0].id, spec.personality, j.api_key]);
-    existing.rows.push({ player_id: p.rows[0].id, name: spec.name, personality: spec.personality, api_key: j.api_key, mind: {} });
+    await pool.query("insert into bots (player_id, personality, api_key, home) values ($1,$2,$3,$4)", [p.rows[0].id, spec.personality, j.api_key, spec.home ?? "brightwater"]);
+    if (spec.home === "ironhold") await settleInIronhold(p.rows[0].id, spec.class, spec.level ?? 5);
+    existing.rows.push({ player_id: p.rows[0].id, name: spec.name, personality: spec.personality, api_key: j.api_key, mind: {}, home: spec.home ?? "brightwater" });
   }
   return existing.rows;
+}
+
+/** Ironhold's townsfolk arrive seasoned: the levels, stats and gear of someone who has lived out there a while, and they know the land around it. */
+async function settleInIronhold(id: string, cls: "warrior" | "thief" | "mage" | "priest", level: number) {
+  let hp = 20, str = 10, def = 1;
+  for (let l = 2; l <= level; l++) { const g = levelGains(cls, l); hp += g.hp; str += g.str; def += g.def; }
+  const gear = Math.max(1, level - 1);
+  await pool.query(
+    `update players set level = $2, exp = $3, hp = $4, max_hp = $4, str = $5, def = $6, weapon_id = $7, armor_id = $7, gold = 400, bank = 2500,
+       pos_x = $8, pos_y = $9, location = 'inn', created_at = now() - interval '30 days' where id = $1`,
+    [id, level, expForLevel(level) ?? 0, hp, str, def, gear, IRON.x, IRON.y]);
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++)
+    await pool.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing", [id, IRON.x + dx, IRON.y + dy]);
 }
 
 export async function runBots(now = new Date()): Promise<{ day: string; now: string; results: Record<string, string[]> }> {
@@ -861,6 +915,7 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
     const due = plan.map((s, i) => ({ i, at: sessionTime(day, s.at, row.name, i) })).filter((x) => !done.has(x.i) && x.at <= now);
     if (!due.length) continue;
     const b = new Bot(row.name, row.personality, row.api_key);
+    if (row.home === "ironhold") b.home = "ironhold";
     const mind: Mind = row.mind ?? {};
     const away = awayToday(day, row.name, row.personality);
     for (const { i, at } of due) {

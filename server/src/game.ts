@@ -1,5 +1,6 @@
-import { tileAt } from "./world.js";
+import { tileAt, townAt } from "./world.js";
 import { SWINGS_PER_DAY, trinket, bonusText } from "./caves.js";
+import { boosted, withRarity } from "./rarity.js";
 import data from "./data/game.json" with { type: "json" };
 
 export const GAME = data;
@@ -24,12 +25,15 @@ export interface Player {
   gems: number;
   charm: number;
   weapon_id: number;
+  /** Rarity of what's worn (0 Common .. 4 Mythic); see rarity.ts. */
+  weapon_rarity?: number;
+  armor_rarity?: number;
   armor_id: number;
   alive: boolean;
   location: "inn" | "fields";
   dragon_kills: number;
   bag_id: number;
-  ground: { slot: "weapon" | "armor"; item_id: number } | null;
+  ground: { slot: "weapon" | "armor"; item_id: number; rarity?: number } | null;
   mail_notified_upto: number;
   news_seen_upto: number;
   client: unknown;
@@ -211,7 +215,7 @@ export const attributeName = (cls: PlayerClass): string => (GAME.classes[cls] as
 /** Player's total strength and defense including gear. */
 export function effective(p: Player) {
   const j = trinket(p.trinket_id ?? 0);
-  return { str: p.str + weapon(p.weapon_id).str + j.str, def: p.def + armor(p.armor_id).def + j.def };
+  return { str: p.str + boosted(weapon(p.weapon_id).str, p.weapon_rarity) + j.str, def: p.def + boosted(armor(p.armor_id).def, p.armor_rarity) + j.def };
 }
 
 /** Charm as others feel it: your own, plus whatever your jewelry adds. */
@@ -239,8 +243,8 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     max_hp: p.max_hp,
     str: p.str,
     def: p.def,
-    weapon: weaponName(p.class, p.weapon_id),
-    armor: armor(p.armor_id).name,
+    weapon: casts(p.class) ? weaponName(p.class, p.weapon_id) : withRarity(weaponName(p.class, p.weapon_id), p.weapon_rarity),
+    armor: withRarity(armor(p.armor_id).name, p.armor_rarity),
     gold: p.gold,
     bank: p.bank,
     gems: p.gems,
@@ -293,6 +297,11 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
       w.splice(0, 2, "climb", "return");
       if (p.pickaxe && (t.swings ?? 0) < SWINGS_PER_DAY) w.unshift("mine");
       if (t.forest_fights > 0) w.unshift("forest", ...(p.cave_depth < 3 ? ["deeper"] : []));
+      return w;
+    }
+    // Inside another town's walls: its own services, no hunting; walking out still costs a turn.
+    if (townAt(p.pos_x, p.pos_y) === "ironhold") {
+      w.unshift("town", "healer", "auction", "forge", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []));
       return w;
     }
     if (t.forest_fights > 0) w.unshift("forest", "move");

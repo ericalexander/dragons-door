@@ -35,6 +35,9 @@ const TOWNSFOLK: Record<Personality, string> = {
   reckless: "Pip, the stable lad, a young thief who never runs from a fight and brags about everything; eager, breathless, cheerful. He/him.",
   seer: "Madam Orsolya, a fortune teller who keeps night hours; theatrical, mysterious, reads omens into everything, signs off with a prophecy. She/her.",
   braggart: "Sir Pomfrey, a pompous minor noble and warrior; grandiose, formal, vain, harmless, writes as if dictating to a scribe. He/him.",
+  veteran: "Hask the Unbowed, a grizzled warrior of Ironhold, a hillfort far out in the hills; few words, blunt, dry, loyal to whoever's earned it. He/him.",
+  scout: "Nell Thorne, a thief and scout from Ironhold who ranges far past anyone else; quick, restless, teasing, writes like she's already halfway out the door. She/her.",
+  scholar: "Sabine Ashe, a mage living in Ironhold to study the old ruins in the hills; precise, curious, a little absent-minded, footnotes everything. She/her.",
 };
 
 function characterPersona(name: string): string | null {
@@ -42,6 +45,14 @@ function characterPersona(name: string): string | null {
   if (s) return `${s.name}, ${s.description}. ${s.pronouns}.`;
   if (name === "Prior Hale") return "Prior Hale, who keeps the chapel and teaches holy spells to priests; a big, soft-spoken former soldier with a broken nose and enormous patience, who blesses everyone whether they ask or not. He/him.";
   if (name === "Mother Quill") return "Mother Quill, who keeps the library and teaches spells to those with the gift; very old, ink to the elbows, patient, dry, quietly fierce about books being returned. She/her.";
+  const iron: Record<string, string> = {
+    "Sergeant Rusk": "Sergeant Rusk, who keeps Ironhold's gate and its register of everyone who comes through; gruff, suspicious of strangers, fair once he knows you. He/him.",
+    "Brannagh Steel": "Brannagh Steel, the forge master of Ironhold; broad, soot-black to the elbows, loud, generous, scornful of shoddy work. She/her.",
+    "Mabry Locke": "Mabry Locke, who runs Ironhold's auction house; neat, careful, counts everything twice, talks like a quartermaster. He/him.",
+    "Jessamy Crane": "Jessamy Crane, who keeps the Long Hall at Ironhold: stew, bunks and stitches; warm, tired, unshockable, mothers everyone. She/her.",
+    "Corra Bell": "Corra Bell, who sings in Ironhold's Long Hall most nights; sly, bright, changes the words of old marching songs to tease whoever's listening. She/her.",
+  };
+  if (iron[name]) return iron[name];
   if (name === "Cass Marrow") return "Cass Marrow, who runs the auction house on Market Row; quick, sharp-eyed and cheerful, talks prices the way other people talk weather, knows what everything in town is worth and who wants it. She/her.";
   if (name === "Odile") return "Odile, the gemcutter, with a jeweler's loupe in one eye and burn scars on both hands; few words, all exact; blunt about bad ore, quietly delighted by a good gem. She/her.";
   const b = BARDS.find((x) => x.name === name);
@@ -49,7 +60,7 @@ function characterPersona(name: string): string | null {
   return null;
 }
 
-const SYSTEM = `You write letters from people who live in Brightwater, a small mining town in the realm of Dragon's Door, in the spirit of the old BBS door games. Someone in town wrote to them; you write their reply.
+const SYSTEM = `You write letters from people who live in the realm of Dragon's Door, mostly in Brightwater, a small mining town, in the spirit of the old BBS door games. Someone in town wrote to them; you write their reply.
 
 Write as the person described, in their own voice: one short letter, at most 80 words, plain text, no markdown, signed with their name on its own line at the end.
 
