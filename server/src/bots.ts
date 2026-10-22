@@ -828,7 +828,8 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
   const acts: Activity[] = lazy ? ["rest"] : choose(row.personality, mind, {
     hp: s.hp, max_hp: s.max_hp, fights_left: s.forest_fights, gold: s.gold,
     can_upgrade: f.gold + f.bank >= nextCost, hint: slot.doing, last_session: last, night, grudge_target: grudgeTarget,
-    can_mine: Boolean(f.cave) && (f.pickaxe || f.gold + f.bank >= PICKAXE_COST + 100) && s.swings_left > 0,
+    // Away on an errand, they stay where they went: no trips back to a cave by home.
+    can_mine: !b.native && Boolean(f.cave) && (f.pickaxe || f.gold + f.bank >= PICKAXE_COST + 100) && s.swings_left > 0,
     can_craft: b.home === "brightwater" && bestCraft(f, row.personality) !== null,
   }, Math.random);
   b.keepOre = mind.goal?.kind === "jewel";
@@ -842,6 +843,7 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
     if (b.home === "ironhold" && !["hunt", "explore", "mine", "rest"].includes(a)) {
       await home(b);
       if (a === "shop") { await forgeVisit(b); await auctionBids(b); }
+      else if (a === "tavern" && b.errandLines.length && Math.random() < 0.5) { await say(b, pick(b.errandLines)); b.log.push("said something in the Long Hall about what's happened"); }
       else if (a === "tavern") b.log.push(pick(["ate in the Long Hall", "drank with the garrison in the Long Hall", "listened to Corra Bell in the Long Hall"]));
       else b.log.push("kept to Ironhold");
       const after = await b.get("/status");
