@@ -17,7 +17,7 @@ import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk
 import { DIRS, LEGEND, renderMap, tileAt, type Dir, type Tile } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
-import { loadLore, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE } from "./lore.js";
+import { loadLore, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
@@ -992,14 +992,16 @@ async function maybeEvent(ctx: Ctx, x: number, y: number, chance = EVENT_CHANCE,
   ctx.hint = "Something besides a fight. Describe it in two or three sentences from `description`, then offer its choices numbered (1), (2)… with their labels (and any gold cost), plus the usual Wild menu below. Call `event` with the choice id only when they pick one; anything else they do walks away from it.";
 }
 
-/** Now and then an old journal, a letter or a page turns up: one a day at most, each found once. The words come from the lore. */
+/** Now and then an old journal, a letter or a page turns up: one every few days at most, each found once. The words come from the lore. */
 async function maybeJournal(ctx: Ctx, where: "wild" | "cave" | "town", ring = 0) {
   if (ctx.p.role !== "player") return;
   if (Math.random() >= JOURNAL_CHANCE[where] * JOURNAL_CHANCE.scale) return;
   const pool = lore().journals.filter((j) => j.where === where && j.min_ring <= ring);
   if (!pool.length) return;
   const mine = (await ctx.c.query<{ key: string; day: string }>("select key, day::text from player_lore where player_id = $1 and key like 'journal:%'", [ctx.p.id])).rows;
-  if (mine.some((r) => r.day === ctx.day)) return;
+  // One every few days at most: the last find has to be at least JOURNAL_EVERY_DAYS old.
+  const last = mine.reduce((d, r) => (r.day > d ? r.day : d), "");
+  if (last && (Date.parse(ctx.day) - Date.parse(last)) / 86_400_000 < JOURNAL_EVERY_DAYS) return;
   const have = new Set(mine.map((r) => r.key));
   const left = pool.filter((j) => !have.has(j.key)).sort((a, z) => a.min_ring - z.min_ring || Math.random() - 0.5);
   const j = left[0];

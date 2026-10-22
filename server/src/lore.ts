@@ -7,7 +7,7 @@
  *
  * A person's past comes in pieces, heard in order (what anyone could tell you, something personal, a
  * secret), at most one new piece from each person a day. Journals turn up in the wild, in caves and
- * around town, at most one a day. What each player has learned is in player_lore.
+ * around town, at most one every few days. What each player has learned is in player_lore.
  */
 import type pg from "pg";
 import { pool } from "./db.js";
@@ -77,4 +77,6 @@ export async function heardOf(c: pg.PoolClient | pg.Pool, playerId: string, name
 
 /** Chance that a first talk of the day lets the next piece slip, and that a journal turns up where one could. */
 export const PAST_CHANCE = Number(process.env.DRAGONS_DOOR_PAST_CHANCE ?? 0.5);
+/** Days between journal finds, at least. */
+export const JOURNAL_EVERY_DAYS = Number(process.env.DRAGONS_DOOR_JOURNAL_DAYS ?? 3);
 export const JOURNAL_CHANCE = { wild: 0.05, cave: 0.06, town: 0.04, scale: Number(process.env.DRAGONS_DOOR_JOURNAL_SCALE ?? 1) };
