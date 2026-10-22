@@ -169,10 +169,10 @@ server.tool("auction", "Cass Marrow's auction house on Market Row: the board of 
   { slot: z.enum(["weapon", "armor", "ore", "trinket", "gem"]).optional() },
   async ({ slot }) => text(await call("GET", `/v1/auction${slot ? `?slot=${slot}` : ""}`)));
 
-server.tool("auction_act", "At the auction house. bid: on a lot (amount optional; defaults to the next bid). buy: take a lot at its buy-now price. list: put up a bag item by id (ore may take qty) or some gems, with min_bid, optional buy_now and days (1-3). cancel: one of your lots with no bids. collect: pick up what you won or what didn't sell.",
+server.tool("auction_act", "At the auction house. bid: on a lot (amount optional; defaults to the next bid). buy: take a lot at its buy-now price. list: put up a bag item by id (ore may take qty) or some gems, with min_bid, optional buy_now and days (1-3). cancel: one of your lots with no bids. collect: pick up what you won or what didn't sell. bid, buy and list first return a quote (auction_quote) and do nothing; send the same call again with confirm: true only after the player says yes.",
   { op: z.enum(["bid", "buy", "list", "cancel", "collect"]), lot: z.number().int().optional(), amount: z.number().int().positive().optional(),
     id: z.number().int().optional(), qty: z.number().int().positive().optional(), gems: z.number().int().positive().optional(),
-    min_bid: z.number().int().positive().optional(), buy_now: z.number().int().positive().optional(), days: z.number().int().min(1).max(3).optional() },
+    min_bid: z.number().int().positive().optional(), buy_now: z.number().int().positive().optional(), days: z.number().int().min(1).max(3).optional(), confirm: z.boolean().optional() },
   async (a) => text(await call("POST", "/v1/auction", Object.fromEntries(Object.entries(a).filter(([, v]) => v !== undefined)))));
 
 server.tool("fight", "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: their big spell, named for the spell they know (state.special), which costs more mana). staff: a caster's free, weaker swing. heal: a priest's prayer, mana for health (the monster still swings). run: try to flee.",

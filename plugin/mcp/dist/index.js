@@ -21964,7 +21964,7 @@ server.tool(
 );
 server.tool(
   "auction_act",
-  "At the auction house. bid: on a lot (amount optional; defaults to the next bid). buy: take a lot at its buy-now price. list: put up a bag item by id (ore may take qty) or some gems, with min_bid, optional buy_now and days (1-3). cancel: one of your lots with no bids. collect: pick up what you won or what didn't sell.",
+  "At the auction house. bid: on a lot (amount optional; defaults to the next bid). buy: take a lot at its buy-now price. list: put up a bag item by id (ore may take qty) or some gems, with min_bid, optional buy_now and days (1-3). cancel: one of your lots with no bids. collect: pick up what you won or what didn't sell. bid, buy and list first return a quote (auction_quote) and do nothing; send the same call again with confirm: true only after the player says yes.",
   {
     op: external_exports.enum(["bid", "buy", "list", "cancel", "collect"]),
     lot: external_exports.number().int().optional(),
@@ -21974,7 +21974,8 @@ server.tool(
     gems: external_exports.number().int().positive().optional(),
     min_bid: external_exports.number().int().positive().optional(),
     buy_now: external_exports.number().int().positive().optional(),
-    days: external_exports.number().int().min(1).max(3).optional()
+    days: external_exports.number().int().min(1).max(3).optional(),
+    confirm: external_exports.boolean().optional()
   },
   async (a) => text(await call("POST", "/v1/auction", Object.fromEntries(Object.entries(a).filter(([, v]) => v !== void 0))))
 );

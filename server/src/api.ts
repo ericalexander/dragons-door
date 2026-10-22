@@ -2247,9 +2247,9 @@ api.get("/auction", async (c) => c.json(await withPlayer(c.req.header("authoriza
 
 api.post("/auction", async (c) => {
   const body = z.discriminatedUnion("op", [
-    z.object({ op: z.literal("list"), id: z.number().int().optional(), gems: z.number().int().min(1).optional(), qty: z.number().int().min(1).max(10).optional(), min_bid: z.number().int().min(1), buy_now: z.number().int().min(1).optional(), days: z.number().int().optional() }),
-    z.object({ op: z.literal("bid"), lot: z.number().int(), amount: z.number().int().min(1).optional() }),
-    z.object({ op: z.literal("buy"), lot: z.number().int() }),
+    z.object({ op: z.literal("list"), id: z.number().int().optional(), gems: z.number().int().min(1).optional(), qty: z.number().int().min(1).max(10).optional(), min_bid: z.number().int().min(1), buy_now: z.number().int().min(1).optional(), days: z.number().int().optional(), confirm: z.boolean().optional() }),
+    z.object({ op: z.literal("bid"), lot: z.number().int(), amount: z.number().int().min(1).optional(), confirm: z.boolean().optional() }),
+    z.object({ op: z.literal("buy"), lot: z.number().int(), confirm: z.boolean().optional() }),
     z.object({ op: z.literal("cancel"), lot: z.number().int() }),
     z.object({ op: z.literal("collect") }),
   ]).parse(await c.req.json());
@@ -2257,6 +2257,10 @@ api.post("/auction", async (c) => {
     atTheHouse(ctx);
     await requireNoEncounter(ctx);
     await settleAuctions(ctx.c, ctx.day);
+    // Money changes hands only on a confirmed call: without confirm, list, bid and buy return a quote and do nothing.
+    // Plugins from before quotes existed (0.13.0) and townsfolk go straight through.
+    const plugin = current()?.plugin;
+    const confirmed = ("confirm" in body && body.confirm === true) || ctx.p.is_bot || (plugin !== undefined && plugin !== null && older(plugin, "0.13.1"));
 
     if (body.op === "collect") {
       const { got, waiting } = await collectLots(ctx);
@@ -2285,6 +2289,11 @@ api.post("/auction", async (c) => {
       const problem = priceProblem(slot, itemId, qty, body.min_bid, body.buy_now ?? null);
       if (problem) { ctx.events.push({ kind: "auction_refused", reason: problem }); return; }
       const fee = listingFee(body.min_bid);
+      if (!confirmed) {
+        ctx.events.push({ kind: "auction_quote", op: "list", item: lotName({ slot, item_id: itemId, qty }), min_bid: body.min_bid, buy_now: body.buy_now ?? null, days, fee, house_cut: `${Math.round(AUCTION.cut * 100)}% of the sale`, can_pay: ctx.p.gold + ctx.p.bank >= fee });
+        ctx.hint = "A quote, nothing done yet: show what they'd list, for how long, at what prices, the fee and the house's cut, and ask them to confirm (y/n). Call again with confirm: true only on a yes.";
+        return;
+      }
       if (!(await payFrom(ctx, fee))) { ctx.events.push({ kind: "auction_refused", reason: `the listing fee is ${fee} gold` }); return; }
       if (slot === "gem") await savePlayer(ctx, { gems: ctx.p.gems - qty });
       else await ctx.c.query("delete from inventory where id = any($1::bigint[])", [rows]);
@@ -2317,6 +2326,15 @@ api.post("/auction", async (c) => {
     if (!buyingOut && final > bidCeiling(r.slot, r.item_id, r.qty)) { ctx.events.push({ kind: "auction_refused", reason: `Cass won't take a bid over ${bidCeiling(r.slot, r.item_id, r.qty)} gold for that` }); return; }
     // Raising your own bid costs only the difference.
     const owed = r.high_bidder === ctx.p.id ? final - (r.high_bid ?? 0) : final;
+    if (!confirmed) {
+      const fromBank = Math.min(ctx.p.bank, owed);
+      ctx.events.push({ kind: "auction_quote", op: buyingOut ? "buy" : "bid", lot: Number(r.id), item: lotName(r), ...lotStats(r.slot, r.item_id, ctx.p.class), from: r.seller ?? "the house",
+        price: final, pays: owed, can_pay: ctx.p.gold + ctx.p.bank >= owed,
+        ...(ctx.p.gold + ctx.p.bank >= owed ? { after: { bank: ctx.p.bank - fromBank, purse: ctx.p.gold - (owed - fromBank) } } : {}),
+        ...(buyingOut ? {} : { closes_after: r.ends_day, note: "held by the house until it closes; if you're outbid, it comes back to your bank" }) });
+      ctx.hint = `A quote, nothing done yet: name the lot and what it is, the price, and what they'd have left, and ask them to confirm (y/n). Call again with the same lot and confirm: true only on a yes.`;
+      return;
+    }
     if (!(await payFrom(ctx, owed))) { ctx.events.push({ kind: "auction_refused", reason: `that takes ${owed} gold and you have ${ctx.p.gold + ctx.p.bank} between purse and bank` }); return; }
     if (r.high_bidder && r.high_bidder !== ctx.p.id) await refundBid(ctx.c, r, buyingOut ? "bought_out" : "outbid");
 
