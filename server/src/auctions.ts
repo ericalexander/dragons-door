@@ -6,6 +6,10 @@
  * refunds anyone outbid by mail, and settles at the daily reset: the seller is paid, less the house's
  * cut, and the item waits at the house for the buyer to collect. Unsold items go back the same way.
  *
+ * The house's own lots come only from its storeroom: whatever players and townsfolk sold to the smith or
+ * to Odile. Nothing is made up, house lots never start below shop worth, and the house steps back when
+ * players are selling.
+ *
  * Against rigged sales (passing gold between friends through a fake sale), for now: a buy-now price
  * can't be lower than the smith would pay for the item, and no price can go above three times what
  * the item is worth. Expect to tune these once it's seen real use.
@@ -31,8 +35,13 @@ export const AUCTION = {
   raise: 0.05,
   /** No price above this many times what the item is worth. */
   ceiling: 3,
-  /** Listings the house keeps on the board itself, so there's always something to look at. */
-  houseStock: 3,
+  /** The house lists from its storeroom (what's been sold to the smith and Odile), up to this many lots of its own,
+   *  one per kind of item, and only while players have fewer than playerQuiet lots up. */
+  houseLots: 3, playerQuiet: 5,
+  /** House lots start at full shop worth, so a player can always undercut them; buy-now is a quarter above. */
+  houseBuyNow: 1.25,
+  /** Most of one thing the house puts in a single lot. */
+  houseLotMax: { ore: 3, gem: 2 } as Partial<Record<ListSlot, number>>,
 };
 
 /** What one of the item is worth at the shop, and what the smith (or Odile, for gems) pays for it. */
