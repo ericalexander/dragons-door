@@ -6,7 +6,8 @@
  *   npx tsx src/lore-sync.ts /path/to/lore.json --sql    prints the SQL instead (for running elsewhere)
  *
  * File shape: { world, people: { name: { pieces: [..], mentions?: [..] } }, masters: { level: { name, about } },
- *               journals: [{ key, title, text, where, author?, min_ring? }], quests: [QuestDef with index >= 100] }
+ *               journals: [{ key, title, text, where, author?, min_ring? }], quests: [QuestDef with index >= 100],
+ *               looks: { name: { look, manner? } } }
  */
 import { readFileSync } from "node:fs";
 
@@ -17,6 +18,7 @@ interface File {
   ironMasters?: Record<string, { name: string; about: string }>;
   journals?: { key: string; title: string; text: string; where: string; author?: string | null; min_ring?: number }[];
   quests?: ({ id: string; index?: number } & Record<string, unknown>)[];
+  looks?: Record<string, { look: string; manner?: string }>;
 }
 type Row = { key: string; kind: string; subject: string | null; piece: number | null; body: string; data: Record<string, unknown> };
 
@@ -32,6 +34,7 @@ for (const [name, p] of Object.entries(f.people ?? {})) {
 for (const [lvl, m] of Object.entries(f.masters ?? {})) rows.push({ key: `master:${lvl}`, kind: "master", subject: m.name, piece: Number(lvl), body: m.about, data: {} });
 for (const [lvl, m] of Object.entries(f.ironMasters ?? {})) rows.push({ key: `master:ironhold:${lvl}`, kind: "master", subject: m.name, piece: Number(lvl), body: m.about, data: { town: "ironhold" } });
 for (const j of f.journals ?? []) rows.push({ key: `journal:${j.key}`, kind: "journal", subject: j.title, piece: null, body: j.text, data: { where: j.where, author: j.author ?? null, min_ring: j.min_ring ?? 0 } });
+for (const [name, l] of Object.entries(f.looks ?? {})) rows.push({ key: `look:${name}`, kind: "look", subject: name, piece: null, body: l.look, data: l.manner ? { manner: l.manner } : {} });
 for (const q of f.quests ?? []) {
   if ((q.index ?? 0) < 100) throw new Error(`quest ${q.id} needs an index of 100 or more`);
   rows.push({ key: `quest:${q.id}`, kind: "quest", subject: q.id, piece: null, body: "", data: q });

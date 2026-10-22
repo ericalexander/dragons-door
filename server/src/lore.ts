@@ -22,9 +22,11 @@ export interface Lore {
   /** Ironhold's training yard: masters for those who fight with steel. */
   ironMasters: Record<number, { name: string; about: string }>;
   journals: Journal[];
+  /** How people look, which anyone would see, and for a few, how something they live with shapes how they move or talk. */
+  looks: Record<string, { look: string; manner?: string }>;
 }
 
-const EMPTY: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, journals: [] };
+const EMPTY: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, journals: [], looks: {} };
 const TTL = 5 * 60_000;
 let current: Lore = EMPTY;
 let loadedAt = 0;
@@ -41,12 +43,13 @@ export async function loadLore(force = false): Promise<Lore> {
     loadedAt = Date.now();
     return current;
   }
-  const next: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, journals: [] };
+  const next: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, journals: [], looks: {} };
   const person = (name: string) => (next.people[name] ??= { pieces: [], mentions: [] });
   for (const r of rows) {
     if (r.kind === "world") next.world = r.body;
     else if (r.kind === "person" && r.subject) person(r.subject).pieces[r.piece ?? 0] = r.body;
     else if (r.kind === "mention" && r.subject) person(r.subject).mentions.push(r.body);
+    else if (r.kind === "look" && r.subject) next.looks[r.subject] = { look: r.body, ...((r.data as { manner?: string }).manner ? { manner: (r.data as { manner: string }).manner } : {}) };
     else if (r.kind === "master" && r.piece) ((r.data as { town?: string }).town === "ironhold" ? next.ironMasters : next.masters)[r.piece] = { name: r.subject ?? "", about: r.body };
     else if (r.kind === "journal") {
       const d = r.data as { where?: Journal["where"]; author?: string | null; min_ring?: number };
@@ -62,6 +65,12 @@ export async function loadLore(force = false): Promise<Lore> {
   current = next;
   loadedAt = Date.now();
   return current;
+}
+
+/** What the narrator gets about how someone looks: the description, and their manner if they have one. Nothing if there's none. */
+export function looksOf(name: string): { looks?: string; manner?: string } {
+  const l = current.looks[name];
+  return l ? { looks: l.look, ...(l.manner ? { manner: l.manner } : {}) } : {};
 }
 
 /** The lore as last loaded. Call loadLore() first in anything that isn't inside a request. */

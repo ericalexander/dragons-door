@@ -21,7 +21,7 @@ import { countryOf, regionAt, rollFind } from "./bestiary.js";
 import { DIRS, LEGEND, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
-import { loadLore, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
+import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
@@ -1830,8 +1830,8 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
     });
     const on_mind = f.mind?.goal ? goalLabel(f.name, f.personality, f.mind.goal) : undefined;
     const grudge = f.mind?.grudge ? { grudge_against: f.mind.grudge.name } : {};
-    if (w.where === "square") about.push({ name: f.name, doing: "about the square", on_mind, ...grudge });
-    else if (w.where === "heading") about.push({ name: f.name, doing: w.to === "forest" ? "heading out to hunt" : `heading for the ${w.to}`, on_mind, ...grudge });
+    if (w.where === "square") about.push({ name: f.name, doing: "about the square", on_mind, ...grudge, ...looksOf(f.name) });
+    else if (w.where === "heading") about.push({ name: f.name, doing: w.to === "forest" ? "heading out to hunt" : `heading for the ${w.to}`, on_mind, ...grudge, ...looksOf(f.name) });
     else if (w.where === "asleep") elsewhere.push({ name: f.name, where: w.at === "inn" ? "asleep at the inn" : "asleep in the fields" });
     else if (w.where === "dead") elsewhere.push({ name: f.name, where: "dead until morning" });
     else if (w.where === "unseen") elsewhere.push({ name: f.name, where: "nowhere to be seen" });
@@ -1981,8 +1981,8 @@ async function townView(ctx: Ctx, id: TownId) {
      and last_seen > now() - interval '30 minutes' order by last_seen desc limit 3`, [at.x, at.y, ctx.p.id])).rows;
   return {
     kind: "town", town: town.name, blurb: town.blurb, time_of_day: timeOfDay(realmHour(new Date())),
-    people: town.people,
-    townsfolk_here: folk.map((f) => ({ name: f.name, class: f.class, level: f.level, ...(f.mind?.goal ? { on_mind: goalLabel(f.name, f.personality, f.mind.goal) } : {}) })),
+    people: town.people.map((p) => ({ ...p, ...looksOf(p.name) })),
+    townsfolk_here: folk.map((f) => ({ name: f.name, class: f.class, level: f.level, ...(f.mind?.goal ? { on_mind: goalLabel(f.name, f.personality, f.mind.goal) } : {}), ...looksOf(f.name) })),
     players_here: players,
     services: { healer: "Jessamy Crane, in the Long Hall", inn: "a bunk in the Long Hall (wake up here)", board: "the Long Hall's board, the same one Brightwater's tavern reads (couriers carry it)", bank: "Mabry's strongbox, the same accounts as Brightwater's bank",
       weaponry: `${town.buyer}'s weaponry, at the forge`, armory: "Tobin Harrow's armory: armor and bags", forge: `${town.buyer}'s forge`, auction: `${town.auctioneer}'s auction house, on the same board as Brightwater's`, sell: `${town.buyer} buys gear` },
@@ -2127,7 +2127,7 @@ api.post("/talk", async (c) => {
       }
     }
     ctx.events.push({
-      kind: "talk", name: who.name, where, again,
+      kind: "talk", name: who.name, where, again, ...looksOf(who.name),
       ...(who.role === "townsfolk" ? {
         townsfolk: true, class: who.class, level: who.level,
         ...(mind.goal && who.personality ? { on_mind: goalLabel(who.name, who.personality, mind.goal) } : {}),

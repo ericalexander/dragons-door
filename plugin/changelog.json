@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.15.4",
+    "lore": "You've been walking past the same faces every morning without really looking. Now you do: the ink on a pair of hands, a patched coat, the habit someone has of turning a cup while they talk. People look like themselves, every time you see them.",
+    "plain": "Townsfolk and the people in both towns now have fixed appearances, so the narrator describes them the same way every time."
+  },
+  {
     "version": "0.15.3",
     "lore": "Every town has something the other one wants. The hills round Ironhold are full of ore, if you don't mind prising it off whatever was sitting on it, and the lowlands round Brightwater turn up gems in the oddest places. The caves have taken sides too. Mabry and Cass are very pleased about all of it.",
     "plain": "Monsters sometimes leave ore in the hills and crags (and around Ironhold) and gems in the forest, meadows and marshes. Caves near Ironhold run to ore, caves near Brightwater to gems. Trade the difference at the auction house."
