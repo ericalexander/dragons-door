@@ -179,7 +179,7 @@ export function master(level: number) {
   return GAME.masters.find((m) => m.level === level) ?? null;
 }
 
-interface Mana { base: number; perLevel: number; cast: number; fireball: number; staff: number }
+interface Mana { base: number; perLevel: number; cast: number; fireball: number; staff: number; heal?: number; healPct?: number }
 /** The class's mana rules, if it casts spells (mages, and later other magic classes). */
 export const manaRules = (cls: PlayerClass): Mana | null => (GAME.classes[cls] as { mana?: Mana }).mana ?? null;
 export const casts = (cls: PlayerClass) => manaRules(cls) !== null;
@@ -190,12 +190,17 @@ export function manaMax(p: Pick<Player, "class" | "level">): number {
 }
 /** What a weapon tier is called for this class: casters know spells at the same tiers. */
 export function weaponName(cls: PlayerClass, id: number): string {
-  return casts(cls) ? (GAME.spells[id] ?? weapon(id).name) : weapon(id).name;
+  const list = (GAME.spells as Record<string, string[]>)[cls];
+  return list ? (list[id] ?? weapon(id).name) : weapon(id).name;
 }
+
+/** Who teaches this class its spells, and where: Mother Quill's library for mages, Prior Hale's chapel for priests. */
+export const spellVendor = (cls: PlayerClass): { name: string; place: string } | null => (GAME.classes[cls] as { vendor?: { name: string; place: string } }).vendor ?? null;
 
 /** The big move that goes with what they know: a caster's special is named for their spell (Frost Needle → Frost Nova). */
 export function specialName(cls: PlayerClass, id: number): string {
-  return casts(cls) ? (GAME.spellSpecials[id] ?? GAME.classes[cls].special) : GAME.classes[cls].special;
+  const list = (GAME.spellSpecials as Record<string, string[]>)[cls];
+  return list ? (list[id] ?? GAME.classes[cls].special) : GAME.classes[cls].special;
 }
 
 /** What a class calls its main attribute (the number the game stores as str): Strength, Dexterity, Intelligence. */
@@ -273,7 +278,10 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
 /** Legal next actions given current state. The narrator only offers these. */
 export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean): string[] {
   if (!p.alive) return ["news", "tavern", "rankings", "status", "mail"];
-  if (inEncounter) return casts(p.class) ? ["fight attack", "fight special", "fight staff", "fight run"] : ["fight attack", "fight special", "fight run"];
+  if (inEncounter) {
+    if (!casts(p.class)) return ["fight attack", "fight special", "fight run"];
+    return ["fight attack", "fight special", ...(manaRules(p.class)?.heal ? ["fight heal"] : []), "fight staff", "fight run"];
+  }
   // Out in the wild: hunt where you stand, walk on, or head home. Town's services are back in town.
   if (p.pos_x !== null && p.pos_x !== undefined) {
     const w: string[] = ["map", "return", "status", "bag", "news", "rankings", "mail"];
@@ -291,7 +299,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     return w;
   }
   const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop"];
-  if (casts(p.class)) a.push("library");
+  { const v = spellVendor(p.class); if (v) a.push(v.place); }
   if (p.ground) a.unshift("take", "equip ground");
   // Everyone heads out into the world to hunt.
   a.unshift("explore");

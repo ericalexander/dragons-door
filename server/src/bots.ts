@@ -30,12 +30,12 @@ import { awayToday, choose, doneLine, finished, fraction, goalLabel, goalTalk, p
 export const bots = new Hono();
 
 
-const ROSTER: { name: string; class: "warrior" | "thief" | "mage"; personality: Personality }[] = [
+const ROSTER: { name: string; class: "warrior" | "thief" | "mage" | "priest"; personality: Personality }[] = [
   { name: "Hilde", class: "warrior", personality: "banker" },
   { name: "Grimwald", class: "warrior", personality: "drunk" },
   { name: "Vesper", class: "thief", personality: "raider" },
   { name: "Old Tam", class: "mage", personality: "gossip" },
-  { name: "Brother Ansel", class: "mage", personality: "pious" },
+  { name: "Brother Ansel", class: "priest", personality: "pious" },
   { name: "Pip", class: "thief", personality: "reckless" },
   { name: "Madam Orsolya", class: "mage", personality: "seer" },
   { name: "Sir Pomfrey", class: "warrior", personality: "braggart" },
@@ -82,8 +82,10 @@ async function forestFight(b: Bot, opts: { runBelow?: number; useSpecial?: boole
   if (!kinds(r).includes("encounter")) return r; // found gold, or no fights left
   for (let i = 0; i < 60; i++) {
     const s = r.state;
-    let action: "attack" | "special" | "run" = "attack";
-    if (opts.runBelow !== undefined && s.hp / s.max_hp < opts.runBelow && i > 0) action = "run";
+    let action: "attack" | "special" | "heal" | "run" = "attack";
+    // A priest prays before running.
+    if (r.actions.includes("fight heal") && s.hp / s.max_hp < 0.4 && (s.mana ?? 0) >= 3) action = "heal";
+    else if (opts.runBelow !== undefined && s.hp / s.max_hp < opts.runBelow && i > 0) action = "run";
     else if (opts.useSpecial && (s.mana_max !== undefined ? (s.mana ?? 0) >= 4 : s.specials > 0) && roll(99) < 50) action = "special";
     const next = await b.post("/fight", { action });
     if (isErr(next)) return r;

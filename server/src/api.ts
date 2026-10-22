@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, charmOf, attributeName, casts, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
+  GAME, armor, weapon, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -206,7 +206,7 @@ function seasoned(ctx: Ctx, what: string): boolean {
 
 /** Names that would pass for a local. Compared after folding lookalike characters. */
 const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
-  "violet", "odile", "mother quill", "quill", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
+  "violet", "odile", "mother quill", "quill", "prior hale", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
   "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic"];
 // i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
 const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
@@ -262,7 +262,7 @@ async function requireNoEncounter(ctx: Ctx) {
 api.post("/register", async (c) => {
   const body = z.object({
     name: z.string().trim().min(2).max(20).regex(/^[A-Za-z0-9_.'-]+( [A-Za-z0-9_.'-]+)*$/, "letters, digits, apostrophes, periods, hyphens, single spaces"),
-    class: z.enum(["warrior", "thief", "mage"]),
+    class: z.enum(["warrior", "thief", "mage", "priest"]),
     invite: z.string().optional(),
   }).parse(await c.req.json());
   // A friends realm: when REALM_INVITE is set, you need the word to get in.
@@ -309,11 +309,12 @@ api.post("/register", async (c) => {
 
 /** The spells for sale, tier for tier with the smith's weapons: each needs a level and costs gold, and your old spellbook trades in at half. */
 api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  requireInTown(ctx, "the library");
-  if (!casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "Mother Quill only teaches those with the gift" }); return; }
+  requireInTown(ctx, `the ${spellVendor(ctx.p.class)?.place ?? "library"}`);
+  if (!casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "only those with the gift learn spells here" }); return; }
   const discount = charmDiscount(charmOf(ctx.p));
   ctx.events.push({
-    kind: "library", known: weaponName(ctx.p.class, ctx.p.weapon_id), mana: { per_day: manaMax(ctx.p), cast: manaRules(ctx.p.class)!.cast, fireball: manaRules(ctx.p.class)!.fireball },
+    kind: "library", teacher: spellVendor(ctx.p.class)?.name, place: spellVendor(ctx.p.class)?.place, known: weaponName(ctx.p.class, ctx.p.weapon_id),
+    mana: { per_day: manaMax(ctx.p), cast: manaRules(ctx.p.class)!.cast, greater: manaRules(ctx.p.class)!.fireball, ...(manaRules(ctx.p.class)!.heal ? { heal: manaRules(ctx.p.class)!.heal } : {}) },
     spells: GAME.weapons.map((w) => ({ id: w.id, name: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str, cost: w.cost, needs_level: Math.max(1, w.id), known: w.id === ctx.p.weapon_id, learnable: w.id > ctx.p.weapon_id && ctx.p.level >= Math.max(1, w.id) })),
     charm_discount_pct: Math.round(discount * 100),
   });
@@ -323,9 +324,9 @@ api.post("/library", async (c) => {
   const body = z.object({ id: z.number().int() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, "the library");
+    requireInTown(ctx, `the ${spellVendor(ctx.p.class)?.place ?? "library"}`);
     await requireNoEncounter(ctx);
-    if (!casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "Mother Quill only teaches those with the gift" }); return; }
+    if (!casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "only those with the gift learn spells here" }); return; }
     const w = GAME.weapons.find((x) => x.id === body.id);
     if (!w || w.id === 0) throw new GameError("no_such_item", "no such spell");
     if (w.id <= ctx.p.weapon_id) { ctx.events.push({ kind: "already_known", spell: weaponName(ctx.p.class, ctx.p.weapon_id) }); return; }
@@ -548,7 +549,7 @@ api.get("/shop", async (c) => {
   const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) }); return; }
-    if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "the smith doesn't sell spells; Mother Quill does, at the library", go: "library" }); return; }
+    if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell spells; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
     // A weapon's str is its power (a bonus on top of the class's attribute), so call it that.
@@ -598,7 +599,7 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
 }, { weather: true })));
 
 api.post("/fight", async (c) => {
-  const body = z.object({ action: z.enum(["attack", "special", "staff", "run"]) }).parse(await c.req.json());
+  const body = z.object({ action: z.enum(["attack", "special", "staff", "heal", "run"]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     const r = await ctx.c.query<{ id: string; kind: string; monster: Monster; round: number; log: Event[] }>("select id, kind, monster, round, log from encounters where player_id = $1", [ctx.p.id]);
@@ -631,6 +632,28 @@ api.post("/fight", async (c) => {
     let dodge = false;
     const mr = manaRules(ctx.p.class);
     let staff = false;
+    if (body.action === "heal") {
+      // A healer's prayer: mana for health, and the monster still gets its swing.
+      if (!mr?.heal) { ctx.events.push({ kind: "cannot_heal", reason: "your class has no healing prayers" }); return; }
+      const mana = ctx.t.mana ?? 0;
+      if (mana < mr.heal) { ctx.events.push({ kind: "no_mana", need: mr.heal, mana }); return; }
+      await saveTurns(ctx, { mana: mana - mr.heal });
+      const healed = Math.min(ctx.p.max_hp - ctx.p.hp, Math.ceil(ctx.p.max_hp * (mr.healPct ?? 0.3)));
+      await savePlayer(ctx, { hp: ctx.p.hp + healed });
+      ctx.events.push({ kind: "healed_self", healed, hp: ctx.p.hp, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
+      const pf0 = playerAsFighter(ctx.p);
+      const dmg = Math.max(0, roll(m.str) - roll(pf0.def));
+      await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
+      ctx.events.push(dmg > 0 ? { kind: "hit", attacker: m.name, defender: ctx.p.name, damage: dmg, defender_hp: ctx.p.hp } : { kind: "miss", attacker: m.name, defender: ctx.p.name });
+      if (ctx.p.hp <= 0) {
+        await ctx.c.query("delete from encounters where id = $1", [enc.id]);
+        await logEvent(ctx, "fight_end", { encounter: enc.kind, monster: m.name, monster_level: m.level ?? null, outcome: enc.kind === "master" ? "master_won" : "died", while: "praying", hp_left: 0, max_hp: ctx.p.max_hp, ...fightSummary(enc.log ?? [], [], ctx.p.name) });
+        await lose(ctx, enc.kind, m);
+      } else {
+        await ctx.c.query("update encounters set round = round + 1 where id = $1", [enc.id]);
+      }
+      return;
+    }
     if (mr) {
       // Casters: a spell costs mana, Fireball costs more, and the staff costs nothing but hits soft.
       const mana = ctx.t.mana ?? 0;
@@ -819,7 +842,7 @@ api.post("/buy", async (c) => {
       await logEvent(ctx, "spend", { on: "bag", item: nb.name, gold: bagCost });
       return;
     }
-    if (body.kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "the smith doesn't sell spells; Mother Quill does, at the library", go: "library" }); return; }
+    if (body.kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell spells; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
@@ -1590,7 +1613,7 @@ api.post("/talk", async (c) => {
       if (s && !available(s)) { ctx.events.push({ kind: "not_around", name: who.name, hours: s.hours ?? null, days: s.days ?? null }); return; }
       const bardNames = ["Fennick Reed", "Dunstan the Unfinished", "Corwin Lark", "Wren"];
       if (bardNames.includes(who.name) && bardFor(ctx.day).name !== who.name) { ctx.events.push({ kind: "not_around", name: who.name, where: "not playing tonight" }); return; }
-      where = who.name === "Odile" ? "her workshop" : who.name === "Mother Quill" ? "the library" : s ? s.where : "the tavern";
+      where = who.name === "Odile" ? "her workshop" : who.name === "Mother Quill" ? "the library" : who.name === "Prior Hale" ? "the chapel" : s ? s.where : "the tavern";
     }
 
     const talked = (ctx.t.talked ?? []) as string[];

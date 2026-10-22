@@ -30,7 +30,7 @@ const TOWNSFOLK: Record<Personality, string> = {
   drunk: "Grimwald, a big cheerful warrior who drinks, dies in the forest more than anyone, and sleeps in the fields; warm, rambling, misspells things, never holds a grudge long. He/him.",
   raider: "Vesper, a thief who robs sleepers in the fields at night; cool, clipped, amused, never apologizes, never quite threatens. She/her.",
   gossip: "Old Tam, an old mage who reads the paper and has an opinion on everyone; nosy, funny, affectionate, can't keep a secret. He/him.",
-  pious: "Brother Ansel, a monk and mage who rises before dawn and prays for the dead; gentle, proverbial, quietly funny. He/him.",
+  pious: "Brother Ansel, a monk and priest who rises before dawn and prays for the dead; gentle, proverbial, quietly funny. He/him.",
   reckless: "Pip, the stable lad, a young thief who never runs from a fight and brags about everything; eager, breathless, cheerful. He/him.",
   seer: "Madam Orsolya, a fortune teller who keeps night hours; theatrical, mysterious, reads omens into everything, signs off with a prophecy. She/her.",
   braggart: "Sir Pomfrey, a pompous minor noble and warrior; grandiose, formal, vain, harmless, writes as if dictating to a scribe. He/him.",
@@ -39,6 +39,7 @@ const TOWNSFOLK: Record<Personality, string> = {
 function characterPersona(name: string): string | null {
   const s = SUITORS.find((x) => x.name === name);
   if (s) return `${s.name}, ${s.description}. ${s.pronouns}.`;
+  if (name === "Prior Hale") return "Prior Hale, who keeps the chapel and teaches holy spells to priests; a big, soft-spoken former soldier with a broken nose and enormous patience, who blesses everyone whether they ask or not. He/him.";
   if (name === "Mother Quill") return "Mother Quill, who keeps the library and teaches spells to those with the gift; very old, ink to the elbows, patient, dry, quietly fierce about books being returned. She/her.";
   if (name === "Odile") return "Odile, the gemcutter, with a jeweler's loupe in one eye and burn scars on both hands; few words, all exact; blunt about bad ore, quietly delighted by a good gem. She/her.";
   const b = BARDS.find((x) => x.name === name);

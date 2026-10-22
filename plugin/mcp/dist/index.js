@@ -21767,7 +21767,7 @@ void refreshInstalledScript();
 async function call(method, path, body) {
   const cfg = await loadConfig();
   if (!cfg.api_key && path !== "/v1/register") {
-    return { error: "not_registered", message: "No character yet. Call `register` with a name and class (warrior, thief, mage)." };
+    return { error: "not_registered", message: "No character yet. Call `register` with a name and class (warrior, thief, mage, priest)." };
   }
   const res = await fetch(cfg.api_url + path, {
     method,
@@ -21797,7 +21797,7 @@ var text = (v) => ({ content: [{ type: "text", text: JSON.stringify(v) }] });
 server.tool(
   "register",
   "Create your character. Run once. Stores your API key locally. Some realms are invite-only and need the invite word.",
-  { name: external_exports.string().min(2).max(20), class: external_exports.enum(["warrior", "thief", "mage"]), invite: external_exports.string().optional() },
+  { name: external_exports.string().min(2).max(20), class: external_exports.enum(["warrior", "thief", "mage", "priest"]), invite: external_exports.string().optional() },
   async ({ name, class: cls, invite }) => {
     const cfg = await loadConfig();
     if (cfg.api_key) return text({ error: "already_registered", name: cfg.name, message: "You already have a character on this machine." });
@@ -21813,7 +21813,7 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
   server.tool(
     "characters",
     "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active).",
-    { op: external_exports.enum(["list", "switch", "new"]), name: external_exports.string().min(2).max(20).optional(), class: external_exports.enum(["warrior", "thief", "mage"]).optional() },
+    { op: external_exports.enum(["list", "switch", "new"]), name: external_exports.string().min(2).max(20).optional(), class: external_exports.enum(["warrior", "thief", "mage", "priest"]).optional() },
     async ({ op, name, class: cls }) => {
       const cfg = await loadConfig();
       if (op === "list") return text({ active: cfg.name ?? null, others: await otherCharacters() });
@@ -21922,13 +21922,13 @@ server.tool(
 );
 server.tool(
   "library",
-  "Mother Quill's library in town, for casters: the spells for sale (each needs a level and costs gold, and the old spellbook trades in at half), which they know, and their mana.",
+  "Where casters learn spells: Mother Quill's library (mages) or Prior Hale's chapel (priests): the spells for sale (each needs a level and costs gold, and the old spellbook trades in at half), which they know, and their mana.",
   {},
   async () => text(await call("GET", "/v1/library"))
 );
 server.tool(
   "learn_spell",
-  "Learn a spell at Mother Quill's library by id (casters only). It replaces the spell they cast now.",
+  "Learn a spell by id at the caster's teacher (Mother Quill's library for mages, Prior Hale's chapel for priests). It replaces the spell they cast now.",
   { id: external_exports.number().int() },
   async ({ id }) => text(await call("POST", "/v1/library", { id }))
 );
@@ -21946,8 +21946,8 @@ server.tool(
 );
 server.tool(
   "fight",
-  "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: their big spell, named for the spell they know (state.special), which costs more mana). staff: a caster's free, weaker swing. run: try to flee.",
-  { action: external_exports.enum(["attack", "special", "staff", "run"]) },
+  "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: their big spell, named for the spell they know (state.special), which costs more mana). staff: a caster's free, weaker swing. heal: a priest's prayer, mana for health (the monster still swings). run: try to flee.",
+  { action: external_exports.enum(["attack", "special", "staff", "heal", "run"]) },
   async ({ action }) => text(await call("POST", "/v1/fight", { action }))
 );
 server.tool("train", "Challenge your master to advance a level. Only when you have enough experience.", {}, async () => text(await call("POST", "/v1/train")));

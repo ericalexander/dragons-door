@@ -41,6 +41,17 @@ if (process.env.MAGE_DEF) GAME.classes.mage.defPerLevel = Number(process.env.MAG
 if (process.env.MAGE_STR) GAME.classes.mage.strPerLevel = Number(process.env.MAGE_STR);
 if (process.env.MAGE_MULT) GAME.classes.mage.specialMult = Number(process.env.MAGE_MULT);
 if (process.env.MAGE_SPD) GAME.classes.mage.specialsPerDay = Number(process.env.MAGE_SPD);
+// priest knobs: HEAL (mana), HEALPCT, HEALAT (heal below this share of HP), PR_HP/PR_STR/PR_DEF per level, PMULT
+{ const pr = GAME.classes.priest as unknown as { mana: Record<string, number>; hpPerLevel: number; strPerLevel: number; defPerLevel: number; specialMult: number };
+  if (process.env.HEAL) pr.mana.heal = Number(process.env.HEAL);
+  if (process.env.HEALPCT) pr.mana.healPct = Number(process.env.HEALPCT);
+  if (process.env.PR_HP) pr.hpPerLevel = Number(process.env.PR_HP);
+  if (process.env.PR_STR) pr.strPerLevel = Number(process.env.PR_STR);
+  if (process.env.PR_DEF) pr.defPerLevel = Number(process.env.PR_DEF);
+  if (process.env.PMULT) pr.specialMult = Number(process.env.PMULT);
+  if (process.env.PMANA_BASE) pr.mana.base = Number(process.env.PMANA_BASE);
+  if (process.env.PMANA_LVL) pr.mana.perLevel = Number(process.env.PMANA_LVL); }
+const HEALAT = Number(process.env.HEALAT ?? 0.4);
 // mana knobs: MANA_BASE, MANA_LVL, CAST, FIREBALL, STAFF; MANA=0 plays the old mage (dagger and specials)
 const MANA_ON = process.env.MANA !== "0";
 { const m = (GAME.classes.mage as { mana?: Record<string, number> }).mana!;
@@ -107,7 +118,7 @@ const MINE_FROM = Number(process.env.MINE_FROM ?? 4);
 const MINE_FIGHTS = Number(process.env.MINE_FIGHTS ?? SWINGS_PER_DAY); // swings a day (not forest fights, unless SWING_COSTS_FIGHT=1)
 const MINED = { trinkets: 0, best: 0 };
 const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, number> = {}; const DEATH_L: Record<number, number> = {};
-type Cls = "warrior" | "thief" | "mage";
+type Cls = "warrior" | "thief" | "mage" | "priest";
 
 function fresh(cls: Cls): Player {
   return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null, trinket_id: 0, pickaxe: false, cave_depth: null, pending_event: null, admin: false, is_test: false, banned_at: null, renamed_from: null };
@@ -130,6 +141,15 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number)
     if (mr) {
       // A caster's round: Fireball on a tough target if there's mana to spare, else a spell, else the staff.
       const full = pf.str;
+      // A healer patches up when it's getting bad, if there's mana; the monster still swings.
+      if (mr.heal && specials.n >= mr.heal && pf.hp / p.max_hp < HEALAT) {
+        specials.n -= mr.heal;
+        pf.hp = Math.min(p.max_hp, pf.hp + Math.ceil(p.max_hp * (mr.healPct ?? 0.3)));
+        const dmg = Math.max(0, roll(mf.str) - roll(pf.def));
+        pf.hp = Math.max(0, pf.hp - dmg);
+        if (pf.hp <= 0) { p.hp = 0; return "died"; }
+        continue;
+      }
       if (specials.n >= mr.fireball && mf.hp > full * 1.5) { mult = specialMultiplier(p); specials.n -= mr.fireball; }
       else if (specials.n >= mr.cast) specials.n -= mr.cast;
       else pf.str = Math.round(full * mr.staff);

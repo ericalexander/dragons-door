@@ -37,7 +37,34 @@
         "fireball": 4,
         "staff": 0.6
       },
-      "attribute": "Intelligence"
+      "attribute": "Intelligence",
+      "vendor": {
+        "name": "Mother Quill",
+        "place": "library"
+      }
+    },
+    "priest": {
+      "special": "Holy Light",
+      "specialMult": 2.0,
+      "specialsPerDay": 0,
+      "hpPerLevel": 10,
+      "strPerLevel": 3,
+      "defPerLevel": 3,
+      "critChance": 0.05,
+      "attribute": "Wisdom",
+      "mana": {
+        "base": 20,
+        "perLevel": 5,
+        "cast": 1,
+        "fireball": 4,
+        "staff": 0.6,
+        "heal": 3,
+        "healPct": 0.35
+      },
+      "vendor": {
+        "name": "Prior Hale",
+        "place": "chapel"
+      }
     }
   },
   "levels": [
@@ -653,34 +680,68 @@
   "sellFraction": 0.5,
   "messagesPerDay": 30,
   "critMultiplier": 2,
-  "spells": [
-    "Spark",
-    "Frost Needle",
-    "Firebolt",
-    "Lightning Lash",
-    "Acid Arrow",
-    "Ice Lance",
-    "Chain Lightning",
-    "Shadow Bolt",
-    "Meteor Shard",
-    "Starfall",
-    "Void Lance",
-    "Sunburst",
-    "Crystal Storm"
-  ],
-  "spellSpecials": [
-    "Spark Burst",
-    "Frost Nova",
-    "Fireball",
-    "Thunderclap",
-    "Acid Rain",
-    "Blizzard",
-    "Storm Call",
-    "Umbral Tide",
-    "Meteor",
-    "Nova",
-    "Void Rift",
-    "Solar Flare",
-    "Shatterstorm"
-  ]
+  "spells": {
+    "mage": [
+      "Spark",
+      "Frost Needle",
+      "Firebolt",
+      "Lightning Lash",
+      "Acid Arrow",
+      "Ice Lance",
+      "Chain Lightning",
+      "Shadow Bolt",
+      "Meteor Shard",
+      "Starfall",
+      "Void Lance",
+      "Sunburst",
+      "Crystal Storm"
+    ],
+    "priest": [
+      "Glimmer",
+      "Smite",
+      "Holy Brand",
+      "Radiant Lance",
+      "Sacred Flame",
+      "Censure",
+      "Divine Spear",
+      "Wrath",
+      "Holy Fire",
+      "Dawnstrike",
+      "Hallowed Blade",
+      "Seraph's Spear",
+      "Last Rite"
+    ]
+  },
+  "spellSpecials": {
+    "mage": [
+      "Spark Burst",
+      "Frost Nova",
+      "Fireball",
+      "Thunderclap",
+      "Acid Rain",
+      "Blizzard",
+      "Storm Call",
+      "Umbral Tide",
+      "Meteor",
+      "Nova",
+      "Void Rift",
+      "Solar Flare",
+      "Shatterstorm"
+    ],
+    "priest": [
+      "Blessed Burst",
+      "Holy Nova",
+      "Searing Light",
+      "Sunlance",
+      "Purging Flame",
+      "Condemnation",
+      "Heaven's Spear",
+      "Righteous Fury",
+      "Pillar of Fire",
+      "Daybreak",
+      "Consecration",
+      "Choir of Blades",
+      "Final Judgment"
+    ]
+  }
 }
