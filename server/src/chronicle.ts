@@ -23,7 +23,7 @@ interface DayFacts {
   day: string;
   number: number;
   news: { kind: string; actor: string | null; target: string | null; detail: Record<string, unknown>; line: string }[];
-  tavern: { author: string; body: string; townsfolk: boolean }[];
+  tavern: { author: string; body: string; townsfolk: boolean; town: string }[];
   goals: { name: string; goal: string }[];
   top: { name: string; level: number; townsfolk: boolean; class: string }[];
   dragon_alive: boolean;
@@ -42,8 +42,8 @@ async function gather(day: string): Promise<DayFacts> {
   const number = Math.round((Date.parse(day) - Date.parse(start)) / 86_400_000) + 1;
   const news = (await pool.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
     "select kind, actor, target, detail from news where day = $1 order by id", [day])).rows;
-  const tavern = (await pool.query<{ author: string; body: string; townsfolk: boolean }>(
-    `select t.author, t.body, coalesce(p.role = 'townsfolk', false) as townsfolk
+  const tavern = (await pool.query<{ author: string; body: string; townsfolk: boolean; town: string }>(
+    `select t.author, t.body, coalesce(p.role = 'townsfolk', false) as townsfolk, t.town
      from tavern t left join players p on p.name = t.author where t.day = $1 and t.hidden_at is null and not coalesce(p.is_test, false) order by t.id limit 40`, [day])).rows;
   const folk = (await pool.query<{ name: string; personality: Personality; mind: Mind }>(
     "select p.name, b.personality, b.mind from bots b join players p on p.id = b.player_id")).rows;
@@ -113,7 +113,7 @@ export function templateEntry(f: DayFacts, standings = true): string {
   if (more.length) paras.push(more.join(" "));
 
   const said = f.tavern.filter((t) => t.townsfolk).slice(-2);
-  if (said.length) paras.push(said.map((t) => `In the tavern, ${t.author} said: "${t.body}"`).join(" "));
+  if (said.length) paras.push(said.map((t) => `${t.town === "ironhold" ? "In Ironhold's Long Hall" : "In the tavern"}, ${t.author} said: "${t.body}"`).join(" "));
 
   if (!paras.length) paras.push(pick(["A quiet day. The forest kept its monsters to itself, and nobody robbed anybody.", "Nothing much happened, which in this town counts as news."]));
   const top = standings ? f.top.slice(0, 3).map((p) => `${p.name} (${p.level})`) : [];
@@ -148,7 +148,7 @@ async function claudeEntry(f: DayFacts, current: boolean): Promise<string | null
     day: `Day ${f.number} (${f.day})`,
     happenings: f.news.filter((n) => n.kind !== "join").map((n) => n.line),
     arrivals: f.news.filter((n) => n.kind === "join").map((n) => n.actor),
-    tavern_posts: f.tavern.map((t) => ({ by: t.author, townsfolk: t.townsfolk, words: t.body })),
+    tavern_posts: f.tavern.map((t) => ({ by: t.author, townsfolk: t.townsfolk, where: t.town === "ironhold" ? "Ironhold's Long Hall" : "Brightwater's tavern", words: t.body })),
     ...now,
     red_dragon: f.dragon_alive ? "alive" : "slain, for now",
   };

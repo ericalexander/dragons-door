@@ -1113,9 +1113,9 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
 // ---------- tavern ----------
 
 api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  // One board for the realm: Mabry's couriers carry the Long Hall's posts down to Brightwater and back.
-  requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
-  const r = await ctx.c.query("select author, body, ts from tavern where day = $1 and hidden_at is null order by id desc limit 20", [ctx.day]);
+  // Each tavern has its own board: what's posted in the Long Hall stays in the Long Hall.
+  const town = requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
+  const r = await ctx.c.query("select author, body, ts from tavern where day = $1 and town = $2 and hidden_at is null order by id desc limit 20", [ctx.day, town]);
   const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
   ctx.events.push({ kind: "bartender", recently_seen: online.rows.map((x) => x.name), gem_price: 100 * ctx.p.level, flirted_today: ctx.t.flirted });
@@ -1984,7 +1984,7 @@ async function townView(ctx: Ctx, id: TownId) {
     people: town.people.map((p) => ({ ...p, ...looksOf(p.name) })),
     townsfolk_here: folk.map((f) => ({ name: f.name, class: f.class, level: f.level, ...(f.mind?.goal ? { on_mind: goalLabel(f.name, f.personality, f.mind.goal) } : {}), ...looksOf(f.name) })),
     players_here: players,
-    services: { healer: "Jessamy Crane, in the Long Hall", inn: "a bunk in the Long Hall (wake up here)", board: "the Long Hall's board, the same one Brightwater's tavern reads (couriers carry it)", bank: "Mabry's strongbox, the same accounts as Brightwater's bank",
+    services: { healer: "Jessamy Crane, in the Long Hall", inn: "a bunk in the Long Hall (wake up here)", board: "the Long Hall's own board; Brightwater's tavern has its own", bank: "Mabry's strongbox, the same accounts as Brightwater's bank",
       weaponry: `${town.buyer}'s weaponry, at the forge`, armory: "Tobin Harrow's armory: armor and bags", forge: `${town.buyer}'s forge`, auction: `${town.auctioneer}'s auction house, on the same board as Brightwater's`, sell: `${town.buyer} buys gear` },
     masters: casts(ctx.p.class) ? "the training yard teaches only those who fight with steel; magic is taught in Brightwater" : "the training yard: masters for those who fight with steel",
   };
@@ -2240,10 +2240,10 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
 api.post("/tavern", async (c) => {
   const body = z.object({ body: z.string().trim().min(1).max(280).transform(cleanText).pipe(z.string().min(1)) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-    requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
+    const town = requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
     if (!seasoned(ctx, "post in the tavern")) return;
     if (ctx.t.tavern_posts >= GAME.tavernPostsPerDay) { ctx.events.push({ kind: "tavern_quiet", reason: "you've said enough for one day" }); return; }
-    await ctx.c.query("insert into tavern (day, author, body) values ($1,$2,$3)", [ctx.day, ctx.p.name, body.body]);
+    await ctx.c.query("insert into tavern (day, author, body, town) values ($1,$2,$3,$4)", [ctx.day, ctx.p.name, body.body, town]);
     await saveTurns(ctx, { tavern_posts: ctx.t.tavern_posts + 1 });
     ctx.events.push({ kind: "posted", posts_left: GAME.tavernPostsPerDay - ctx.t.tavern_posts });
   }));

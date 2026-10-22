@@ -930,6 +930,8 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
       await home(b);
       if (a === "shop") { await forgeVisit(b); await auctionBids(b); }
       else if (a === "tavern" && b.errandLines.length && Math.random() < 0.5) { await say(b, pick(b.errandLines)); b.log.push("said something in the Long Hall about what's happened"); }
+      // The Long Hall has its own board now, so they say their piece there like anyone in Brightwater's tavern.
+      else if (a === "tavern" && Math.random() < 0.5) { f = await gatherFacts(row, mind); await tavernTalk(b, row, mind, f); }
       else if (a === "tavern") b.log.push(pick(["ate in the Long Hall", "drank with the garrison in the Long Hall", "listened to Corra Bell in the Long Hall"]));
       else b.log.push("kept to Ironhold");
       const after = await b.get("/status");

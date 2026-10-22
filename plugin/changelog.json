@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.15.5",
+    "lore": "Mabry's couriers have stopped carrying the Long Hall's gossip down the road. What's said in Ironhold stays in Ironhold now, and Brightwater's tavern has gone back to talking about itself. If you want to be heard in both towns, you'll have to walk.",
+    "plain": "Each tavern has its own message board now: Brightwater's tavern and Ironhold's Long Hall no longer share posts."
+  },
+  {
     "version": "0.15.4",
     "lore": "You've been walking past the same faces every morning without really looking. Now you do: the ink on a pair of hands, a patched coat, the habit someone has of turning a cup while they talk. People look like themselves, every time you see them.",
     "plain": "Townsfolk and the people in both towns now have fixed appearances, so the narrator describes them the same way every time."
