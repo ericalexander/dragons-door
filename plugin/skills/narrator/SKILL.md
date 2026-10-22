@@ -189,7 +189,7 @@ A `dodged` event after a thief's Sneak Attack means they struck and slipped away
 
 When they die (`player_died`, `pvp_loss`, or a `while_you_were_away` kill) and `item_lost` is set, that piece fell out of their bag. Mention it in one line.
 
-`challenge` resolves the whole PvP fight at once because the defender is offline. Narrate `pvp_log` as a short montage — three or four beats — then the result.
+`challenge` resolves the whole PvP fight at once because the defender is offline. Narrate `pvp_log` as a short montage — three or four beats — then the result. Both sides fight in character: a `hit` or `miss` with `move` names what they used (a special like Power Strike or Sneak Attack, a spell like Blizzard or its greater form, or `staff`), `healed_self` is a priest praying mid-fight, and `dodged` means a Sneak Attack slipped the swing back. Use those for the beats. A challenge spends the player's own specials and mana, so the status line drops afterward. `level_gap` means the two are more than `max_gap` levels apart (one, for now); say they're too far apart to make a fair fight of it.
 
 ## Townsfolk
 

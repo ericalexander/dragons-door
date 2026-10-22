@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { GAME, armor, effective, weapon, type Event, type Monster, type Player } from "./game.js";
+import { GAME, armor, effective, manaRules, specialName, weapon, weaponName, type Event, type Monster, type Player } from "./game.js";
 
 /** rand in [0, n], inclusive. Server RNG only; never trust the client. */
 export function roll(n: number): number {
@@ -101,6 +101,59 @@ export function resolveFull(att: Fighter, def: Fighter, maxRounds = 50): { log: 
     if (att.hp <= 0) return { log, winner: "defender" };
   }
   return { log, winner: "draw" };
+}
+
+/** In one duel, at most this many big moves (a special, or a caster's big spell) and prayers for healing each. */
+export const DUEL_LIMITS = { big: Number(process.env.DUEL_BIG ?? 3), heals: Number(process.env.DUEL_HEALS ?? 1) };
+
+/** One side of a duel: the player, and what they have left today to fight with. */
+export interface Duelist { p: Player; specials: number; mana: number }
+
+/**
+ * A fight between two players, both fighting the way a careful player would with what they have
+ * left today: a priest prays when it's going badly, a caster throws its big spell while the mana
+ * lasts and its ordinary one after that, then the staff; a warrior or thief spends a special each
+ * round until they're gone (a thief's Sneak Attack can slip the swing back). The attacker acts
+ * first each round, then the defender. Mutates hp, specials and mana on both sides.
+ */
+export function resolveDuel(a: Duelist, d: Duelist, limits = DUEL_LIMITS, maxRounds = 50): { log: Event[]; winner: "attacker" | "defender" | "draw"; a: Fighter; d: Fighter } {
+  const af = playerAsFighter(a.p), df = playerAsFighter(d.p);
+  const log: Event[] = [];
+  let skip: "a" | "d" | null = null;
+  const used = { a: { big: 0, heals: 0 }, d: { big: 0, heals: 0 } };
+  const act = (me: Duelist, mf: Fighter, foe: Fighter, side: "a" | "d") => {
+    if (skip === side) { skip = null; log.push({ kind: "dodged", attacker: mf.name, defender: foe.name }); return; }
+    const mr = manaRules(me.p.class);
+    if (mr?.heal && me.mana >= mr.heal && used[side].heals < limits.heals && mf.hp / me.p.max_hp < 0.4) {
+      me.mana -= mr.heal; used[side].heals++;
+      const healed = Math.min(me.p.max_hp - mf.hp, Math.ceil(me.p.max_hp * (mr.healPct ?? 0.3)));
+      mf.hp += healed;
+      log.push({ kind: "healed_self", who: mf.name, healed, hp: mf.hp });
+      return;
+    }
+    let mult = 1, dodge = false, str = mf.str, move: string | undefined;
+    if (mr) {
+      if (me.mana >= mr.fireball && used[side].big < limits.big) { me.mana -= mr.fireball; used[side].big++; mult = specialMultiplier(me.p); move = specialName(me.p.class, me.p.weapon_id); }
+      else if (me.mana >= mr.cast) { me.mana -= mr.cast; move = weaponName(me.p.class, me.p.weapon_id); }
+      else { str = Math.round(mf.str * mr.staff); move = "staff"; }
+    } else if (me.specials > 0 && used[side].big < limits.big) {
+      me.specials--; used[side].big++; mult = specialMultiplier(me.p); dodge = specialDodges(me.p); move = GAME.classes[me.p.class].special;
+    }
+    const crit = crits(mf);
+    const dmg = Math.max(0, Math.round((roll(str) - roll(foe.def)) * mult * (crit ? GAME.critMultiplier : 1)));
+    if (dmg > 0) {
+      foe.hp = Math.max(0, foe.hp - dmg);
+      log.push({ kind: "hit", attacker: mf.name, defender: foe.name, damage: dmg, defender_hp: foe.hp, special: mult > 1, ...(move ? { move } : {}), ...(crit ? { crit: true } : {}) });
+    } else log.push({ kind: "miss", attacker: mf.name, defender: foe.name, special: mult > 1, ...(move ? { move } : {}) });
+    if (dodge && foe.hp > 0) skip = side === "a" ? "d" : "a";
+  };
+  for (let r = 1; r <= maxRounds; r++) {
+    act(a, af, df, "a");
+    if (df.hp <= 0) return { log, winner: "attacker", a: af, d: df };
+    act(d, df, af, "d");
+    if (af.hp <= 0) return { log, winner: "defender", a: af, d: df };
+  }
+  return { log, winner: "draw", a: af, d: df };
 }
 
 export interface Drop {

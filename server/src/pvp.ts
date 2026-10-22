@@ -1,7 +1,7 @@
 /**
  * Who wins when one player attacks another?
- * Uses the real PvP fight (combat.resolveFull: plain swings to the end, attacker first, no specials,
- * spells or heals) on characters taken from the solo simulator at the moment they reached each level,
+ * Uses the real PvP fight (combat.resolveDuel: each side uses its specials, spells and prayers;
+ * attacker first) on characters taken from the solo simulator at the moment they reached each level,
  * so stats and gear are what a careful player would really have.
  *
  * First: SNAP=/tmp/x-<class>.json npx tsx src/sim.ts <class> 300   (for each class)
@@ -10,7 +10,8 @@
  */
 import { readFileSync } from "node:fs";
 import { GAME, type Player } from "./game.js";
-import { playerAsFighter, resolveFull } from "./combat.js";
+import { playerAsFighter, resolveDuel, resolveFull } from "./combat.js";
+import { manaMax } from "./game.js";
 
 type Cls = "warrior" | "thief" | "mage" | "priest";
 const CLASSES: Cls[] = ["warrior", "thief", "mage", "priest"];
@@ -19,6 +20,9 @@ type Snap = { class: Cls; level: number; max_hp: number; str: number; def: numbe
 const prefix = process.argv[2] ?? "/tmp/pvp-";
 const N = Number(process.argv[3] ?? 2000);
 const DEFHP = Number(process.env.DEFHP ?? 1);
+// PLAIN=1: the old fight (plain swings only). SPECIALS=0.5: both sides have half their day's specials and mana left.
+const PLAIN = process.env.PLAIN === "1";
+const SPECIALS = Number(process.env.SPECIALS ?? 1);
 const snaps: Record<string, Snap[]> = {};
 for (const c of CLASSES) for (const s of JSON.parse(readFileSync(`${prefix}${c}.json`, "utf8")) as Snap[]) (snaps[`${c}:${s.level}`] ??= []).push(s);
 
@@ -31,7 +35,9 @@ function duel(a: Cls, al: number, d: Cls, dl: number) {
   for (let i = 0; i < N; i++) {
     const as = pick(a, al), ds = pick(d, dl);
     if (!as || !ds) return null;
-    const r = resolveFull(playerAsFighter(asPlayer(as, "A")), playerAsFighter(asPlayer(ds, "D", DEFHP)));
+    const ap = asPlayer(as, "A"), dp = asPlayer(ds, "D", DEFHP);
+    const kit = (p: Player) => ({ p, specials: GAME.classes[p.class].specialsPerDay * SPECIALS, mana: Math.round(manaMax(p) * SPECIALS) });
+    const r = PLAIN ? resolveFull(playerAsFighter(ap), playerAsFighter(dp)) : resolveDuel(kit(ap), kit(dp));
     rounds += r.log.filter((e) => e.attacker === "A").length;
     if (r.winner === "attacker") w++; else if (r.winner === "defender") l++; else dr++;
   }

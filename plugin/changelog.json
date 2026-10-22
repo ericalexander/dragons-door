@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.11.1",
+    "lore": "Fights in the fields are fought properly now. A mage throws her best spell at you, a priest stops to pray when it's going badly, and a thief will slip a blow if you let him. And nobody picks on anyone more than a level away anymore; the town has decided that wasn't fighting, it was collecting.",
+    "plain": "When you challenge someone, both of you now use your specials, spells and healing (up to three big moves and one heal each), paid from your own day's supply. You can only challenge players within one level of you."
+  },
+  {
     "version": "0.11.0",
     "lore": "It turns out you can change who you are in this town, if you're willing to start from the bottom. Prior Hale will take your vows, Mother Quill will take you on, and the smith will buy back your old kit and point you at the training yard. It costs gold, and it takes you back to the beginning. Most people only do it once.",
     "plain": "You can now change class: at the Chapel (priest), the Library (mage), or the Smith (warrior or thief). It costs 250 gold for each level you give up (100 at least) and starts you at level 1. You keep your bank, charm, gems, jewelry, marriage, map and quests; your old weapons and armor are sold back at half price. Once a week at most."

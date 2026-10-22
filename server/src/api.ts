@@ -19,7 +19,7 @@ import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { QUESTS, questById, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
-import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveFull, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
+import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
 
@@ -2033,6 +2033,9 @@ api.get("/mail/peek", async (c) => {
 
 // ---------- pvp ----------
 
+/** How far apart in level two players can be and still fight. One level up already wins most fights. */
+const PVP_LEVEL_GAP = 1;
+
 api.post("/challenge", async (c) => {
   const body = z.object({ name: z.string().min(1) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
@@ -2048,16 +2051,21 @@ api.post("/challenge", async (c) => {
     if (d.role === "npc") { ctx.events.push({ kind: "cannot_challenge", name: d.name, reason: "not a fighter" }); return; }
     if (!d.alive) { ctx.events.push({ kind: "target_dead", name: d.name }); return; }
     if (d.location === "inn") { ctx.events.push({ kind: "target_at_inn", name: d.name }); return; }
-    if (Math.abs(d.level - ctx.p.level) > 3) { ctx.events.push({ kind: "level_gap", name: d.name, their_level: d.level }); return; }
+    if (Math.abs(d.level - ctx.p.level) > PVP_LEVEL_GAP) { ctx.events.push({ kind: "level_gap", name: d.name, their_level: d.level, max_gap: PVP_LEVEL_GAP }); return; }
     const age = await ctx.c.query("select created_at < now() - interval '24 hours' as old from players where id = $1", [d.id]);
     if (!age.rows[0].old) { ctx.events.push({ kind: "newcomer_grace", name: d.name }); return; }
     await leaveInn(ctx);
 
     await saveTurns(ctx, { player_fights: ctx.t.player_fights - 1 });
-    const af = playerAsFighter(ctx.p);
-    const df = playerAsFighter(d);
-    const res = resolveFull(af, df);
-    ctx.events.push({ kind: "pvp_log", opponent: d.name, rounds: res.log });
+    // Both fight with what they have left today: your specials and mana are spent, theirs are only borrowed
+    // (they weren't there to choose). Someone who hasn't started their day yet fights fresh.
+    const theirs = (await ctx.c.query<{ specials: number; mana: number | null }>("select specials, mana from turns where player_id = $1 and day = $2", [d.id, ctx.day])).rows[0];
+    const me: Duelist = { p: ctx.p, specials: ctx.t.specials, mana: ctx.t.mana ?? 0 };
+    const them: Duelist = { p: d, specials: theirs ? Number(theirs.specials) : GAME.classes[d.class].specialsPerDay, mana: theirs ? Number(theirs.mana ?? 0) : manaMax(d) };
+    const res = resolveDuel(me, them);
+    const af = res.a, df = res.d;
+    if (me.specials !== ctx.t.specials || me.mana !== (ctx.t.mana ?? 0)) await saveTurns(ctx, { specials: me.specials, ...(casts(ctx.p.class) ? { mana: me.mana } : {}) });
+    ctx.events.push({ kind: "pvp_log", opponent: d.name, opponent_class: d.class, rounds: res.log });
 
     if (res.winner === "attacker") {
       // Married to Mara, the lamplighter: she gets you out of the fields with half your purse still on you.
