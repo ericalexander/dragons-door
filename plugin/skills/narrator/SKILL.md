@@ -32,7 +32,7 @@ After the narration, print exactly one status line and the menu for **where the 
 
 ```
 HP 14/20 · Gold 212 (bank 1,000) · L3 · Turns 7 · PvP 3 · Specials 2 · Satchel 8/20 · ✉ 1
-(E)xplore  (T)avern  (H)ealer  (S)hop  (B)ank  (W)orkshop  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit
+(E)xplore  (T)avern  (H)ealer  (B)ank  (S)hops  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit
 ```
 
 For a caster (a mage or a priest: `state.mana_max` is set), show `Mana 12/25` in place of `Specials`.
@@ -48,8 +48,8 @@ Always show the hotkey in parentheses on every item, every time. The player answ
 The realm is a handful of places, and each has its own short menu. The player is always in one of them. Start in **Town**. Picking a place walks there; `(R)eturn to town` walks back. Keep track of where they are yourself (the server doesn't): it's wherever they last went.
 
 **Town** — the square, and the only place with the full list:
-`(E)xplore  (T)avern  (H)ealer  (S)hop  (B)ank  (W)orkshop  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit`
-plus `(L)ibrary` when `library` is in `actions` (mages) or `Cha(p)el` when `chapel` is (priests), `Tr(a)in` when `train` is in `actions`, `(D)ragon` when `dragon` is, `Talk t(o) <visitor>` when the square has a visitor they haven't talked to today, and `Fl(i)rt` when `flirt` is in `actions` and someone in `state.suitors_around` is in the square (Mara at night, Jory at weekends; if both, ask which). Gear, mail, news and rankings are looked at from the square; they don't move the player.
+`(E)xplore  (T)avern  (H)ealer  (B)ank  (S)hops  (C)hallenge  (G)ear  (M)ail  (N)ews  (R)ankings  (Q)uit`
+plus `Tr(a)in` when `train` is in `actions`, `(D)ragon` when `dragon` is, `Talk t(o) <visitor>` when the square has a visitor they haven't talked to today, and `Fl(i)rt` when `flirt` is in `actions` and someone in `state.suitors_around` is in the square (Mara at night, Jory at weekends; if both, ask which). Gear, mail, news and rankings are looked at from the square; they don't move the player.
 
 The square is a place, not a menu. Each time the player arrives in Town (entering the game, or walking back from somewhere else), call `square` first and open with two or three sentences of what they see:
 - The `time_of_day` and `state.weather` set the scene (dawn mist, a hot afternoon, lamps lit at night).
@@ -96,11 +96,15 @@ Only list `(M)ine` while `mine` is in `actions` (needs a pickaxe and swings left
 - `(D)eeper` calls `cave` with `op: "deeper"` (a turn): richer seams, worse company, three levels in all.
 - `(C)limb out` calls `cave` with `op: "climb"`: back to the cave mouth, with the Wild menu. `(R)eturn to town` calls `travel` as usual and climbs out on the way.
 
-**Workshop** (from Town) — Odile's workshop. Call `workshop`, describe her in a line, and show what she offers:
-`(P)ickaxe  (C)raft  (S)ell  (R)eturn to town`
+**Shops** (from Town) — Market Row, a lane off the square where the shopkeepers are. Describe it in a line (the smith's hammer, Odile's lamp, whichever teacher's door applies), then:
+`(S)mith  (W)orkshop  (R)eturn to the square`
+plus `(L)ibrary` when `library` is in `actions` (mages) or `Cha(p)el` when `chapel` is (priests). From any shop, `(R)eturn` goes back to Market Row, and from Market Row back to the square. If the player names a shop from the square ("go to Odile", "buy a sword"), walk them straight there.
+
+**Workshop** (from Market Row) — Odile's workshop. Call `workshop`, describe her in a line, and show what she offers:
+`(P)ickaxe  (C)raft  (S)ell  (R)eturn to Market Row`
 Only list `(P)ickaxe` when `pickaxe.owned` is false (give its `cost`). `(C)raft` shows her `recipes` numbered `(1)`, `(2)`…, each with its `bonus` and what it `needs` (ore, gems, her fee), marking the ones they `can_make`; call `workshop_order` with `op: "craft"` and the recipe `id` only when they pick one they can make. `crafted` with `worn: true` means they put it straight on; otherwise it's in the bag and they can `equip` it. `(S)ell` offers their ore (from `bag`, by id, with `sell`) and gems (`workshop_order` with `op: "sell_gems"`, `gem_sells_for` each). One piece of jewelry is worn at a time (`state.jewelry`); it adds strength, defense or charm, and charm from jewelry counts everywhere charm does.
 
-**Library** (from Town, mages only) — Mother Quill's — and **Chapel** (priests only) — Prior Hale's. Both are where casters learn spells, and both use `library`: give the teacher (`teacher`) a line, and show the `spells` numbered by id with strength, cost, the level each needs and the big spell (`special`) that comes with it, marking the one they know and the ones they can learn (`learnable`). `(R)eturn to town`. Call `learn_spell` only when they pick one. The smith won't sell a caster weapons (`not_for_you` says where to go instead). A weapon a caster finds is a scroll (`Scroll of …`): equipping it teaches the spell.
+**Library** (from Market Row, mages only) — Mother Quill's — and **Chapel** (priests only) — Prior Hale's. Both are where casters learn spells, and both use `library`: give the teacher (`teacher`) a line, and show the `spells` numbered by id with strength, cost, the level each needs and the big spell (`special`) that comes with it, marking the one they know and the ones they can learn (`learnable`). `(R)eturn to Market Row`. Call `learn_spell` only when they pick one. The smith won't sell a caster weapons (`not_for_you` says where to go instead). A weapon a caster finds is a scroll (`Scroll of …`): equipping it teaches the spell.
 
 **In a fight** — the fight menu below, nothing else.
 
@@ -108,11 +112,11 @@ Only list `(P)ickaxe` when `pickaxe.owned` is false (give its `cost`). `(C)raft`
 `(P)ost a message  (L)isten to <bard>  (V)iolet  (I)nn  (R)eturn to town`
 Only list `(L)isten` while `bard` is in `actions`, `(V)iolet` while `flirt` is, and `(I)nn` while `inn` is. The inn lives here now; it's not on the town menu.
 
-**Healer, Bank, Shop, Inn, Dragon** — counters. Walking in doesn't spend anything. Describe the counter in a line or two, give the real numbers from `state`, and wait:
+**Healer, Bank, Smith, Inn, Dragon** — counters. Walking in doesn't spend anything. Describe the counter in a line or two, give the real numbers from `state`, and wait:
 
 - **Healer:** HP, and what a full heal costs (`prices.heal_all`, or `prices.heal_per_hp` a point). `(A)ll of it  (S)ome  (R)eturn to town`, plus `Fl(i)rt with Rowan` when he's in `state.suitors_around` and `flirt` is in `actions`. At full HP the healer just waves them off.
 - **Bank:** gold on hand, in the bank, and `bank_trips_left` today. `(D)eposit  (W)ithdraw  (R)eturn to town`, then ask how much (`all` or a number) if they didn't say.
-- **Shop:** `(W)eapons  (A)rmor  (B)ags  (R)eturn to town`. Show the list they pick, numbered `(1)`, `(2)`…, with prices and what they own marked; buy only when they pick a number.
+- **Smith** (on Market Row, the `shop` tool): `(W)eapons  (A)rmor  (B)ags  (R)eturn to Market Row`. Show the list they pick, numbered `(1)`, `(2)`…, with prices and what they own marked; buy only when they pick a number.
 - **Inn** (from the Tavern): a room costs `prices.inn` (they have `gold`) and keeps them safe tonight. `(S)tay the night  (R)eturn to the tavern`. If `inn` isn't in `actions`, say why (already have a room, or can't afford it).
 - **Dragon** (from Town): say plainly what they're walking into. `(F)ight it  (R)eturn to town`.
 
@@ -122,7 +126,7 @@ Shortcuts are fine. If the player asks for something that's in another place ("h
 
 ### Hotkeys never repeat
 
-Within one menu every hotkey is a different letter. Labels are fixed within each place. Town: `(E)xplore`, `(T)avern`, `(H)ealer`, `(S)hop`, `(B)ank`, `(W)orkshop`, `(L)ibrary`, `Cha(p)el`, `(C)hallenge`, `(G)ear`, `(M)ail`, `(N)ews`, `(R)ankings`, `(Q)uit`, `Tr(a)in`, `(D)ragon`, `Talk t(o)`, `Fl(i)rt`. The Wild: `(H)unt`, `(N)orth`, `(S)outh`, `(E)ast`, `(W)est`, `(M)ap`, `(G)ear`, `(R)eturn to town`, `Equi(p) it`, `Ta(k)e it`, `(D)escend`. A Cave: `(H)unt`, `(M)ine`, `(D)eeper`, `(C)limb out`, `(G)ear`, `(R)eturn to town`. Workshop: `(P)ickaxe`, `(C)raft`, `(S)ell`, `(R)eturn to town`. Tavern: `(P)ost a message`, `(L)isten`, `(V)iolet`, `(I)nn`, `(R)eturn to town`. Everywhere but Town, `(R)` means return. Any menu you put together yourself (a list of players to challenge, a yes/no) checks its letters before printing; if two would share one, use a letter from inside the word (`Tr(a)in`, `Ta(k)e`) or number the items.
+Within one menu every hotkey is a different letter. Labels are fixed within each place. Town: `(E)xplore`, `(T)avern`, `(H)ealer`, `(B)ank`, `(S)hops`, `(C)hallenge`, `(G)ear`, `(M)ail`, `(N)ews`, `(R)ankings`, `(Q)uit`, `Tr(a)in`, `(D)ragon`, `Talk t(o)`, `Fl(i)rt`. The Wild: `(H)unt`, `(N)orth`, `(S)outh`, `(E)ast`, `(W)est`, `(M)ap`, `(G)ear`, `(R)eturn to town`, `Equi(p) it`, `Ta(k)e it`, `(D)escend`. A Cave: `(H)unt`, `(M)ine`, `(D)eeper`, `(C)limb out`, `(G)ear`, `(R)eturn to town`. Market Row: `(S)mith`, `(W)orkshop`, `(L)ibrary`, `Cha(p)el`, `(R)eturn to the square`. Workshop: `(P)ickaxe`, `(C)raft`, `(S)ell`, `(R)eturn`. Tavern: `(P)ost a message`, `(L)isten`, `(V)iolet`, `(I)nn`, `(R)eturn to town`. Everywhere but Town, `(R)` means return. Any menu you put together yourself (a list of players to challenge, a yes/no) checks its letters before printing; if two would share one, use a letter from inside the word (`Tr(a)in`, `Ta(k)e`) or number the items.
 
 ## Quitting is a choice about tonight
 

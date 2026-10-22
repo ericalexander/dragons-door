@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.10.1",
+    "lore": "The shopkeepers have all moved to one lane off the square, which the town is calling Market Row: the smith's hammer at one end, Odile's lamp halfway down, and the library and the chapel tucked in among them. The square is quieter for it.",
+    "plain": "Shops now live on Market Row: pick (S)hops in town, then the Smith, Odile's Workshop, or your Library or Chapel."
+  },
+  {
     "version": "0.10.0",
     "lore": "The old chapel by the well has its doors open again, and a big, broken-nosed man named Prior Hale is sweeping the steps. He teaches the holy spells to anyone with the calling: smite what needs smiting, and when the fight turns, pray. Brother Ansel has been seen there every morning since.",
     "plain": "A new class: the priest. Casts holy spells from a pool of mana and can (P)ray mid-fight to heal. Learns spells at Prior Hale's Cha(p)el. Choose it when you make a new character."
