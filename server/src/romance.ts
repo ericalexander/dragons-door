@@ -17,14 +17,14 @@ export interface Suitor {
   hours?: [number, number];
   /** Days of the week they're in town (0 = Sunday). */
   days?: number[];
-  /** Harder (positive) or easier (negative) to win than Violet. */
+  /** Harder (positive) or easier (negative) to win than Verity. */
   coy: number;
   perk: Perk;
   perkText: string;
 }
 
 export const SUITORS: Suitor[] = [
-  { name: "Violet", pronouns: "she/her", where: "tavern", description: "the barmaid at the tavern, quick-witted and hard to impress", coy: 0, perk: "inn",
+  { name: "Verity", pronouns: "she/her", where: "tavern", description: "the barmaid at the tavern, quick-witted and hard to impress", coy: 0, perk: "inn",
     perkText: "rooms at the inn are half price" },
   { name: "Rowan", pronouns: "he/him", where: "healer", description: "the healer's apprentice, brisk and kind, with ink-stained fingers and no patience for heroics", hours: [7, 17], coy: 5, perk: "healer",
     perkText: "healing costs a quarter less" },

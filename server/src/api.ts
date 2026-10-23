@@ -787,7 +787,7 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
     case "dragon": return `${n.actor} slew the Red Dragon!`;
     case "dragon_death": return `${n.actor} was eaten by the Red Dragon.`;
     case "married": {
-      const to = n.target ?? "Violet";
+      const to = n.target ?? "Verity";
       if (n.detail?.stole_from) return `${n.actor} won ${to}'s heart from ${n.detail.stole_from}.`;
       if (n.detail?.left) return `${n.actor} left ${n.detail.left} for ${to}.`;
       return `${n.actor} married ${to}.`;
@@ -2438,7 +2438,7 @@ api.post("/flirt", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     requireInTown(ctx, "everyone you might court");
-    const who = suitor(body.with ?? "Violet");
+    const who = suitor(body.with ?? "Verity");
     if (!who) { ctx.events.push({ kind: "no_such_suitor", name: body.with }); return; }
     if (!available(who)) {
       ctx.events.push({ kind: "not_around", name: who.name, hours: who.hours ?? null, days: who.days ?? null });

@@ -80,7 +80,7 @@ for (const c of Object.values(GAME.classes)) { c.strPerLevel = Math.round(c.strP
 const EXTRAS = process.env.EXTRAS !== "0";
 // ROMANCE=1: charm discounts and luck, plus the chosen suitor's marriage perk. SUITOR picks who the player courts.
 const ROMANCE = process.env.ROMANCE === "1";
-const SUITOR = process.env.SUITOR ?? "Violet";
+const SUITOR = process.env.SUITOR ?? "Verity";
 const CHARM = { total: 0, married: 0, marriedDay: 0 };
 const simDate = (day: number) => new Date(Date.UTC(2026, 9, 1) + day * 86_400_000).toISOString().slice(0, 10);
 type SimPlayer = Player & { spouse?: string };
@@ -104,7 +104,7 @@ function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
     const s = suitor(SUITOR)!;
     const f = flirtOutcome(p.charm, ROMANCE ? s.coy : 0);
     p.charm += f.delta;
-    if (f.outcome === "married") { p.spouse = ROMANCE ? SUITOR : "Violet"; CHARM.married++; CHARM.marriedDay += day; }
+    if (f.outcome === "married") { p.spouse = ROMANCE ? SUITOR : "Verity"; CHARM.married++; CHARM.marriedDay += day; }
   }
   if (ROMANCE && perkOf(p) === "charm") p.charm += 1;
   const apply = (gift: string, fightAmt: number) => {

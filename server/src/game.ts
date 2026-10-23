@@ -243,9 +243,9 @@ export function effective(p: Player) {
 /** Charm as others feel it: your own, plus whatever your jewelry adds. */
 export const charmOf = (p: Player) => p.charm + trinket(p.trinket_id ?? 0).charm;
 
-/** A room costs 100 a level; half that for anyone married to Violet, who keeps one aside. */
+/** A room costs 100 a level; half that for anyone married to Verity, who keeps one aside. */
 export function innCost(p: Player, spouse: string | null = null): number {
-  return Math.floor(GAME.innCostPerLevel * p.level * (spouse === "Violet" ? 0.5 : 1));
+  return Math.floor(GAME.innCostPerLevel * p.level * (spouse === "Verity" ? 0.5 : 1));
 }
 
 /** Healing costs a little per HP per level; a quarter less for anyone married to Rowan. */

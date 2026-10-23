@@ -1,6 +1,6 @@
 /**
  * Towns besides Brightwater. Each sits on a tile of the map (world.ts) and has its own fixed
- * characters, who keep to their places like Odile or Violet, and its own townsfolk, who live there
+ * characters, who keep to their places like Odile or Verity, and its own townsfolk, who live there
  * and go about their goals. Who they are underneath is in the lore, not here.
  */
 import type { TownId } from "./world.js";
