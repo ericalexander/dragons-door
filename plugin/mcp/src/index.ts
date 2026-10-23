@@ -18,7 +18,7 @@ void refreshInstalledScript();
 async function call(method: "GET" | "POST", path: string, body?: unknown) {
   const cfg = await loadConfig();
   if (!cfg.api_key && path !== "/v1/register") {
-    return { error: "not_registered", message: "No character yet. Call `register` with a name and class (warrior, thief, mage, priest)." };
+    return { error: "not_registered", message: "No character yet. Call `register` with a name and a path (steel, shadow or gift)." };
   }
   const res = await fetch(cfg.api_url + path, {
     method,
@@ -47,12 +47,12 @@ function clientHeaders(): Record<string, string> {
 
 const text = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] });
 
-server.tool("register", "Create your character. Run once. Stores your API key locally. Some realms are invite-only and need the invite word.",
-  { name: z.string().min(2).max(20), class: z.enum(["warrior", "thief", "mage", "priest"]), invite: z.string().optional() },
-  async ({ name, class: cls, invite }) => {
+server.tool("register", "Create your character. Run once. Stores your API key locally. They choose a path: steel (blades and armor, starts in Ironhold), shadow (quick and at range, starts in Ironhold for now) or gift (magic, starts in Brightwater). They play as the path's beginner class and choose a specialization at level 5. Some realms are invite-only and need the invite word.",
+  { name: z.string().min(2).max(20), path: z.enum(["steel", "shadow", "gift"]), invite: z.string().optional() },
+  async ({ name, path, invite }) => {
     const cfg = await loadConfig();
     if (cfg.api_key) return text({ error: "already_registered", name: cfg.name, message: "You already have a character on this machine." });
-    const r = (await call("POST", "/v1/register", { name, class: cls, invite: invite ?? process.env.DRAGONS_DOOR_INVITE ?? process.env.LORD_INVITE })) as { api_key?: string; name?: string; error?: string };
+    const r = (await call("POST", "/v1/register", { name, path, invite: invite ?? process.env.DRAGONS_DOOR_INVITE ?? process.env.LORD_INVITE })) as { api_key?: string; name?: string; error?: string };
     if (r.api_key) {
       await saveConfig({ ...cfg, api_key: r.api_key, name: r.name });
       delete (r as { api_key?: string }).api_key; // never echo the key into the conversation
@@ -64,8 +64,8 @@ server.tool("register", "Create your character. Run once. Stores your API key lo
 // DRAGONS_DOOR_DEV=1 is set in the environment, so players never see it.
 if (process.env.DRAGONS_DOOR_DEV === "1") {
   server.tool("characters", "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active).",
-    { op: z.enum(["list", "switch", "new"]), name: z.string().min(2).max(20).optional(), class: z.enum(["warrior", "thief", "mage", "priest"]).optional() },
-    async ({ op, name, class: cls }) => {
+    { op: z.enum(["list", "switch", "new"]), name: z.string().min(2).max(20).optional(), path: z.enum(["steel", "shadow", "gift"]).optional() },
+    async ({ op, name, path }) => {
       const cfg = await loadConfig();
       if (op === "list") return text({ active: cfg.name ?? null, others: await otherCharacters() });
       if (!name) return text({ error: "name_required" });
@@ -75,7 +75,7 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
       }
       if (!cfg.api_key) return text({ error: "not_registered", message: "Register your main character first." });
       // Registering while signed in as an admin makes a test character.
-      const r = (await call("POST", "/v1/register", { name, class: cls ?? "warrior" })) as { api_key?: string; name?: string; test?: boolean; error?: string };
+      const r = (await call("POST", "/v1/register", { name, path: path ?? "steel" })) as { api_key?: string; name?: string; test?: boolean; error?: string };
       if (!r.api_key) return text(r);
       await switchCharacter(r.name ?? name, r.api_key);
       return text({ created: r.name, test: Boolean(r.test), switched_to: r.name, others: await otherCharacters() });
@@ -146,17 +146,27 @@ server.tool("cave", "Caves, from a cave mouth in the wild. descend: go in (free)
 server.tool("mine", "Swing a pickaxe inside a cave. A few swings a day, apart from turns. Ore goes in the bag (heavy), gems in the pouch; sometimes something in the dark attacks. Each cave gives up only so much a day.", {},
   async () => text(await call("POST", "/v1/mine")));
 
-server.tool("library", "Visit Mother Quill's library (place: library, mages learn here) or Prior Hale's chapel (place: chapel, priests learn here). Anyone may visit and look; only that class can learn. Shows the spells (each needs a level and costs gold; the old spellbook trades in at half), and for the player's own class which they know and their mana. Defaults to the player's own teacher.",
-  { place: z.enum(["library", "chapel"]).optional() },
+server.tool("library", "Visit a caster's teacher: Mother Quill's library (place: library, mages), Prior Hale's chapel (place: chapel, priests), or Dunstan in the tavern (place: tavern, bards; he sells instruments, not spells). Anyone may visit and look; only that class can learn. Shows what's taught (each needs a level and costs gold; the old one trades in at half), and for the player's own class which they know and their mana. Defaults to the player's own teacher.",
+  { place: z.enum(["library", "chapel", "tavern"]).optional() },
   async ({ place }) => text(await call("GET", `/v1/library${place ? `?place=${place}` : ""}`)));
 
-server.tool("learn_spell", "Learn a spell by id at the caster's teacher (Mother Quill's library for mages, Prior Hale's chapel for priests). It replaces the spell they cast now.",
+server.tool("learn_spell", "Learn a spell by id at the caster's teacher (Mother Quill's library for mages, Prior Hale's chapel for priests), or for a bard buy an instrument from Dunstan in the tavern. It replaces what they use now.",
   { id: z.number().int() },
   async ({ id }) => text(await call("POST", "/v1/library", { id })));
 
-server.tool("respec", "Start over in a different class, in town: back to level 1, for a fee. Without confirm it only quotes the fee and what's kept and lost; call again with confirm: true only after the player has said yes to that quote.",
-  { class: z.enum(["warrior", "thief", "mage", "priest"]), confirm: z.boolean().optional() },
-  async ({ class: cls, confirm }) => text(await call("POST", "/v1/respec", { class: cls, ...(confirm ? { confirm: true } : {}) })));
+server.tool("respec", "Start over on a different path, in town: back to level 1 as that path's beginner class, specializing again at 5, for a fee. (To change specialization within the same path, use specialize instead.) Without confirm it only quotes the fee and what's kept and lost; call again with confirm: true only after the player has said yes to that quote.",
+  { path: z.enum(["steel", "shadow", "gift"]), confirm: z.boolean().optional() },
+  async ({ path, confirm }) => text(await call("POST", "/v1/respec", { path, ...(confirm ? { confirm: true } : {}) })));
+
+server.tool("specializations", "See the specializations on the player's path: who teaches each, where, and what choosing or switching costs.", {},
+  async () => text(await call("GET", "/v1/specialize")));
+
+server.tool("specialize", "Choose a specialization (from level 5; the first is free) or switch to another on the same path (weekly, for gold). Keeps level and gear. Must be where that teacher is. Without confirm it only quotes; call again with confirm: true only after the player says yes.",
+  { spec: z.enum(["warrior", "thief", "mage", "priest", "guardian", "bard"]), confirm: z.boolean().optional() },
+  async ({ spec, confirm }) => text(await call("POST", "/v1/specialize", { spec, ...(confirm ? { confirm: true } : {}) })));
+
+server.tool("perform", "A bard plays a set in the tavern for tips, once a day. The narrator writes the sonnet.", {},
+  async () => text(await call("POST", "/v1/perform")));
 
 server.tool("workshop", "Odile's workshop in town: the pickaxe for sale, what she can make from the player's ore and gems, and what they're wearing.", {},
   async () => text(await call("GET", "/v1/workshop")));
@@ -185,7 +195,7 @@ server.tool("auction_act", "At the auction house. bid: on a lot (amount optional
     min_bid: z.number().int().positive().optional(), buy_now: z.number().int().positive().optional(), days: z.number().int().min(1).max(3).optional(), confirm: z.boolean().optional() },
   async (a) => text(await call("POST", "/v1/auction", Object.fromEntries(Object.entries(a).filter(([, v]) => v !== undefined)))));
 
-server.tool("fight", "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors and thieves: limited per day; casters: their big spell, named for the spell they know (state.special), which costs more mana). staff: a caster's free, weaker swing. heal: a priest's prayer, mana for health (the monster still swings). run: try to flee.",
+server.tool("fight", "Take one round in your current fight. attack: normal swing (for a caster, cast their spell, which costs mana; with none left it's a staff swing). special: class skill (warriors, thieves and guardians: limited per day; casters: their big spell, named for the spell they know (state.special), which costs more mana). staff: a caster's free, weaker swing. heal: a priest's prayer, mana for health (the monster still swings). run: try to flee.",
   { action: z.enum(["attack", "special", "staff", "heal", "run"]) },
   async ({ action }) => text(await call("POST", "/v1/fight", { action })));
 

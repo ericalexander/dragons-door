@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.16.0",
+    "lore": "Sergeant Rusk has started asking the steadier fighters at Ironhold's gate whether they've ever thought about a shield. And Dunstan has cleared a corner of Brightwater's tavern, hung up a row of instruments, and is looking at anyone with the gift as if they owe him a song. New arrivals don't pick a trade on the first day any more. They pick a road, and the road decides later.",
+    "plain": "Two new specializations: guardian (Steel, taught by Sergeant Rusk in Ironhold) and bard (the gift, taught by Dunstan in Brightwater's tavern; bards also play a daily set for tips). Warriors, mages and priests level 5 and up can switch to one, for a small fee, with the specialize command. New characters choose a path (Steel, Shadow or the gift) and specialize at level 5."
+  },
+  {
     "version": "0.15.6",
     "lore": "The wild doesn't sleep when you do. After dark, what's out there is bigger, meaner and not alone as often as you'd like, and it pays better for the trouble. Night falls when it falls where you are.",
     "plain": "Hunting in the wild at night (your local time, 9pm to 5am) is a little more dangerous and gives about a quarter more experience."

@@ -41,7 +41,7 @@ Load the `narrator` skill and enter the game.
 
    **What's new.** If `client.whats_new` has entries, print them after the title screen (and after the update notice, if any), before anything else. It comes once, after an update. Open with one in-world line of your own, like *"You notice the realm has changed while you slept."*, then for each entry, oldest first, its `lore` in italics followed by its `plain` text on its own line, as written. Don't add features that aren't listed. Then carry on.
 
-1. Use that `status` result. If it returns `not_registered`, ask for a name and class and call `register`.
+1. Use that `status` result. If it returns `not_registered`, ask for a name and a path (steel, shadow or gift; see the narrator's Starting out) and call `register`.
 2. If `$ARGUMENTS` names an action (forest, tavern, news, challenge <name>, …), do that. Otherwise, if there are `new_day` or `while_you_were_away` events, narrate them, then call `news` and give the headlines.
 3. If `state.place` is a town (`poi: "town"`), they woke up there: call `town` and show that town's menu. If `state.place` is set otherwise, they're out in the wild where they camped last night: describe the place and show the Wild menu. Otherwise they're in Town: call `square`, describe what they see (see the narrator's Places), then print the status line and the Town menu. Wait for the player.
 
