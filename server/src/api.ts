@@ -537,6 +537,32 @@ async function audit(ctx: Ctx, action: string, target: string | null, detail: Re
 }
 const NAME_RULE = z.string().trim().min(2).max(20).regex(/^[A-Za-z0-9_.'-]+( [A-Za-z0-9_.'-]+)*$/, "letters, digits, apostrophes, periods, hyphens, single spaces");
 
+/**
+ * Carry your characters to another machine. The plugin seals its keys with a code it makes up and shows the
+ * maintainer; we keep only the sealed bundle and the code's hash, hand it over once, and forget it.
+ */
+api.post("/admin/share", async (c) => {
+  const body = z.object({ code_hash: z.string().regex(/^[0-9a-f]{64}$/), sealed: z.string().min(16).max(20000) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAdmin(ctx);
+    await ctx.c.query("delete from key_shares where expires_at < now() or claimed_at is not null");
+    await ctx.c.query("insert into key_shares (code_hash, sealed, created_by) values ($1,$2,$3)", [body.code_hash, body.sealed, ctx.p.id]);
+    await audit(ctx, "share_keys", null, {});
+    ctx.events.push({ kind: "keys_shared", expires_in_minutes: 15 });
+  }));
+});
+api.post("/admin/claim", async (c) => {
+  const body = z.object({ code_hash: z.string().regex(/^[0-9a-f]{64}$/) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAdmin(ctx);
+    const r = await ctx.c.query<{ sealed: string }>(
+      "update key_shares set claimed_at = now(), claimed_by = $2 where code_hash = $1 and claimed_at is null and expires_at > now() returning sealed", [body.code_hash, ctx.p.id]);
+    if (!r.rowCount) { ctx.events.push({ kind: "no_such_share", reason: "wrong code, already used, or more than 15 minutes old" }); return; }
+    await audit(ctx, "claim_keys", null, {});
+    ctx.events.push({ kind: "keys_claimed", sealed: r.rows[0].sealed });
+  }));
+});
+
 /** Find players by name, newest first: who they are, when they were last seen, and their standing. */
 api.get("/admin/players", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAdmin(ctx);

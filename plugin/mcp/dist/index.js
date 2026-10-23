@@ -14257,13 +14257,13 @@ function _array(Class2, element, params) {
   });
 }
 function _custom(Class2, fn, _params) {
-  const norm = normalizeParams(_params);
-  norm.abort ?? (norm.abort = true);
+  const norm2 = normalizeParams(_params);
+  norm2.abort ?? (norm2.abort = true);
   const schema = new Class2({
     type: "custom",
     check: "custom",
     fn,
-    ...norm
+    ...norm2
   });
   return schema;
 }
@@ -21569,6 +21569,55 @@ async function saveConfig(cfg) {
   await mkdir(CONFIG_DIR, { recursive: true, mode: 448 });
   await writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 384 });
 }
+async function allCharacters() {
+  let stored = {};
+  try {
+    stored = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+  return { ...stored.characters ?? {}, ...stored.api_key && stored.name ? { [stored.name]: stored.api_key } : {} };
+}
+async function addCharacters(incoming) {
+  let stored = {};
+  try {
+    stored = JSON.parse(await readFile(CONFIG_FILE, "utf8"));
+  } catch {
+  }
+  const have = new Set([...Object.keys(stored.characters ?? {}), ...stored.name ? [stored.name] : []].map((n) => n.toLowerCase()));
+  const roster = { ...stored.characters ?? {} };
+  const added = [];
+  for (const [n, k] of Object.entries(incoming)) if (!have.has(n.toLowerCase())) {
+    roster[n] = k;
+    added.push(n);
+  }
+  await mkdir(CONFIG_DIR, { recursive: true, mode: 448 });
+  await writeFile(CONFIG_FILE, JSON.stringify({ ...stored, characters: roster }, null, 2), { mode: 384 });
+  return added;
+}
+
+// src/share.ts
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, scryptSync } from "node:crypto";
+var ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function newCode() {
+  const c = Array.from({ length: 12 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
+  return `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8)}`;
+}
+var norm = (code) => code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+var codeHash = (code) => createHash("sha256").update(`dragons-door-share:${norm(code)}`).digest("hex");
+var keyOf = (code) => scryptSync(norm(code), "dragons-door-share-key", 32);
+function seal(code, data) {
+  const iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", keyOf(code), iv);
+  const ct = Buffer.concat([c.update(JSON.stringify(data), "utf8"), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), ct]).toString("base64");
+}
+function unseal(code, sealed) {
+  const b = Buffer.from(sealed, "base64");
+  const d = createDecipheriv("aes-256-gcm", keyOf(code), b.subarray(0, 12));
+  d.setAuthTag(b.subarray(12, 28));
+  return JSON.parse(Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8"));
+}
 
 // src/version.ts
 import { readFileSync } from "node:fs";
@@ -21812,11 +21861,33 @@ server.tool(
 if (process.env.DRAGONS_DOOR_DEV === "1") {
   server.tool(
     "characters",
-    "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active).",
-    { op: external_exports.enum(["list", "switch", "new"]), name: external_exports.string().min(2).max(20).optional(), path: external_exports.enum(["steel", "shadow", "gift"]).optional() },
-    async ({ op, name, path }) => {
+    "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active). share: seal every character on this machine for another of the maintainer's machines and return a one-time code (show it to them; good for 15 minutes). claim: on the other machine, with that code, add those characters here (needs an admin character active on both).",
+    { op: external_exports.enum(["list", "switch", "new", "share", "claim"]), name: external_exports.string().min(2).max(20).optional(), path: external_exports.enum(["steel", "shadow", "gift"]).optional(), code: external_exports.string().max(20).optional() },
+    async ({ op, name, path, code }) => {
       const cfg = await loadConfig();
       if (op === "list") return text({ active: cfg.name ?? null, others: await otherCharacters() });
+      if (op === "share") {
+        const chars = await allCharacters();
+        if (!Object.keys(chars).length) return text({ error: "nothing_to_share" });
+        const c = newCode();
+        const r2 = await call("POST", "/v1/admin/share", { code_hash: codeHash(c), sealed: seal(c, { characters: chars }) });
+        if (!r2.events?.some((e) => e.kind === "keys_shared")) return text(r2);
+        return text({ code: c, characters: Object.keys(chars), expires_in_minutes: 15, next: "On the other machine: characters claim with this code." });
+      }
+      if (op === "claim") {
+        if (!code) return text({ error: "code_required" });
+        const r2 = await call("POST", "/v1/admin/claim", { code_hash: codeHash(code) });
+        const got = r2.events?.find((e) => e.kind === "keys_claimed");
+        if (!got?.sealed) return text(r2);
+        let chars;
+        try {
+          chars = unseal(code, got.sealed).characters;
+        } catch {
+          return text({ error: "could_not_open", message: "The code didn't open the bundle." });
+        }
+        const added = await addCharacters(chars);
+        return text({ added, active: cfg.name ?? null, others: await otherCharacters() });
+      }
       if (!name) return text({ error: "name_required" });
       if (op === "switch") {
         const ok = await switchCharacter(name);

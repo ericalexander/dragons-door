@@ -87,3 +87,23 @@ export async function saveConfig(cfg: Config): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
   await writeFile(CONFIG_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
 }
+
+/** Every character on this machine, active one included: name → key. For carrying them to another machine. */
+export async function allCharacters(): Promise<Record<string, string>> {
+  let stored: StoredConfig = {};
+  try { stored = JSON.parse(await readFile(CONFIG_FILE, "utf8")) as StoredConfig; } catch { return {}; }
+  return { ...(stored.characters ?? {}), ...(stored.api_key && stored.name ? { [stored.name]: stored.api_key } : {}) };
+}
+
+/** Add characters to this machine's roster without switching. A name already here keeps its own key. Returns the names added. */
+export async function addCharacters(incoming: Record<string, string>): Promise<string[]> {
+  let stored: StoredConfig = {};
+  try { stored = JSON.parse(await readFile(CONFIG_FILE, "utf8")) as StoredConfig; } catch { /* fresh */ }
+  const have = new Set([...Object.keys(stored.characters ?? {}), ...(stored.name ? [stored.name] : [])].map((n) => n.toLowerCase()));
+  const roster = { ...(stored.characters ?? {}) };
+  const added: string[] = [];
+  for (const [n, k] of Object.entries(incoming)) if (!have.has(n.toLowerCase())) { roster[n] = k; added.push(n); }
+  await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  await writeFile(CONFIG_FILE, JSON.stringify({ ...stored, characters: roster }, null, 2), { mode: 0o600 });
+  return added;
+}

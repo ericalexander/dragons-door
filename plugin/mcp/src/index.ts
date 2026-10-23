@@ -8,7 +8,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR, loadConfig, otherCharacters, saveConfig, switchCharacter } from "./config.js";
+import { CONFIG_DIR, addCharacters, allCharacters, loadConfig, otherCharacters, saveConfig, switchCharacter } from "./config.js";
+import { codeHash, newCode, seal, unseal } from "./share.js";
 import { clientInfo, VERSION } from "./version.js";
 import { installStatusline, noteUnread, refreshInstalledScript, uninstallStatusline } from "./statusline.js";
 
@@ -63,11 +64,29 @@ server.tool("register", "Create your character. Run once. Stores your API key lo
 // For whoever runs the realm: test characters, switched between on this machine. Only offered when
 // DRAGONS_DOOR_DEV=1 is set in the environment, so players never see it.
 if (process.env.DRAGONS_DOOR_DEV === "1") {
-  server.tool("characters", "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active).",
-    { op: z.enum(["list", "switch", "new"]), name: z.string().min(2).max(20).optional(), path: z.enum(["steel", "shadow", "gift"]).optional() },
-    async ({ op, name, path }) => {
+  server.tool("characters", "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active). share: seal every character on this machine for another of the maintainer's machines and return a one-time code (show it to them; good for 15 minutes). claim: on the other machine, with that code, add those characters here (needs an admin character active on both).",
+    { op: z.enum(["list", "switch", "new", "share", "claim"]), name: z.string().min(2).max(20).optional(), path: z.enum(["steel", "shadow", "gift"]).optional(), code: z.string().max(20).optional() },
+    async ({ op, name, path, code }) => {
       const cfg = await loadConfig();
       if (op === "list") return text({ active: cfg.name ?? null, others: await otherCharacters() });
+      if (op === "share") {
+        const chars = await allCharacters();
+        if (!Object.keys(chars).length) return text({ error: "nothing_to_share" });
+        const c = newCode();
+        const r = (await call("POST", "/v1/admin/share", { code_hash: codeHash(c), sealed: seal(c, { characters: chars }) })) as { events?: { kind: string }[] };
+        if (!r.events?.some((e) => e.kind === "keys_shared")) return text(r);
+        return text({ code: c, characters: Object.keys(chars), expires_in_minutes: 15, next: "On the other machine: characters claim with this code." });
+      }
+      if (op === "claim") {
+        if (!code) return text({ error: "code_required" });
+        const r = (await call("POST", "/v1/admin/claim", { code_hash: codeHash(code) })) as { events?: { kind: string; sealed?: string }[] };
+        const got = r.events?.find((e) => e.kind === "keys_claimed");
+        if (!got?.sealed) return text(r);
+        let chars: Record<string, string>;
+        try { chars = unseal<{ characters: Record<string, string> }>(code, got.sealed).characters; } catch { return text({ error: "could_not_open", message: "The code didn't open the bundle." }); }
+        const added = await addCharacters(chars);
+        return text({ added, active: cfg.name ?? null, others: await otherCharacters() });
+      }
       if (!name) return text({ error: "name_required" });
       if (op === "switch") {
         const ok = await switchCharacter(name);
