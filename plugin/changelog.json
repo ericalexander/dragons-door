@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.15.6",
+    "lore": "The wild doesn't sleep when you do. After dark, what's out there is bigger, meaner and not alone as often as you'd like, and it pays better for the trouble. Night falls when it falls where you are.",
+    "plain": "Hunting in the wild at night (your local time, 9pm to 5am) is a little more dangerous and gives about a quarter more experience."
+  },
+  {
     "version": "0.15.5",
     "lore": "Mabry's couriers have stopped carrying the Long Hall's gossip down the road. What's said in Ironhold stays in Ironhold now, and Brightwater's tavern has gone back to talking about itself. If you want to be heard in both towns, you'll have to walk.",
     "plain": "Each tavern has its own message board now: Brightwater's tavern and Ironhold's Long Hall no longer share posts."

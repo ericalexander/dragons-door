@@ -25,6 +25,9 @@ const K = {
   ghp: process.env.GHP, gstr: process.env.GSTR, gdef: process.env.GDEF, // growth overrides
 };
 if (process.env.DROP !== undefined) GAME.drops.chance = Number(process.env.DROP);
+const NIGHT_SHARE = Number(process.env.NIGHT ?? 0);
+// Night knobs, to search the curve: NHP, NSTR, NEXP, NGOLD, NUP.
+{ const { NIGHT: N } = await import("./combat.js"); for (const [k, e] of [["hp", "NHP"], ["str", "NSTR"], ["exp", "NEXP"], ["gold", "NGOLD"], ["oneUp", "NUP"]] as const) if (process.env[e] !== undefined) (N as Record<string, number>)[k] = Number(process.env[e]); }
 if (process.env.TDROP !== undefined) (GAME.classes.thief as { dropChance?: number }).dropChance = Number(process.env.TDROP);
 if (process.env.DODGE !== undefined) (GAME.classes.thief as { specialDodge?: number }).specialDodge = Number(process.env.DODGE);
 // mage experiments
@@ -306,7 +309,8 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       // ordinary forest fight
       fights--;
       if (roll(99) < 10) { p.gold += roll(10 * p.level) + 5; continue; }
-      const m = pickMonster(p.level);
+      // NIGHT=share of ordinary fights fought at night (0 by default; 1 = every fight in the dark).
+      const m = pickMonster(p.level, undefined, NIGHT_SHARE > 0 && Math.random() < NIGHT_SHARE);
       const res = fight(p, m, specials, 0.5);
       if (res === "won") {
         p.gold += m.gold; p.exp += p.class === "mage" ? Math.round(m.exp * MAGE.expb) : m.exp;

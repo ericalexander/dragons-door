@@ -1,3 +1,4 @@
+import { current } from "./request.js";
 import { tileAt, townAt } from "./world.js";
 import { SWINGS_PER_DAY, trinket, bonusText } from "./caves.js";
 import { boosted, withRarity } from "./rarity.js";
@@ -94,6 +95,8 @@ export interface Monster {
   def: number;
   gold: number;
   exp: number;
+  /** Met in the dark: tougher, and worth more. */
+  night?: boolean;
 }
 
 /** Every tool response shares this envelope. */
@@ -235,11 +238,21 @@ export function healCost(p: Player, hp: number, spouse: string | null = null): n
   return Math.ceil(hp * GAME.healerCostPerHpPerLevel * p.level * (spouse === "Rowan" ? 0.75 : 1));
 }
 
-/** Same buckets as the square's: early morning, morning, afternoon, evening, night. */
-export function timeOfDayNow(now = new Date()): string {
-  const h = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hourCycle: "h23", hour: "2-digit" }).format(now));
+/** The hour where the player is: their own time zone (from their connection, never stored), Eastern for townsfolk or if it's unknown. */
+export function localHour(now = new Date(), tz = current()?.tz): number {
+  const fmt = (zone: string) => Number(new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", hour: "2-digit" }).format(now));
+  if (tz) { try { return fmt(tz); } catch { /* not a zone Intl knows */ } }
+  return fmt("America/New_York");
+}
+
+/** Same buckets as the square's: early morning, morning, afternoon, evening, night. By the player's own clock. */
+export function timeOfDayNow(now = new Date(), tz = current()?.tz): string {
+  const h = localHour(now, tz);
   return h >= 5 && h < 8 ? "early morning" : h < 12 && h >= 8 ? "morning" : h >= 12 && h < 17 ? "afternoon" : h >= 17 && h < 21 ? "evening" : "night";
 }
+
+/** Whether it's night where the player is: nine in the evening until five in the morning. */
+export const isNight = (now = new Date(), tz = current()?.tz) => timeOfDayNow(now, tz) === "night";
 
 export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean, bagUsed = 0, unreadMail = 0, unreadNews = 0, spouse: string | null = null, suitorsAround: { name: string; pronouns: string; where: string }[] = []): PublicState {
   const b = GAME.bags.find((x) => x.id === p.bag_id) ?? GAME.bags[0];

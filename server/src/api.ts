@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost,
+  GAME, armor, weapon, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow,
   type Player, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -729,7 +729,8 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
     ctx.events.push({ kind: "found_gold", gold });
     return;
   }
-  const m = pickMonster(level, regionHere(ctx));
+  // Night where the player is makes the wild worse (and more rewarding). Caves are dark either way, and the same.
+  const m = pickMonster(level, regionHere(ctx), Boolean(here) && !ctx.p.cave_depth && isNight());
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
   ctx.events.push({ kind: "encounter", monster: m, ...(here ? { place: here.name, terrain: here.terrain } : {}), ...(depth ? { in_cave: true, depth } : {}) });
 }, { weather: true })));
@@ -1846,7 +1847,7 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
   const hour = realmHour(now);
   ctx.events.push({
     kind: "square",
-    time_of_day: timeOfDay(hour),
+    time_of_day: timeOfDayNow(),
     about,
     players_about: people.rows,
     elsewhere,
@@ -1980,7 +1981,7 @@ async function townView(ctx: Ctx, id: TownId) {
     `select name, class, level from players where role = 'player' and not is_test and id <> $3 and alive and pos_x = $1 and pos_y = $2
      and last_seen > now() - interval '30 minutes' order by last_seen desc limit 3`, [at.x, at.y, ctx.p.id])).rows;
   return {
-    kind: "town", town: town.name, blurb: town.blurb, time_of_day: timeOfDay(realmHour(new Date())),
+    kind: "town", town: town.name, blurb: town.blurb, time_of_day: timeOfDayNow(),
     people: town.people.map((p) => ({ ...p, ...looksOf(p.name) })),
     townsfolk_here: folk.map((f) => ({ name: f.name, class: f.class, level: f.level, ...(f.mind?.goal ? { on_mind: goalLabel(f.name, f.personality, f.mind.goal) } : {}), ...looksOf(f.name) })),
     players_here: players,

@@ -76,12 +76,17 @@ export function specialDodges(p: Player): boolean {
 }
 
 /** Pick a forest monster at or near the player's level. */
-export function pickMonster(level: number, region?: Region): Monster {
-  // Mostly your level. Sometimes easier. Rarely one up, and never at level 1.
+/** Night in the wild: what's out is tougher, a step up turns up more often, and it's worth more. */
+// Tuned in the simulator so a player who hunts only at night reaches the dragon about as fast but dies about half
+// again as often: a gamble, not a shortcut. (By day: warrior 24 days, 5 deaths; all night: 25 days, 7.6.)
+export const NIGHT = { hp: 1.05, str: 1.05, exp: 1.25, gold: 1.1, oneUp: 0.08 };
+
+export function pickMonster(level: number, region?: Region, night = false): Monster {
+  // Mostly your level. Sometimes easier. Rarely one up (more often at night), and never at level 1.
   const r = roll(99);
   let want = level;
   if (r < 20 && level > 1) want = level - 1;
-  else if (r >= 95 && level > 1) want = level + 1;
+  else if (r >= (night ? 100 - Math.round(NIGHT.oneUp * 100) : 95) && level > 1) want = level + 1;
   want = Math.max(1, Math.min(12, want));
   const pool = GAME.monsters.filter((m) => m.level === want);
   // Where you are decides who it is; the old monster at the same place in the level's list decides how it fights.
@@ -89,8 +94,10 @@ export function pickMonster(level: number, region?: Region): Monster {
   const i = roll((names?.length ?? pool.length) - 1);
   const m = pool[i % pool.length];
   // jitter so two fights are never identical
-  const hp = Math.round(m.hp * (0.9 + roll(20) / 100));
-  return { name: names?.[i] ?? m.name, level: m.level, hp, max_hp: hp, str: m.str, def: m.def, gold: m.gold, exp: m.exp };
+  const hp = Math.round(m.hp * (0.9 + roll(20) / 100) * (night ? NIGHT.hp : 1));
+  const out: Monster = { name: names?.[i] ?? m.name, level: m.level, hp, max_hp: hp, str: m.str, def: m.def, gold: m.gold, exp: m.exp };
+  if (night) { out.str = Math.round(m.str * NIGHT.str); out.exp = Math.round(m.exp * NIGHT.exp); out.gold = Math.round(m.gold * NIGHT.gold); out.night = true; }
+  return out;
 }
 
 /**
