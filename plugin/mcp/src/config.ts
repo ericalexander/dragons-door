@@ -9,7 +9,7 @@ export const CONFIG_DIR = env("CONFIG_DIR") ?? join(homedir(), ".config", "drago
 const LEGACY_DIR = join(homedir(), ".config", "lord");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
-export const DEFAULT_API_URL = "https://dragons-door-api.vercel.app";
+export const DEFAULT_API_URL = "https://api.dragonsdoor.gg";
 /** Addresses early versions saved into config files. They redirect now, and a redirect drops the key, so ignore them. */
 const RETIRED_URLS = [/^https?:\/\/lord-ebon\.vercel\.app\/?$/];
 const usable = (u?: string) => (u && !RETIRED_URLS.some((r) => r.test(u)) ? u : undefined);

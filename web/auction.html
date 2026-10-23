@@ -138,7 +138,7 @@
 </footer>
 
 <script>
-  const API = new URLSearchParams(location.search).get("api") || "https://dragons-door-api.vercel.app";
+  const API = new URLSearchParams(location.search).get("api") || "https://api.dragonsdoor.gg";
   const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   const gold = (n) => n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US");
   const short = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });

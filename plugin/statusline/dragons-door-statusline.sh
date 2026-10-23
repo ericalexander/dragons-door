@@ -34,7 +34,7 @@ if [ $((now - ts)) -ge 60 ] && [ -f "$CFG" ] && command -v curl >/dev/null 2>&1;
     [ -n "$key" ] || exit 0
     url="${DRAGONS_DOOR_API_URL:-${LORD_API_URL:-$(sed -n 's/.*"api_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CFG" | head -1)}}"
     case "$url" in *lord-ebon.vercel.app*) url="";; esac   # retired address; it redirects and drops the key
-    url="${url:-https://dragons-door-api.vercel.app}"
+    url="${url:-https://api.dragonsdoor.gg}"
     # stamp first so a slow or failing server doesn't get hammered
     printf '%s %s %s\n' "$(date +%s)" "$n" "$nw" > "$CACHE.tmp" && mv "$CACHE.tmp" "$CACHE"
     r=$(curl -fsS --max-time 3 -H "authorization: Bearer $key" "$url/v1/mail/peek" 2>/dev/null) || exit 0

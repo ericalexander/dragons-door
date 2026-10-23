@@ -308,7 +308,7 @@
   }).catch(() => { changes.innerHTML = '<p class="quiet">The notice board is being repainted. Check back soon.</p>'; });
 
   // Live status and the board. Fails quietly into a static line.
-  const API = (document.currentScript && document.currentScript.dataset.api) || "https://dragons-door-api.vercel.app";
+  const API = (document.currentScript && document.currentScript.dataset.api) || "https://api.dragonsdoor.gg";
   const status = document.getElementById("realm-status");
   const board = document.getElementById("realm-board");
   fetch(API + "/v1/public/realm").then(r => r.json()).then(d => {

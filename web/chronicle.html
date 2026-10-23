@@ -110,7 +110,7 @@
 </footer>
 
 <script>
-  const API = "https://dragons-door-api.vercel.app";
+  const API = "https://api.dragonsdoor.gg";
   const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   const fmt = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
   const paras = (body) => String(body).split(/\n\s*\n/).map((p) => `<p>${esc(p.trim())}</p>`).join("");
