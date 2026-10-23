@@ -797,7 +797,8 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
 }
 
 api.get("/rankings", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-  const r = await ctx.c.query("select name, class, level, exp, alive, dragon_kills, is_bot as bot from players where role <> 'npc' and not is_test order by level desc, exp desc limit 20");
+  // Online means they've done something in the last fifteen minutes (every call stamps last_seen), people and townsfolk alike.
+  const r = await ctx.c.query("select name, class, level, exp, alive, dragon_kills, is_bot as bot, (last_seen > now() - interval '15 minutes') as online from players where role <> 'npc' and not is_test order by level desc, exp desc limit 20");
   ctx.events.push({ kind: "rankings", players: r.rows });
 })));
 

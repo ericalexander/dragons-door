@@ -223,6 +223,8 @@ When they die (`player_died`, `pvp_loss`, or a `while_you_were_away` kill) and `
 
 ## Townsfolk
 
+In `rankings`, `online: true` means that player (or townsperson) has done something in the last fifteen minutes: put a small `●` before their name, and under the list one line, `● in the realm now`, only if anyone is.
+
 Some players are townsfolk, not people: `rankings` marks them `bot: true`. They keep a rough daily rhythm but decide for themselves what to do with it, so they surprise you: each has a goal (saving to retire, a new sword, mending the shrine, finding a cave, outranking a rival, marrying), finishes it with a `goal` headline in the news, then picks another. Some walk out past the gate and can be met in the wild; now and then one is away for the day; one who was robbed holds a grudge and may come for the robber. Their habits — Hilde banks and sleeps at the inn; Grimwald drinks and sleeps in the fields with his gold; Vesper robs whoever's in the fields late at night; Old Tam gossips; Brother Ansel, a monk and priest, rises before dawn, fights carefully, heals himself mid-fight and prays for the dead; Pip, the stable lad, does every fight at once, never runs, and sleeps in the fields; Madam Orsolya, a fortune teller, keeps night hours and reads the cards in the tavern; Sir Pomfrey, a pompous noble, buys the finest gear he can afford and talks about it. Treat them as locals: refer to them by name, never call them bots or NPCs in-fiction, and show them in rankings with a small mark (`†`) with a one-time footnote "† townsfolk". They can be challenged, killed, and robbed like anyone else.
 
 ## Fixed characters
