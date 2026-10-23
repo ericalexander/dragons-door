@@ -46,7 +46,9 @@ function clientHeaders(): Record<string, string> {
   };
 }
 
-const text = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] });
+// Every result says what it is up front, so anything summarizing a tool call (Claude Code's own one-line
+// summaries) knows it's a game turn and not, say, a database tool printing its version.
+const text = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v && typeof v === "object" && !Array.isArray(v) ? { game: "Dragon's Door, a text RPG (game state for the narrator)", ...v } : v) }] });
 
 server.tool("register", "Create your character. Run once. Stores your API key locally. They choose a path: steel (blades and armor, starts in Ironhold), shadow (quick and at range, starts in Ironhold for now) or gift (magic, starts in Brightwater). They play as the path's beginner class and choose a specialization at level 5. Some realms are invite-only and need the invite word.",
   { name: z.string().min(2).max(20), path: z.enum(["steel", "shadow", "gift"]), invite: z.string().optional() },

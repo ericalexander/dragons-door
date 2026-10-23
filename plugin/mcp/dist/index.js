@@ -21842,7 +21842,7 @@ function clientHeaders() {
     ...app?.name ? { "x-dragons-door-app": `${app.name} ${app.version ?? ""}`.trim().slice(0, 60) } : {}
   };
 }
-var text = (v) => ({ content: [{ type: "text", text: JSON.stringify(v) }] });
+var text = (v) => ({ content: [{ type: "text", text: JSON.stringify(v && typeof v === "object" && !Array.isArray(v) ? { game: "Dragon's Door, a text RPG (game state for the narrator)", ...v } : v) }] });
 server.tool(
   "register",
   "Create your character. Run once. Stores your API key locally. They choose a path: steel (blades and armor, starts in Ironhold), shadow (quick and at range, starts in Ironhold for now) or gift (magic, starts in Brightwater). They play as the path's beginner class and choose a specialization at level 5. Some realms are invite-only and need the invite word.",
