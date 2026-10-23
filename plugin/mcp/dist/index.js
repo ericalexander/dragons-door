@@ -22093,7 +22093,7 @@ server.tool(
   async ({ action }) => text(await call("POST", "/v1/fight", { action }))
 );
 server.tool("train", "Challenge your master to advance a level. Only when you have enough experience.", {}, async () => text(await call("POST", "/v1/train")));
-server.tool("dragon", "Seek the Dark Dragon. Level 12 only. Uses a turn.", {}, async () => text(await call("POST", "/v1/dragon")));
+server.tool("dragon", "Seek the dragon, Vael the Watchful. Level 12 only. Uses a turn.", {}, async () => text(await call("POST", "/v1/dragon")));
 server.tool(
   "healer",
   "Pay the healer to restore hit points. Cost scales with level.",

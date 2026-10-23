@@ -213,7 +213,7 @@ function seasoned(ctx: Ctx, what: string): boolean {
 
 /** Names that would pass for a local. Compared after folding lookalike characters. */
 const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
-  "violet", "odile", "mother quill", "quill", "prior hale", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon", "the dark dragon", "dark dragon",
+  "violet", "odile", "mother quill", "quill", "prior hale", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon", "the dark dragon", "dark dragon", "vael", "vael the watchful", "the watchful",
   "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic"];
 // i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
 const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
@@ -784,8 +784,8 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
     case "pvp_survived": return `${n.target} fought off an attack from ${n.actor}.`;
     case "forest_death": return `${n.actor} was killed in the forest by a ${n.detail.monster}.`;
     case "level_up": return `${n.actor} reached level ${n.detail.level}.`;
-    case "dragon": return `${n.actor} slew the Dark Dragon!`;
-    case "dragon_death": return `${n.actor} was eaten by the Dark Dragon.`;
+    case "dragon": return `${n.actor} slew Vael the Watchful!`;
+    case "dragon_death": return `${n.actor} was eaten by Vael the Watchful.`;
     case "married": {
       const to = n.target ?? "Violet";
       if (n.detail?.stole_from) return `${n.actor} won ${to}'s heart from ${n.detail.stole_from}.`;

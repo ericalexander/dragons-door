@@ -313,8 +313,8 @@
   const board = document.getElementById("realm-board");
   fetch(API + "/v1/public/realm").then(r => r.json()).then(d => {
     const dragon = d.dragon_alive
-      ? '<span class="alive">The Dark Dragon is alive.</span>'
-      : '<span class="dead">The Dark Dragon is dead, for now.</span>';
+      ? '<span class="alive">Vael the Watchful is alive.</span>'
+      : '<span class="dead">Vael the Watchful is dead, for now.</span>';
     status.innerHTML = `${Number(d.players)} player${d.players === 1 ? "" : "s"} in the realm. ${dragon}`;
     const top = d.top.slice(0, 10);
     if (!top.length) { board.innerHTML = '<p class="quiet">Nobody on the board yet.</p>'; return; }

@@ -1,5 +1,5 @@
 /**
- * How long does it take to kill the Dark Dragon?
+ * How long does it take to kill Vael the Watchful?
  * Simulates a careful solo player: 10 forest fights a day, heals between fights,
  * buys the best gear they can afford, trains when ready, inn every night, no PvP.
  * Uses the real combat functions and data. Run: npx tsx src/sim.ts [class] [trials]

@@ -117,7 +117,7 @@ export function templateEntry(f: DayFacts, standings = true): string {
 
   if (!paras.length) paras.push(pick(["A quiet day. The forest kept its monsters to itself, and nobody robbed anybody.", "Nothing much happened, which in this town counts as news."]));
   const top = standings ? f.top.slice(0, 3).map((p) => `${p.name} (${p.level})`) : [];
-  if (top.length) paras.push(`At the top of the board: ${list(top)}. The Dark Dragon is ${f.dragon_alive ? "alive, and untroubled" : "dead, for now"}.`);
+  if (top.length) paras.push(`At the top of the board: ${list(top)}. The dragon is ${f.dragon_alive ? "alive, and untroubled" : "dead, for now"}.`);
   return paras.join("\n\n");
 }
 
