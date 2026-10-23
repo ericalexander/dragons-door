@@ -923,10 +923,10 @@ api.post("/fight", async (c) => {
         await saveTurns(ctx, { mana: mana - mr.fireball });
         mult = specialMultiplier(ctx.p);
         dodge = specialDodges(ctx.p); // a bard's Opus can lull what it's played at, so it doesn't swing back
-        ctx.events.push({ kind: "cast", spell: specialName(ctx.p.class, ctx.p.weapon_id), special: true, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
+        ctx.events.push({ kind: "cast", spell: specialName(ctx.p.class, ctx.p.weapon_id), special: true, ...(ctx.p.class === "bard" ? { verse: "opus", instrument: weaponName(ctx.p.class, ctx.p.weapon_id) } : {}), mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
       } else if (body.action === "attack" && mana >= mr.cast) {
         await saveTurns(ctx, { mana: mana - mr.cast });
-        ctx.events.push({ kind: "cast", spell: weaponName(ctx.p.class, ctx.p.weapon_id), mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
+        ctx.events.push({ kind: "cast", spell: weaponName(ctx.p.class, ctx.p.weapon_id), ...(ctx.p.class === "bard" ? { verse: "haiku" } : {}), mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
       } else {
         staff = true;
         ctx.events.push({ kind: "staff", ...(body.action === "attack" ? { out_of_mana: true } : {}), mana, mana_max: manaMax(ctx.p) });

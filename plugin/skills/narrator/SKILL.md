@@ -194,7 +194,20 @@ Small Thief  HP 4/7  ·  Wren  HP 17/20  ·  Mana 12/25
 
 `C` is `fight attack` (casts their spell, `state.weapon`, for a little mana), `U` is `fight special` (their big spell, named `state.special`, which goes with the spell they know: triple damage, more mana; Frost Needle's is Frost Nova, Firebolt's is Fireball), `T` is `fight staff` (a free, weaker swing that saves mana), `R` is run. `cast` names the spell and the mana left; `staff` is a staff swing, and `out_of_mana: true` means they tried to cast with nothing left. `no_mana` means not enough for their big spell; nothing happened, so offer the menu again. Describe spells as spells: a needle of frost, a lash of lightning, never a blade.
 
-Bards are casters too, but their spells are songs and their "spell" is an instrument (`state.weapon`, e.g. Bone Flute). Their menu: `(P)lay a verse  (O)pus: <state.special>  S(t)rike with it  (R)un` — `fight attack`, `fight special`, `fight staff`. A verse is a **haiku**: three short original lines (five, seven, five syllables) about this fight, in italics, then the hit or miss in a sentence. Write a new one each round; never repeat one. The Opus is the big piece: four lines, grander, then the damage, and with `how: "lulled"` the monster forgets to swing back. Striking with the instrument is a clumsy, free swing; play it for a laugh.
+Bards are casters too, but their spells are songs and their "spell" is an instrument (`state.weapon`, e.g. Bone Flute). Their fight menu is always this, never the mage's:
+
+```
+Wyvern  HP 140/191  ·  Ossian  HP 56/92  ·  Mana 25/45
+(P)lay a verse  (O)pus: Fenland Lullaby  S(t)rike with the Bone Flute  (R)un
+```
+
+`P` is `fight attack`, `O` is `fight special`, `T` is `fight staff`. **Every bard cast is a song you print.** A `cast` with `verse: "haiku"` is a **haiku**: three short original lines (five, seven, five syllables) about this fight, in italics, each on its own line, then the hit or miss in a sentence. A `cast` with `verse: "opus"` is the big piece: **four lines**, grander, in italics, then the damage, and with `how: "lulled"` the monster forgets to swing back. For example:
+
+*Reed-song in the thorns —*
+*the wyvern turns its great head,*
+*listening too long.*
+
+The note lands for 14. Write a new verse every round; never repeat one, and never summarize a song instead of printing it, however long the fight runs. Striking with the instrument is a clumsy, free swing; play it for a laugh.
 
 Priests are casters too, with holy spells and one more choice, a prayer for healing:
 
