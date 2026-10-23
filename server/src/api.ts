@@ -367,10 +367,13 @@ api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authoriza
 })));
 
 api.post("/library", async (c) => {
-  const body = z.object({ id: z.number().int() }).parse(await c.req.json());
+  const body = z.object({ id: z.number().int(), confirm: z.boolean().optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     requireInTown(ctx, `the ${spellVendor(ctx.p.class)?.place ?? "library"}`);
+    // Like the smith: without confirm this only quotes. Plugins from before teacher quotes (0.16.6) and townsfolk go straight through.
+    const plugin = current()?.plugin;
+    const confirmed = body.confirm === true || ctx.p.is_bot || (plugin !== undefined && plugin !== null && older(plugin, "0.16.6"));
     await requireNoEncounter(ctx);
     if (!casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "only those with the gift learn spells here" }); return; }
     const w = GAME.weapons.find((x) => x.id === body.id);
@@ -380,6 +383,11 @@ api.post("/library", async (c) => {
     const tradeIn = Math.floor(weapon(ctx.p.weapon_id).cost / 2);
     const discount = charmDiscount(charmOf(ctx.p));
     const cost = Math.ceil((w.cost - tradeIn) * (1 - discount));
+    if (!confirmed) {
+      ctx.events.push({ kind: "learn_quote", teacher: spellVendor(ctx.p.class)?.name ?? null, item: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str,
+        replaces: weaponName(ctx.p.class, ctx.p.weapon_id), trade_in: tradeIn, cost, gold: ctx.p.gold, bank: ctx.p.bank, ...(ctx.p.gold < cost ? { short_by: cost - ctx.p.gold } : {}), ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
+      return;
+    }
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
     await savePlayer(ctx, { gold: ctx.p.gold - cost, weapon_id: w.id });
     ctx.events.push({ kind: "learned", spell: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str, cost, trade_in: tradeIn, ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });

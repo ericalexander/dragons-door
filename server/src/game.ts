@@ -368,6 +368,8 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
   if (!t.inn_used) a.push("inn");
   if (!t.bard_heard) a.push("bard");
   if (p.class === "bard" && !t.performed) a.push("perform");
+  // Dunstan's instruments, in Brightwater's tavern: anyone can look; bards buy.
+  a.push("instruments");
   const next = expForLevel(p.level + 1);
   if (needsSpec(p)) a.unshift("specialize");
   else if (next !== null && p.exp >= next) a.unshift("train");
