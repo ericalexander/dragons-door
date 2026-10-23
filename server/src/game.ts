@@ -1,5 +1,6 @@
 import { current } from "./request.js";
 import { tileAt, townAt } from "./world.js";
+import { PATHS, SPECIALIZE_AT, pathOfClass } from "./paths.js";
 import { SWINGS_PER_DAY, trinket, bonusText } from "./caves.js";
 import { boosted, withRarity } from "./rarity.js";
 import data from "./data/game.json" with { type: "json" };
@@ -15,6 +16,10 @@ export interface Player {
   id: string;
   name: string;
   class: PlayerClass;
+  /** Steel, Shadow or the gift: how they fight. Their class is the path's base class until they specialize. */
+  path: import("./paths.js").Path;
+  /** Chosen a specialization yet (at level 5). Everyone from before paths has. */
+  specialized: boolean;
   level: number;
   exp: number;
   hp: number;
@@ -114,6 +119,11 @@ export interface PublicState {
   time_of_day: string;
   name: string;
   class: PlayerClass;
+  /** Steel, Shadow or the gift. */
+  path: string;
+  /** Present (false) only for someone who hasn't chosen a specialization yet. */
+  specialized?: boolean;
+  specialize_at?: number;
   level: number;
   exp: number;
   exp_next: number | null;
@@ -259,6 +269,8 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
   return {
     name: p.name,
     class: p.class,
+    path: PATHS[p.path ?? pathOfClass(p.class)].name,
+    ...(p.specialized === false ? { specialized: false, specialize_at: SPECIALIZE_AT } : {}),
     level: p.level,
     exp: p.exp,
     exp_next: expForLevel(p.level + 1),
@@ -305,6 +317,9 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
   };
 }
 
+/** Level 5 and still on a beginner's path: choose a specialization before training any further. */
+export const needsSpec = (p: Player) => p.specialized === false && p.level >= SPECIALIZE_AT;
+
 /** Legal next actions given current state. The narrator only offers these. */
 export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean): string[] {
   if (!p.alive) return ["news", "tavern", "rankings", "status", "mail"];
@@ -327,7 +342,8 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     if (townAt(p.pos_x, p.pos_y) === "ironhold") {
       w.unshift("town", "healer", "auction", "forge", "shop", "bank", "tavern", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []), ...(t.player_fights > 0 ? ["challenge"] : []));
       const nextLvl = expForLevel(p.level + 1);
-      if (!casts(p.class) && nextLvl !== null && p.exp >= nextLvl) w.unshift("train");
+      if (needsSpec(p)) w.unshift("specialize");
+      else if (!casts(p.class) && nextLvl !== null && p.exp >= nextLvl) w.unshift("train");
       return w;
     }
     if (t.forest_fights > 0) w.unshift("forest", "move");
@@ -346,7 +362,8 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
   if (!t.inn_used) a.push("inn");
   if (!t.bard_heard) a.push("bard");
   const next = expForLevel(p.level + 1);
-  if (next !== null && p.exp >= next) a.unshift("train");
+  if (needsSpec(p)) a.unshift("specialize");
+  else if (next !== null && p.exp >= next) a.unshift("train");
   if (p.level >= 12 && dragonAlive && t.forest_fights > 0) a.unshift("dragon");
   return a;
 }

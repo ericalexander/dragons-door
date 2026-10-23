@@ -26,6 +26,7 @@ const K = {
 };
 if (process.env.DROP !== undefined) GAME.drops.chance = Number(process.env.DROP);
 const NIGHT_SHARE = Number(process.env.NIGHT ?? 0);
+const { pathOfClass } = await import("./paths.js");
 // Night knobs, to search the curve: NHP, NSTR, NEXP, NGOLD, NUP.
 { const { NIGHT: N } = await import("./combat.js"); for (const [k, e] of [["hp", "NHP"], ["str", "NSTR"], ["exp", "NEXP"], ["gold", "NGOLD"], ["oneUp", "NUP"]] as const) if (process.env[e] !== undefined) (N as Record<string, number>)[k] = Number(process.env[e]); }
 if (process.env.TDROP !== undefined) (GAME.classes.thief as { dropChance?: number }).dropChance = Number(process.env.TDROP);
@@ -133,7 +134,7 @@ type Cls = "warrior" | "thief" | "mage" | "priest";
 const SNAPS: Record<string, unknown>[] | null = process.env.SNAP ? [] : null;
 
 function fresh(cls: Cls): Player {
-  return { id: "", name: "sim", class: cls, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null, trinket_id: 0, pickaxe: false, cave_depth: null, pending_event: null, admin: false, is_test: false, banned_at: null, renamed_from: null, respec_at: null };
+  return { id: "", name: "sim", class: cls, path: pathOfClass(cls), specialized: true, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null, trinket_id: 0, pickaxe: false, cave_depth: null, pending_event: null, admin: false, is_test: false, banned_at: null, renamed_from: null, respec_at: null };
 }
 
 function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number): "won" | "fled" | "died" {
