@@ -213,7 +213,7 @@ function seasoned(ctx: Ctx, what: string): boolean {
 
 /** Names that would pass for a local. Compared after folding lookalike characters. */
 const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
-  "violet", "odile", "mother quill", "quill", "prior hale", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon",
+  "violet", "odile", "mother quill", "quill", "prior hale", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon", "the dark dragon", "dark dragon",
   "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic"];
 // i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
 const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
@@ -784,10 +784,10 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
     case "pvp_survived": return `${n.target} fought off an attack from ${n.actor}.`;
     case "forest_death": return `${n.actor} was killed in the forest by a ${n.detail.monster}.`;
     case "level_up": return `${n.actor} reached level ${n.detail.level}.`;
-    case "dragon": return `${n.actor} slew the Red Dragon!`;
-    case "dragon_death": return `${n.actor} was eaten by the Red Dragon.`;
+    case "dragon": return `${n.actor} slew the Dark Dragon!`;
+    case "dragon_death": return `${n.actor} was eaten by the Dark Dragon.`;
     case "married": {
-      const to = n.target ?? "Verity";
+      const to = n.target ?? "Violet";
       if (n.detail?.stole_from) return `${n.actor} won ${to}'s heart from ${n.detail.stole_from}.`;
       if (n.detail?.left) return `${n.actor} left ${n.detail.left} for ${to}.`;
       return `${n.actor} married ${to}.`;
@@ -2438,7 +2438,7 @@ api.post("/flirt", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     requireInTown(ctx, "everyone you might court");
-    const who = suitor(body.with ?? "Verity");
+    const who = suitor(body.with ?? "Violet");
     if (!who) { ctx.events.push({ kind: "no_such_suitor", name: body.with }); return; }
     if (!available(who)) {
       ctx.events.push({ kind: "not_around", name: who.name, hours: who.hours ?? null, days: who.days ?? null });

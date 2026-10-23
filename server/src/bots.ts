@@ -326,7 +326,7 @@ async function drunkNight(b: Bot) {
       "The mosquitoes out there are getting ideas above their station.",
       "I don't need a bank. I need another round.",
       "If you find a warrior asleep under the oak, that's me. Don't.",
-      "Verity says I've had enough. Verity is not the boss of me.",
+      "Violet says I've had enough. Violet is not the boss of me.",
       "Bought a Stick today. Big day.",
     ];
     await b.post("/tavern", { body: lines[roll(lines.length - 1)] });
@@ -379,8 +379,8 @@ async function gossip(b: Bot) {
     `They'll be back tomorrow, ${d.actor} will. They always are. The ${d.detail.monster} should be worried.`,
   ]);
   for (const m of of("married")) add([
-    `${m.actor} married Verity. Again, someone. Every week it's someone. She's never once mentioned it to me.`,
-    `Congratulations to ${m.actor} and Verity. I give it until the next pretty face walks in.`,
+    `${m.actor} married Violet. Again, someone. Every week it's someone. She's never once mentioned it to me.`,
+    `Congratulations to ${m.actor} and Violet. I give it until the next pretty face walks in.`,
   ]);
   for (const l of of("loot")) add([
     `${l.actor} is walking around with ${a(l.detail.item)} off a dead ${l.detail.monster} like they forged it themselves.`,
@@ -553,7 +553,7 @@ async function boast(b: Bot) {
     `My ${s.armor} was fitted by a man who fitted a duke. A minor duke. Still.`,
     `Level ${s.level}, and I've not run from a single fight I couldn't have won.`,
     `A Pomfrey does not flee. A Pomfrey repositions with dignity.`,
-    `Verity laughed at my joke today. Verity laughs at everyone's jokes, she says. Mine was different.`,
+    `Violet laughed at my joke today. Violet laughs at everyone's jokes, she says. Mine was different.`,
     `I'd challenge the dragon myself, but it would be unsporting. To the dragon.`,
   ]));
   b.log.push("boasted in the tavern");
@@ -727,7 +727,7 @@ async function tavernTalk(b: Bot, row: Row, mind: Mind, f: Facts) {
   }
   if (row.personality === "raider" && Math.random() < 0.3) await fence(b);
   if (own) return own(b);
-  if (row.personality === "drunk") { await say(b, pick(["Anyone seen my boots?", "Verity says I've had enough. Verity is not the boss of me.", "Another round. For me. I'm the round."])); return; }
+  if (row.personality === "drunk") { await say(b, pick(["Anyone seen my boots?", "Violet says I've had enough. Violet is not the boss of me.", "Another round. For me. I'm the round."])); return; }
   b.log.push("kept to themselves in the tavern");
 }
 
@@ -744,7 +744,7 @@ async function donate(b: Bot, row: Row, mind: Mind) {
 
 async function flirtSomeone(b: Bot) {
   const around = SUITORS.filter((s) => available(s));
-  const who = around.length ? pick(around).name : "Verity";
+  const who = around.length ? pick(around).name : "Violet";
   const r = await b.post("/flirt", { with: who });
   if (!isErr(r)) {
     const out = r.events.find((e) => e.kind === "flirt") as { outcome?: string } | undefined;

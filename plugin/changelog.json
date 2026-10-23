@@ -1,8 +1,8 @@
 [
   {
-    "version": "0.16.8",
-    "lore": "The smiths of Dragon's Door have been arguing about names again, and this time they won. Your gear answers to the forge that made it now, the forest's small fry have been given names that fit them, and the barmaid you've always known is Verity. She says it was always Verity. She has a ledger that agrees.",
-    "plain": "Weapons from the Quarryman's Axe up and armor from Blackened Mail up have new names (same stats), a few early monsters are renamed, and the tavern's barmaid is now Verity. Nothing you own or know about changes."
+    "version": "0.16.9",
+    "lore": "The smiths of Dragon's Door have been arguing about names again, and this time they won: your gear answers to the forge that made it now, and the forest's small fry have names that fit them. And in Mother Quill's oldest books, the thing behind the Door was never called red. The Lantern Kings lit their lamps against the Dark Dragon.",
+    "plain": "Weapons from the Quarryman's Axe up and armor from Blackened Mail up have new names (same stats), a few early monsters are renamed, and the dragon is now the Dark Dragon. Nothing you own changes."
   },
   {
     "version": "0.16.0",
@@ -116,12 +116,12 @@
   },
   {
     "version": "0.6.2",
-    "lore": "The town has learned to write. Leave a letter for Hilde, or Verity, or Odile at her bench, and sooner or later a reply turns up in your mailbag, in their own hand. Sir Pomfrey's arrive sealed in wax.",
+    "lore": "The town has learned to write. Leave a letter for Hilde, or Violet, or Odile at her bench, and sooner or later a reply turns up in your mailbag, in their own hand. Sir Pomfrey's arrive sealed in wax.",
     "plain": "Townsfolk and characters now answer your mail, usually within an hour or two. One reply a day from each, covering everything you sent them."
   },
   {
     "version": "0.6.1",
-    "lore": "People in this town talk, if you let them. Stop and pass the time with whoever's about. Odile at her bench, Verity behind the bar, Pip in the square. You never know what someone will let slip. And if the Cartographer is in town, she might take a pencil to your map.",
+    "lore": "People in this town talk, if you let them. Stop and pass the time with whoever's about. Odile at her bench, Violet behind the bar, Pip in the square. You never know what someone will let slip. And if the Cartographer is in town, she might take a pencil to your map.",
     "plain": "You can talk to townsfolk and characters who are around (just ask the narrator to talk to them). The Cartographer, when she visits, may mark nearby places on your map."
   },
   {
@@ -151,13 +151,13 @@
   },
   {
     "version": "0.4.2",
-    "lore": "Verity has competition. The healer has taken on an apprentice with ink on his fingers, the lamplighter walks the square after dark, and a juggler comes through at the weekends. And charm, at last, buys you something: shopkeepers knock a little off, and bards seem to sing a bit more kindly.",
+    "lore": "Violet has competition. The healer has taken on an apprentice with ink on his fingers, the lamplighter walks the square after dark, and a juggler comes through at the weekends. And charm, at last, buys you something: shopkeepers knock a little off, and bards seem to sing a bit more kindly.",
     "plain": "Court Rowan (healer, by day), Mara (square, at night) or Jory (square, weekends), each with their own marriage perk. Charm now gives shop discounts and better luck with bards and visitors."
   },
   {
     "version": "0.4.1",
-    "lore": "Verity remembers now. A wedding is a wedding: she won't marry you twice, she'll keep a room aside for you at half the price, and if someone else catches her eye, the whole town will hear about it before you do.",
-    "plain": "Marriages to Verity last, she can only be married to one player at a time (so she can be won away), and her spouse gets rooms at half price."
+    "lore": "Violet remembers now. A wedding is a wedding: she won't marry you twice, she'll keep a room aside for you at half the price, and if someone else catches her eye, the whole town will hear about it before you do.",
+    "plain": "Marriages to Violet last, she can only be married to one player at a time (so she can be won away), and her spouse gets rooms at half price."
   },
   {
     "version": "0.4.0",
