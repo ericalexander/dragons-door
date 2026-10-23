@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec,
+  GAME, armor, weapon, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec, casterItemName,
   type Player, type PlayerClass, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -356,7 +356,7 @@ api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const discount = charmDiscount(charmOf(ctx.p));
   const mr = manaRules(cls)!;
   ctx.events.push({
-    kind: "library", teacher: v.name, place: v.place, teaches: cls,
+    kind: "library", teacher: v.name, place: v.place, teaches: cls, ...(cls === "bard" ? { sells: "instruments (each comes with its Opus)" } : {}),
     // A visitor of another class can look and talk, not learn.
     ...(mine ? { known: weaponName(cls, ctx.p.weapon_id) } : { visitor: true, note: `only a ${cls} can learn here; ${v.name} will talk to anyone` }),
     mana: { per_day: mine ? manaMax(ctx.p) : manaMax({ class: cls, level: ctx.p.level }), cast: mr.cast, greater: mr.fireball, ...(mr.heal ? { heal: mr.heal } : {}) },
@@ -791,7 +791,7 @@ api.get("/shop", async (c) => {
 
 /** A weapon drop reads as a spell scroll to a caster: reading it (equip) teaches the spell. */
 function lootName(p: Player, drop: { kind: string; item: string; tier: number }): string {
-  return drop.kind === "weapon" && casts(p.class) ? `Scroll of ${weaponName(p.class, drop.tier)}` : drop.item;
+  return drop.kind === "weapon" && casts(p.class) ? casterItemName(p.class, drop.tier) : drop.item;
 }
 
 // ---------- forest ----------
@@ -895,6 +895,7 @@ api.post("/fight", async (c) => {
         if (mana < mr.fireball) { ctx.events.push({ kind: "no_mana", need: mr.fireball, mana }); return; }
         await saveTurns(ctx, { mana: mana - mr.fireball });
         mult = specialMultiplier(ctx.p);
+        dodge = specialDodges(ctx.p); // a bard's Opus can lull what it's played at, so it doesn't swing back
         ctx.events.push({ kind: "cast", spell: specialName(ctx.p.class, ctx.p.weapon_id), special: true, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
       } else if (body.action === "attack" && mana >= mr.cast) {
         await saveTurns(ctx, { mana: mana - mr.cast });
@@ -914,6 +915,8 @@ api.post("/fight", async (c) => {
     if (staff) pf.str = Math.round(pf.str * mr!.staff);
     const mf = monsterAsFighter(m);
     const evs = exchange(pf, mf, mult, dodge);
+    // A thief slips the counter, a guardian takes it on the shield, a bard's tune lulls it.
+    for (const e of evs) if (e.kind === "dodged") e.how = ctx.p.class === "guardian" ? "blocked" : ctx.p.class === "bard" ? "lulled" : "slipped";
     ctx.events.push(...evs);
     m.hp = mf.hp;
     await savePlayer(ctx, { hp: pf.hp });
@@ -2339,6 +2342,50 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
   ctx.hint = `Write the song: exactly four lines of original lyrics in ${bard.name}'s voice, printed one per line in italics, using at least one real detail from you/headline/weather. Print the lyrics themselves; don't summarize or describe the song. Then the gift.`;
 }, { weather: true })));
 
+/** What the room is like for a set, by the player's own clock: evenings are full, mornings are a few early drinkers. */
+/** Tips as a share of a fight's gold at the bard's level. Tuned in the simulator (TIPS=): any steady income gets a bard to the next gear tier sooner, so this stays small. */
+export const TIPS = 0.75;
+const CROWD: Record<string, { mult: number; room: string }> = {
+  "early morning": { mult: 0.5, room: "a few early drinkers and whoever's mopping" },
+  morning: { mult: 0.6, room: "a quiet room, breakfast and hangovers" },
+  afternoon: { mult: 0.85, room: "a half-full room, traders and the idle" },
+  evening: { mult: 1.3, room: "a full house" },
+  night: { mult: 1.05, room: "the late crowd, loud and generous" },
+};
+
+/**
+ * A bard's set: once a day, in a tavern, for tips (a Sonnet, written by the narrator). Tips run about three-quarters of a fight's
+ * gold at the bard's level, more in the evening, with a better instrument, and with charm.
+ */
+api.post("/perform", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAlive(ctx);
+  const town = requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
+  await requireNoEncounter(ctx);
+  if (ctx.p.class !== "bard") { ctx.events.push({ kind: "not_for_you", reason: "only bards play for the room" }); return; }
+  if (ctx.t.performed) { ctx.events.push({ kind: "performed_already" }); return; }
+  const tod = timeOfDayNow();
+  const crowd = CROWD[tod] ?? CROWD.afternoon;
+  const fightGold = GAME.monsters.filter((m) => m.level === ctx.p.level);
+  const per = fightGold.length ? fightGold.reduce((n, m) => n + m.gold, 0) / fightGold.length : 25 * ctx.p.level;
+  const kit = 0.7 + 0.3 * Math.min(1, ctx.p.weapon_id / Math.max(1, ctx.p.level));
+  const charm = 1 + Math.min(100, charmOf(ctx.p)) / 200;
+  const luck = 0.7 + roll(60) / 100;
+  const tips = Math.max(1, Math.round(per * TIPS * crowd.mult * kit * charm * luck));
+  const won = roll(99) < 25;
+  await savePlayer(ctx, { gold: ctx.p.gold + tips, ...(won ? { charm: ctx.p.charm + 1 } : {}) });
+  await saveTurns(ctx, { performed: true });
+  const n = await ctx.c.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
+    "select kind, actor, target, detail from news order by id desc limit 15");
+  const headline = n.rowCount ? n.rows[roll(n.rowCount - 1)] : null;
+  ctx.events.push({
+    kind: "performed", form: "Sonnet", instrument: weaponName(ctx.p.class, ctx.p.weapon_id), tavern: town === "ironhold" ? "the Long Hall" : "the tavern",
+    town: town === "ironhold" ? "Ironhold" : "Brightwater", time_of_day: tod, room: crowd.room, tips, ...(won ? { charm: 1 } : {}), headline,
+    reception: luck > 1.15 ? "they want another" : luck < 0.85 ? "polite" : "warm",
+  });
+  await logEvent(ctx, "perform", { tips, tod, tier: ctx.p.weapon_id });
+  ctx.hint = "Write the set: a sonnet of fourteen original lines (three quatrains and a couplet, rhymed ABAB CDCD EFEF GG) in the player's voice, on the instrument named, drawing on the room, the headline or the weather. Print the lines themselves, in italics. Then one line on how it lands (reception) and the tips.";
+}, { weather: true })));
+
 api.post("/tavern", async (c) => {
   const body = z.object({ body: z.string().trim().min(1).max(280).transform(cleanText).pipe(z.string().min(1)) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
@@ -2574,7 +2621,7 @@ const A_SELECT = `select a.id::text, a.town, a.seller_id, a.slot, a.item_id, a.q
 
 const lotName = (r: { slot: ListSlot; item_id: number; qty: number; rarity?: number }) => { const n = worth(r.slot, r.item_id, r.rarity ?? 0).name; return r.qty > 1 ? `${r.qty} × ${n}${r.slot === "gem" ? "s" : ""}` : n; };
 function lotStats(slot: ListSlot, id: number, cls: Player["class"], r = 0) {
-  if (slot === "weapon") return { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}), ...(casts(cls) ? { for_you: `Scroll of ${weaponName(cls, id)}` } : {}) };
+  if (slot === "weapon") return { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}), ...(casts(cls) ? { for_you: casterItemName(cls, id) } : {}) };
   if (slot === "armor") return { def: boosted(armor(id).def, r), ...(r ? { rarity: rarity(r).name } : {}) };
   if (slot === "trinket") return { bonus: bonusText(trinket(id), attributeName(cls)) };
   return {};

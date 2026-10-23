@@ -3,7 +3,7 @@
  * Lose one random carried item when you die.
  */
 import type { Client } from "./db.js";
-import { GAME, armor, weapon, weaponName, casts, attributeName, type Player } from "./game.js";
+import { GAME, armor, weapon, weaponName, casts, casterItemName, attributeName, type Player } from "./game.js";
 import { roll } from "./combat.js";
 import { ore, trinket, bonusText } from "./caves.js";
 import { questByIndex } from "./quests.js";
@@ -63,7 +63,7 @@ export async function describe(c: Client, p: Player) {
       const upgrade = x.slot === "weapon" ? boosted(weapon(x.item_id).str, x.rarity) > boosted(weapon(p.weapon_id).str, p.weapon_rarity)
         : x.slot === "armor" ? boosted(armor(x.item_id).def, x.rarity) > boosted(armor(p.armor_id).def, p.armor_rarity)
         : x.slot === "trinket" ? p.trinket_id === 0 : false;
-      const name = x.slot === "weapon" && casts(p.class) ? `Scroll of ${weaponName(p.class, x.item_id)}` : it.name;
+      const name = x.slot === "weapon" && casts(p.class) ? casterItemName(p.class, x.item_id) : it.name;
       return { id: x.id, slot: x.slot, name, ...(x.rarity ? { rarity: rarity(x.rarity).name } : {}), ...stats, weight: it.weight, sells_for: sellPrice(x.slot, x.item_id, x.rarity), upgrade };
     }),
     equipped: { [casts(p.class) ? "spell" : "weapon"]: casts(p.class) ? weaponName(p.class, p.weapon_id) : withRarity(weapon(p.weapon_id).name, p.weapon_rarity), armor: withRarity(armor(p.armor_id).name, p.armor_rarity), jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id), attributeName(p.class))})` : null },

@@ -9,3 +9,5 @@ alter table players drop constraint if exists players_path_check;
 alter table players add constraint players_path_check check (path in ('steel', 'shadow', 'gift'));
 alter table players drop constraint if exists players_class_check;
 alter table players add constraint players_class_check check (class in ('warrior', 'thief', 'mage', 'priest', 'guardian', 'bard'));
+-- A bard plays one set a day in a tavern, for tips.
+alter table turns add column if not exists performed boolean not null default false;

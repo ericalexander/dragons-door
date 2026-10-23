@@ -13,8 +13,8 @@ import { GAME, type Player } from "./game.js";
 import { playerAsFighter, resolveDuel, resolveFull } from "./combat.js";
 import { manaMax } from "./game.js";
 
-type Cls = "warrior" | "thief" | "mage" | "priest";
-const CLASSES: Cls[] = ["warrior", "thief", "mage", "priest"];
+type Cls = "warrior" | "thief" | "mage" | "priest" | "guardian" | "bard";
+const CLASSES: Cls[] = (process.env.PVP_CLASSES?.split(",") as Cls[]) ?? ["warrior", "thief", "mage", "priest", "guardian", "bard"];
 type Snap = { class: Cls; level: number; max_hp: number; str: number; def: number; weapon_id: number; armor_id: number; trinket_id: number };
 
 const prefix = process.argv[2] ?? "/tmp/pvp-";

@@ -75,6 +75,8 @@ export interface Turns {
   specials: number;
   inn_used: boolean;
   flirted: boolean;
+  /** A bard has played their set today. */
+  performed?: boolean;
   bank_tx: number;
   tavern_posts: number;
   messages_sent: number;
@@ -217,6 +219,9 @@ export function weaponName(cls: PlayerClass, id: number): string {
   return list ? (list[id] ?? weapon(id).name) : weapon(id).name;
 }
 
+/** What a caster carries for a weapon tier: a spell scroll, or for a bard the instrument itself. */
+export const casterItemName = (cls: PlayerClass, id: number) => cls === "bard" ? weaponName(cls, id) : `Scroll of ${weaponName(cls, id)}`;
+
 /** Who teaches this class its spells, and where: Mother Quill's library for mages, Prior Hale's chapel for priests. */
 export const spellVendor = (cls: PlayerClass): { name: string; place: string } | null => (GAME.classes[cls] as { vendor?: { name: string; place: string } }).vendor ?? null;
 
@@ -342,6 +347,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     if (townAt(p.pos_x, p.pos_y) === "ironhold") {
       w.unshift("town", "healer", "auction", "forge", "shop", "bank", "tavern", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []), ...(t.player_fights > 0 ? ["challenge"] : []));
       const nextLvl = expForLevel(p.level + 1);
+      if (p.class === "bard" && !t.performed) w.push("perform");
       if (needsSpec(p)) w.unshift("specialize");
       else if (!casts(p.class) && nextLvl !== null && p.exp >= nextLvl) w.unshift("train");
       return w;
@@ -361,6 +367,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
   if (!t.flirted) a.push("flirt");
   if (!t.inn_used) a.push("inn");
   if (!t.bard_heard) a.push("bard");
+  if (p.class === "bard" && !t.performed) a.push("perform");
   const next = expForLevel(p.level + 1);
   if (needsSpec(p)) a.unshift("specialize");
   else if (next !== null && p.exp >= next) a.unshift("train");

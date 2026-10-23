@@ -144,7 +144,7 @@ export function resolveDuel(a: Duelist, d: Duelist, limits = DUEL_LIMITS, maxRou
     }
     let mult = 1, dodge = false, str = mf.str, move: string | undefined;
     if (mr) {
-      if (me.mana >= mr.fireball && used[side].big < limits.big) { me.mana -= mr.fireball; used[side].big++; mult = specialMultiplier(me.p); move = specialName(me.p.class, me.p.weapon_id); }
+      if (me.mana >= mr.fireball && used[side].big < limits.big) { me.mana -= mr.fireball; used[side].big++; mult = specialMultiplier(me.p); dodge = specialDodges(me.p); move = specialName(me.p.class, me.p.weapon_id); }
       else if (me.mana >= mr.cast) { me.mana -= mr.cast; move = weaponName(me.p.class, me.p.weapon_id); }
       else { str = Math.round(mf.str * mr.staff); move = "staff"; }
     } else if (me.specials > 0 && used[side].big < limits.big) {

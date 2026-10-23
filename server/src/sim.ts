@@ -26,7 +26,13 @@ const K = {
 };
 if (process.env.DROP !== undefined) GAME.drops.chance = Number(process.env.DROP);
 const NIGHT_SHARE = Number(process.env.NIGHT ?? 0);
-const { pathOfClass } = await import("./paths.js");
+// CLASSES='{"guardian":{"defPerLevel":3}}' overrides class numbers (nested objects such as mana merge one level deep).
+if (process.env.CLASSES) for (const [k, v] of Object.entries(JSON.parse(process.env.CLASSES) as Record<string, Record<string, unknown>>)) {
+  const c = (GAME.classes as Record<string, Record<string, unknown>>)[k];
+  for (const [f, x] of Object.entries(v)) c[f] = x && typeof x === "object" && !Array.isArray(x) ? { ...(c[f] as object), ...x } : x;
+}
+const PATHS_MOD = await import("./paths.js");
+const { pathOfClass } = PATHS_MOD;
 // Night knobs, to search the curve: NHP, NSTR, NEXP, NGOLD, NUP.
 { const { NIGHT: N } = await import("./combat.js"); for (const [k, e] of [["hp", "NHP"], ["str", "NSTR"], ["exp", "NEXP"], ["gold", "NGOLD"], ["oneUp", "NUP"]] as const) if (process.env[e] !== undefined) (N as Record<string, number>)[k] = Number(process.env[e]); }
 if (process.env.TDROP !== undefined) (GAME.classes.thief as { dropChance?: number }).dropChance = Number(process.env.TDROP);
@@ -84,6 +90,13 @@ const innCostSim = (p: SimPlayer) => Math.floor(GAME.innCostPerLevel * p.level *
 const shopPrice = (p: SimPlayer, price: number) => (ROMANCE ? Math.ceil(price * (1 - charmDiscount(p.charm))) : price);
 
 function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
+  // A bard's set in the tavern (PERFORM=0 to leave it out): an average crowd, same formula as /perform.
+  if (p.class === "bard" && process.env.PERFORM !== "0") {
+    const ms = GAME.monsters.filter((m) => m.level === p.level);
+    const per = ms.length ? ms.reduce((n, m) => n + m.gold, 0) / ms.length : 25 * p.level;
+    p.gold += Math.round(per * Number(process.env.TIPS ?? 0.75) * 0.95 * (0.7 + 0.3 * Math.min(1, p.weapon_id / Math.max(1, p.level))) * (1 + Math.min(100, p.charm) / 200) * (0.7 + roll(60) / 100));
+    if (roll(99) < 25) p.charm += 1;
+  }
   if (!EXTRAS) return;
   // flirt
   if (p.spouse === SUITOR) p.charm += 1;
@@ -129,7 +142,7 @@ const MINE_FROM = Number(process.env.MINE_FROM ?? 4);
 const MINE_FIGHTS = Number(process.env.MINE_FIGHTS ?? SWINGS_PER_DAY); // swings a day (not forest fights, unless SWING_COSTS_FIGHT=1)
 const MINED = { trinkets: 0, best: 0 };
 const LEVEL_DAY: Record<number, number> = {}; const LEVEL_N: Record<number, number> = {}; const DEATH_L: Record<number, number> = {};
-type Cls = "warrior" | "thief" | "mage" | "priest";
+type Cls = "warrior" | "thief" | "mage" | "priest" | "guardian" | "bard";
 // SNAP=path: write what each character looked like (stats and gear) the moment they reached each level, for pvp.ts.
 const SNAPS: Record<string, unknown>[] | null = process.env.SNAP ? [] : null;
 
@@ -163,10 +176,10 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number)
         if (pf.hp <= 0) { p.hp = 0; return "died"; }
         continue;
       }
-      if (specials.n >= mr.fireball && mf.hp > full * 1.5) { mult = specialMultiplier(p); specials.n -= mr.fireball; }
+      if (specials.n >= mr.fireball && mf.hp > full * 1.5) { mult = specialMultiplier(p); dodge = specialDodges(p); specials.n -= mr.fireball; }
       else if (specials.n >= mr.cast) specials.n -= mr.cast;
       else pf.str = Math.round(full * mr.staff);
-      exchange(pf, mf, mult, false);
+      exchange(pf, mf, mult, dodge);
       pf.str = full;
     } else {
       if (specials.n > 0 && mf.hp > pf.str * 1.5) { mult = specialMultiplier(p); dodge = specialDodges(p); specials.n--; }
@@ -223,7 +236,10 @@ function shop(p: SimPlayer) {
 }
 
 function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; killedDragon: boolean; level?: number } {
-  const p: SimPlayer = fresh(cls);
+  // Specializations that aren't a path's beginner class play as the beginner until level 5 (BASE=1 skips that).
+  const { PATHS, SPECIALIZE_AT } = PATHS_MOD;
+  const begin = process.env.BASE === "1" ? cls : PATHS[pathOfClass(cls)].base;
+  const p: SimPlayer = fresh(begin);
   let deaths = 0;
   let farthest = 0; // ring reached so far
   const ores: Record<number, number> = {};
@@ -288,6 +304,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
         if (res === "won") {
           const g = levelGains(p.class, p.level + 1);
           p.level++; p.max_hp += g.hp; p.hp = p.max_hp; p.str += g.str; p.def += g.def;
+          if (p.level >= PATHS_MOD.SPECIALIZE_AT && p.class !== cls) p.class = cls;
           LEVEL_DAY[p.level] = (LEVEL_DAY[p.level] ?? 0) + day; LEVEL_N[p.level] = (LEVEL_N[p.level] ?? 0) + 1;
           shop(p);
           if (SNAPS) SNAPS.push({ class: p.class, level: p.level, max_hp: p.max_hp, str: p.str, def: p.def, weapon_id: p.weapon_id, armor_id: p.armor_id, trinket_id: p.trinket_id });

@@ -65,6 +65,39 @@
         "name": "Prior Hale",
         "place": "chapel"
       }
+    },
+    "guardian": {
+      "special": "Shield Bash",
+      "specialMult": 1.5,
+      "specialsPerDay": 3,
+      "hpPerLevel": 10,
+      "strPerLevel": 3,
+      "defPerLevel": 3,
+      "specialDodge": 0.75,
+      "critChance": 0.02,
+      "attribute": "Strength"
+    },
+    "bard": {
+      "special": "Opus",
+      "specialMult": 2.4,
+      "specialsPerDay": 0,
+      "hpPerLevel": 9,
+      "strPerLevel": 3,
+      "defPerLevel": 3,
+      "specialDodge": 0.45,
+      "critChance": 0.12,
+      "attribute": "Charisma",
+      "mana": {
+        "base": 20,
+        "perLevel": 5,
+        "cast": 1,
+        "fireball": 4,
+        "staff": 0.6
+      },
+      "vendor": {
+        "name": "Dunstan the Unfinished",
+        "place": "tavern"
+      }
     }
   },
   "levels": [
@@ -710,6 +743,21 @@
       "Hallowed Blade",
       "Seraph's Spear",
       "Last Rite"
+    ],
+    "bard": [
+      "Tin Whistle",
+      "Reed Pipe",
+      "Hand Drum",
+      "Bone Flute",
+      "Shepherd's Fiddle",
+      "Travelling Lute",
+      "Hurdy-Gurdy",
+      "Silver Flute",
+      "Yew Harp",
+      "Brass Horn",
+      "Starstrung Lyre",
+      "Lamplit Cittern",
+      "Sunwood Harp"
     ]
   },
   "spellSpecials": {
@@ -742,6 +790,21 @@
       "Consecration",
       "Choir of Blades",
       "Final Judgment"
+    ],
+    "bard": [
+      "Rousing Reel",
+      "Long Lament",
+      "Thunder Drum",
+      "Fenland Lullaby",
+      "Devil's Jig",
+      "Road Ballad",
+      "Grinding Dirge",
+      "Silver Air",
+      "Hymn of the Hollow",
+      "Brass Fanfare",
+      "Star Canticle",
+      "Lamplight Anthem",
+      "Grand Finale"
     ]
   }
 }
