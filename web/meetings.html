@@ -71,6 +71,7 @@
     .entry { font-size: 18px; }
     h2 { font-size: 30px; }
   }
+  .opts { margin-top: 20px; }
   .opt { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--rule); padding: 4px 0; }
   .opt.win { font-weight: 700; color: var(--wax); }
   .opt .n { font-family: var(--mono, monospace); font-size: 14px; color: var(--ink-faint); white-space: nowrap; }
@@ -129,7 +130,7 @@
       const where = m.town ? TOWN[m.town] || m.town : "The whole realm";
       const opts = m.options.map((o) => `<div class="opt${closed && r.winner === o.id ? " win" : ""}"><span>${esc(o.label)}</span>${closed ? `<span class="n">${Number(r.players?.[o.id] || 0)} adventurers · ${Number(r.townsfolk?.[o.id] || 0)} townsfolk</span>` : ""}</div>`).join("");
       const said = m.townsfolk_said.length ? `<ul class="said">${m.townsfolk_said.slice(0, 6).map((s) => `<li><b>${esc(s.name)}:</b> “${esc(s.said)}”</li>`).join("")}</ul>` : "";
-      return `<section class="day"><div class="status">${esc(where)} · ${closed ? "decided" : `open until the end of ${esc(fmt(m.last_day))}`} · ${Number(m.voters)} adventurer${m.voters === 1 ? "" : "s"} voted</div>${m.art && ART[m.art] ? `<figure class="art" aria-hidden="true">${ART[m.art]}</figure>` : ""}<h2>${esc(m.question)}</h2><div class="entry">${m.about ? `<p>${esc(m.about)}</p>` : ""}${opts}${said}${closed && r.tie_broken_by_town ? '<p class="quiet">The adventurers were split; the townsfolk settled it.</p>' : ""}</div></section>`;
+      return `<section class="day"><div class="status">${esc(where)} · ${closed ? "decided" : `open until the end of ${esc(fmt(m.last_day))}`} · ${Number(m.voters)} adventurer${m.voters === 1 ? "" : "s"} voted</div>${m.art && ART[m.art] ? `<figure class="art" aria-hidden="true">${ART[m.art]}</figure>` : ""}<h2>${esc(m.question)}</h2><div class="entry">${m.about ? `<p>${esc(m.about)}</p>` : ""}<div class="opts">${opts}</div>${said}${closed && r.tie_broken_by_town ? '<p class="quiet">The adventurers were split; the townsfolk settled it.</p>' : ""}</div></section>`;
     }).join("");
   }).catch(() => { document.getElementById("meetings").innerHTML = '<p class="quiet">The meetings aren\'t answering right now. They\'ll be back.</p>'; });
 </script>
