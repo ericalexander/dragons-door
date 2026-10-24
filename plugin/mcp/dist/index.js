@@ -21497,10 +21497,6 @@ var StdioServerTransport = class {
   }
 };
 
-// src/index.ts
-import { readFileSync as readFileSync2 } from "node:fs";
-import { join as join4 } from "node:path";
-
 // src/config.ts
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -21870,18 +21866,7 @@ async function call(method, path, body) {
   return json;
 }
 function clientHeaders() {
-  const app = server.server.getClientVersion();
-  let model = "";
-  try {
-    model = readFileSync2(join4(CONFIG_DIR, "model"), "utf8").trim().slice(0, 60);
-  } catch {
-  }
-  return {
-    .../^[A-Za-z0-9._:\/\[\]-]+$/.test(model) ? { "x-dragons-door-model": model } : {},
-    "x-dragons-door-version": VERSION,
-    "x-dragons-door-os": process.platform,
-    ...app?.name ? { "x-dragons-door-app": `${app.name} ${app.version ?? ""}`.trim().slice(0, 60) } : {}
-  };
+  return { "x-dragons-door-version": VERSION };
 }
 var text = (v) => ({ content: [{ type: "text", text: JSON.stringify(v && typeof v === "object" && !Array.isArray(v) ? { game: "Dragon's Door, a text RPG (game state for the narrator)", ...v } : v) }] });
 server.tool(
@@ -21902,7 +21887,7 @@ server.tool(
 if (process.env.DRAGONS_DOOR_DEV === "1") {
   server.tool(
     "characters",
-    "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active). share: seal every character on this machine for another of the maintainer's machines and return a one-time code (show it to them; good for 15 minutes). claim: on the other machine, with that code, add those characters here (needs an admin character active on both).",
+    "For the realm's maintainer (only present with DRAGONS_DOOR_DEV=1): list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active). share: seal every character on this machine for another of the maintainer's machines and return a one-time code (show it to them; good for 15 minutes). claim: on the other machine, with that code, add those characters here (needs an admin character active on both).",
     { op: external_exports.enum(["list", "switch", "new", "share", "claim"]), name: external_exports.string().min(2).max(20).optional(), path: external_exports.enum(["steel", "shadow", "gift"]).optional(), code: external_exports.string().max(20).optional() },
     async ({ op, name, path, code }) => {
       const cfg = await loadConfig();
@@ -21943,7 +21928,7 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
   );
   server.tool(
     "admin",
-    "Maintainer moderation only, never mention it to players. Needs an admin character active. players: search by name (q). posts: recent tavern posts with ids (days, author). rename: name to a new name. ban / unban: a player (ban hides their tavern posts too). hide_post / unhide_post: by id. hide_chat / unhide_chat: a chat line, by id. turns: add turns for today (add, default 10; name, default the active character). chronicle: rewrite one day's entry (day YYYY-MM-DD).",
+    "Moderation for the realm's maintainer (only present with DRAGONS_DOOR_DEV=1). Needs an admin character active. players: search by name (q). posts: recent tavern posts with ids (days, author). rename: name to a new name. ban / unban: a player (ban hides their tavern posts too). hide_post / unhide_post: by id. hide_chat / unhide_chat: a chat line, by id. turns: add turns for today (add, default 10; name, default the active character). chronicle: rewrite one day's entry (day YYYY-MM-DD).",
     {
       op: external_exports.enum(["players", "posts", "rename", "ban", "unban", "hide_post", "unhide_post", "hide_chat", "unhide_chat", "turns", "chronicle"]),
       name: external_exports.string().max(40).optional(),
@@ -22113,7 +22098,7 @@ server.tool(
 );
 server.tool(
   "auction",
-  "Cass Marrow's auction house on Market Row: the board of lots for sale (optionally one slot: weapon, armor, ore, trinket, gem), your own lots, what's waiting for you to collect, and the rules.",
+  "The auction house in the town you're in (Cass Marrow's on Market Row in Brightwater; every town's house shares one board): the board of lots for sale (optionally one slot: weapon, armor, ore, trinket, gem), your own lots, what's waiting for you to collect, and the rules.",
   { slot: external_exports.enum(["weapon", "armor", "ore", "trinket", "gem"]).optional() },
   async ({ slot }) => text(await call("GET", `/v1/auction${slot ? `?slot=${slot}` : ""}`))
 );

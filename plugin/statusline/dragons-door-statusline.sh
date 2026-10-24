@@ -16,12 +16,6 @@ if [ -s "$PREV" ]; then
   prev_out=$(printf '%s' "$input" | sh -c "$(cat "$PREV")" 2>/dev/null)
 fi
 
-# Remember which Claude model this session is using, so the game can count it (the plugin can't see it itself).
-model=$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"model"[[:space:]]*:[[:space:]]*{[^}]*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -c 60)
-if [ -n "$model" ] && [ -d "$DIR" ]; then
-  [ "$(cat "$DIR/model" 2>/dev/null)" = "$model" ] || printf '%s' "$model" > "$DIR/model" 2>/dev/null
-fi
-
 now=$(date +%s); ts=0; n=0; nw=0
 [ -f "$CACHE" ] && read -r ts n nw < "$CACHE" 2>/dev/null
 case "$ts" in ''|*[!0-9]*) ts=0;; esac

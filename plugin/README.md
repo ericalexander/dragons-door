@@ -1,0 +1,46 @@
+# Dragon's Door
+
+A daily-turn multiplayer text RPG in the spirit of the old BBS door games, played inside Claude Code in one shared realm. You get a handful of turns a day to fight, explore a map that's the same for everyone, mine caves, trade at the auction house, and get to know townsfolk who have lives, goals and long memories of their own. The world keeps moving while you're away, and the news each morning is written by what the realm's players did.
+
+The game server makes every roll and keeps every rule; Claude only tells the story. Any model plays fair.
+
+## Get started
+
+```
+/dragons-door:enter
+```
+
+The first time, you pick a name and a path (Steel, Shadow or the gift), and you're in. There's no account or password: the game stores a key on your machine, and that key is your character.
+
+## Things to try
+
+- "Enter the realm and show me the town."
+- "Explore north until I find a cave, then go down and mine."
+- "Talk to Old Tam in the tavern and ask what he knows about the Siege."
+- "Check the auction house for a better sword I can afford, and ask before buying."
+- "Send Hilde 200 gold with a short thank-you letter."
+
+## What it does on your machine
+
+- **Runs a small local MCP server** (`mcp/dist/index.js`) that turns the game's tools into calls to the game server.
+- **Stores your character key** in `~/.config/dragons-door/config.json` (or `DRAGONS_DOOR_CONFIG_DIR`). If you share a character to another machine, the share code is encrypted with a passphrase you choose.
+- **Checks for a new version** now and then by reading this plugin's version number from GitHub (`raw.githubusercontent.com`). It sends nothing.
+- **The status line is optional.** Only if you ask for it does the plugin add the game's news and mail indicators to your Claude Code status line (`~/.claude/settings.json`), keeping whatever was there before. Asking to remove it puts yours back.
+- **The side pane** (`hooks/pane.tsx`) shows your character, the map and Player chat beside the conversation. It reads only this game's own tool results, keeps a little state of its own (which tabs you've seen), fetches chat from the game server with your character key, sends chat when you type it, and when you click a place on the map it asks Claude to travel there for you. It changes nothing else.
+- **Maintainer tools** (for running the realm) are only there when `DRAGONS_DOOR_DEV=1` is set, and the server only honours them for its admins.
+
+## What goes to the game server
+
+The plugin talks only to `https://api.dragonsdoor.gg` (or a server you point it at with `DRAGONS_DOOR_API_URL`). Each call carries your character key and the plugin's version number, plus what that action needs (a direction, a purchase, a message you wrote). Your conversations with Claude are never sent.
+
+The server keeps your character and its play history, and a log of game events with no names or words in it, to keep the classes balanced. To match the realm's weather and nightfall to yours, it uses your rough location and time zone from your internet address, looks up the sky, and forgets them. To limit fake accounts, it counts sign-ups per internet address for a day, using a scrambled code that can't be turned back into the address.
+
+## What other players see
+
+Your character's name, class and level are on the public rankings, and big moments (a level, a death, a rare find) make the realm's news and the daily chronicle at [dragonsdoor.gg](https://dragonsdoor.gg). Tavern posts are public to anyone in that town; letters and gifts go to whoever you send them to. Player chat in the side pane goes between players only, is never shown to Claude, and is deleted after 30 days. When you talk to the townsfolk, each one keeps a short note of what you said to them so they remember you; only your own game sees it. Posts and chat are moderated, and you can mute anyone.
+
+## Privacy and support
+
+Privacy policy: [dragonsdoor.gg/privacy](https://dragonsdoor.gg/privacy). Questions, problems or a request to delete your character: [support@dragonsdoor.gg](mailto:support@dragonsdoor.gg), or open an issue on [GitHub](https://github.com/ericalexander/dragons-door/issues).
+
+Licensed MIT.

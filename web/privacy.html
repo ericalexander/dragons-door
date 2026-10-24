@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy · Dragon's Door</title>
+<meta name="description" content="What Dragon's Door collects, why, how long it keeps it, and how to have it deleted.">
+<meta property="og:title" content="The Chronicle of Dragon's Door">
+<meta property="og:description" content="What happened in the realm, day by day.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23efe4c9'/><path d='M4 15V7a4 4 0 0 1 8 0v8' fill='none' stroke='%232a1c10' stroke-width='1.5'/><circle cx='7' cy='11' r='1' fill='%238f2a1c'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #efe4c9;
+    --paper-hi: #f7efdc;
+    --ink: #2a1c10;
+    --ink-soft: #4a3322;
+    --ink-faint: #6b4a2e;
+    --rule: #b89c70;
+    --wax: #8f2a1c;
+    --wax-dark: #5c1a10;
+    --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --prose: "Alegreya", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--wax); text-decoration: underline; text-underline-offset: 3px; }
+  a:hover, a:focus-visible { color: var(--wax-dark); }
+  :focus-visible { outline: 2px solid var(--wax); outline-offset: 3px; }
+  ::selection { background: var(--ink); color: var(--paper-hi); }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+  .kicker { font-size: 14px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+
+  header.mast { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 22px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+  .mast .name { font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .mast .name a { color: var(--ink); text-decoration: none; }
+  .mast nav { display: flex; gap: 26px; flex-wrap: wrap; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+  .mast nav a { color: var(--ink); text-decoration: none; }
+  .mast nav a:hover, .mast nav a[aria-current] { text-decoration: underline; }
+
+  .head { padding-top: 56px; padding-bottom: 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; border-bottom: 2px solid var(--ink); }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(48px, 7vw, 72px); line-height: .95; margin: 0; }
+  .sub { margin: 0; font-size: 19px; color: var(--ink-soft); }
+
+  .pages { max-width: 72ch; margin: 0 auto; padding: 8px 24px 48px; }
+  section.day { padding: 36px 0 8px; border-bottom: 1px solid var(--rule); }
+  section.day:last-child { border-bottom: 0; }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0 0 4px; }
+  h2 .date { display: block; font-family: var(--body); font-weight: 500; font-size: 14px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); margin-top: 6px; }
+  .entry { font-family: var(--prose); font-size: 19px; line-height: 1.6; color: var(--ink); }
+  .entry p { margin: 14px 0 0; }
+  .entry p:first-child { margin-top: 16px; }
+  .draft { background: var(--paper-hi); border: 1px solid var(--rule); padding: 20px 24px 24px; margin-top: 36px; }
+  .draft h2 { font-size: 28px; }
+  .draft .note { font-family: var(--body); font-size: 15px; color: var(--ink-faint); font-style: italic; margin: 6px 0 0; }
+  .draft .entry p:first-child::first-letter { font-size: 1em; float: none; padding: 0; color: inherit; }
+  .quiet { color: var(--ink-faint); margin: 24px 0 0; }
+
+  footer { border-top: 2px solid var(--ink); }
+  footer .wrap { padding-top: 24px; padding-bottom: 32px; font-size: 14px; color: var(--ink-faint); }
+  footer p { margin: 0; max-width: 90ch; }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .head { padding-top: 40px; }
+    .entry { font-size: 18px; }
+    h2 { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="mast wrap">
+  <div class="name"><a href="/">Dragon's Door</a></div>
+  <nav aria-label="Site">
+    <a href="/#fromrealm">News</a>
+    <a href="/chronicle">Chronicle</a>
+    <a href="/auction">Auction House</a>
+    <a href="/#fromrealm">Rankings</a>
+    <a href="https://github.com/ericalexander/dragons-door">Source</a>
+  </nav>
+</header>
+
+<div class="head wrap">
+  <div class="kicker">Updated October 24, 2026</div>
+  <h1>Privacy</h1>
+  <p class="sub">What the game collects, why, how long it keeps it, and how to have it deleted.</p>
+</div>
+
+<main class="pages">
+  <section class="day">
+    <h2>The short version</h2>
+    <div class="entry">
+      <p>Dragon's Door keeps your character and what happens to it in the game. It never sees your conversations with Claude. It doesn't sell or share anything with anyone. Ask, and your character is deleted.</p>
+    </div>
+  </section>
+
+  <section class="day">
+    <h2>What the plugin sends</h2>
+    <div class="entry">
+      <p>The Claude Code plugin talks only to the game server at api.dragonsdoor.gg. Each call carries your character's key (stored on your own machine, in ~/.config/dragons-door/config.json), the plugin's version number, and what that action needs: a direction, a purchase, a message you wrote. Nothing else about you or your computer, and never your conversation.</p>
+      <p>Now and then the plugin reads its own latest version number from GitHub, to tell you when there's an update. That request sends nothing about you.</p>
+    </div>
+  </section>
+
+  <section class="day">
+    <h2>What the server keeps</h2>
+    <div class="entry">
+      <p><strong>Your character:</strong> its name, path and class, level, gold, gear, where it is on the map and where it's been, its quests, and the plugin version you last played with. Kept while the character exists.</p>
+      <p><strong>A game log</strong> of what happens in play (fights, levels, loot, deaths), with no names and no words you wrote, so the classes can be kept balanced. Kept for as long as it's useful for balance.</p>
+      <p><strong>What you write to other people:</strong> tavern posts (public to anyone in that town that day, and quoted in the daily news and chronicle), letters and gifts (to whoever you send them to), and Player chat in the side pane (between players only, never shown to Claude, deleted after 30 days).</p>
+      <p><strong>What the townsfolk remember:</strong> when you talk to someone in the game, they keep a short note of what you said to them, the last few days' worth, so they remember you next time. Only your own game sees those notes.</p>
+    </div>
+  </section>
+
+  <section class="day">
+    <h2>Weather, nightfall and sign-ups</h2>
+    <div class="entry">
+      <p>The realm's weather follows yours, and so does nightfall. To do that the server uses your rough location and time zone, from your internet address as its host reports it, looks up the sky for that area, and forgets them. Ask the narrator to turn weather off any time.</p>
+      <p>To limit fake accounts, the server counts sign-ups per internet address for a day, using a scrambled code that can't be turned back into the address.</p>
+    </div>
+  </section>
+
+  <section class="day">
+    <h2>This website</h2>
+    <div class="entry">
+      <p>These pages count visits with Vercel Web Analytics, which uses no cookies, and with PostHog, which keeps an anonymous ID in your browser and notes which pages you read and your rough city and region from your internet address. No names, no recordings of your visit.</p>
+    </div>
+  </section>
+
+  <section class="day">
+    <h2>Who sees what</h2>
+    <div class="entry">
+      <p>Other players see your character's name, class and level on the rankings, and the big moments (a level, a death, a rare find, a dragon) in the news and the chronicle on this site. The game's own maintainer can see everything the server keeps, to run the realm and deal with abuse. Posts and chat are moderated, and you can mute any player. Nothing is sold, and nothing is shared with anyone else.</p>
+      <p>The game runs on Vercel (the server and this site) and Supabase (the database). They host it; they don't use it for anything of their own.</p>
+    </div>
+  </section>
+
+  <section class="day">
+    <h2>Children</h2>
+    <div class="entry">
+      <p>Dragon's Door is played inside Claude Code and isn't meant for children. It doesn't ask anyone's age.</p>
+    </div>
+  </section>
+
+  <section class="day">
+    <h2>Deleting your character, and questions</h2>
+    <div class="entry">
+      <p>Write to <a href="mailto:support@dragonsdoor.gg">support@dragonsdoor.gg</a> with your character's name to have it and everything tied to it deleted, or with any question about this page. You can also open an issue on <a href="https://github.com/ericalexander/dragons-door/issues">GitHub</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><a href="/">Play Dragon's Door</a> in Claude Code.</p>
+  </div>
+</footer>
+
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>
+  /* PostHog: where visitors come from (city and region), which pages they read. Anonymous: no profiles, no session recording. */
+  !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+  posthog.init("phc_J1rAmysu72Vfoxzo0cwd0Xb7CSfIbLoQmcERFGYMsAj", { api_host: "https://us.i.posthog.com", person_profiles: "identified_only", disable_session_recording: true, autocapture: false, capture_pageview: true, capture_pageleave: true });
+  posthog.register({ site: "dragons-door" });
+</script>
+</body>
+</html>

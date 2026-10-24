@@ -84,9 +84,10 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     if (ctx.p.spouse_id) ctx.spouse = (await c.query<{ name: string }>("select name from players where id = $1", [ctx.p.spouse_id])).rows[0]?.name ?? null;
     weatherOff = ctx.p.weather_off;
     if (info && !info.townsfolk && info.plugin) {
-      const prev = ctx.p.client as { plugin?: string; app?: string; os?: string; model?: string } | null;
-      if (prev?.plugin !== info.plugin || prev?.app !== info.app || prev?.os !== info.os || (info.model && prev?.model !== info.model)) {
-        const client = { plugin: info.plugin, app: info.app, os: info.os, model: info.model ?? prev?.model, since: new Date().toISOString() };
+      // Only the plugin version is kept: old-plugin support needs it.
+      const prev = ctx.p.client as { plugin?: string } | null;
+      if (prev?.plugin !== info.plugin) {
+        const client = { plugin: info.plugin, since: new Date().toISOString() };
         await c.query("update players set client = $2 where id = $1", [ctx.p.id, JSON.stringify(client)]);
         ctx.p.client = client;
       }
@@ -125,7 +126,7 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
         .filter((t) => !(t.x === x && t.y === y && !ctx.p.cave_depth))
         .sort((a, b) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y)) - Math.max(Math.abs(b.x - x), Math.abs(b.y - y)))
         .slice(0, 8).map((t) => ({ name: t.name, x: t.x, y: t.y, kind: t.x === 0 && t.y === 0 ? "town" : t.poi }));
-      ctx.events.push({ kind: "surroundings", for: "the side pane; don't print it", map: renderMap(x, y, seen), places });
+      ctx.events.push({ kind: "surroundings", for: "side pane", map: renderMap(x, y, seen), places });
     }
     const enc = await c.query("select 1 from encounters where player_id = $1", [ctx.p.id]);
     const inEnc = enc.rowCount! > 0;
@@ -145,7 +146,8 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
         if (journal.some((j) => j.waiting_on_you)) a.push("quest");
         return a;
       })(),
-      ...(ctx.hint ? { hint: ctx.hint } : {}),
+      // How to tell each result lives in the narrator skill now; only plugins from before that (0.22.0) still get a hint.
+      ...(ctx.hint && info?.plugin && older(info.plugin, "0.22.0") ? { hint: ctx.hint } : {}),
     };
   });
   if (sky && !weatherOff) {
@@ -250,8 +252,8 @@ const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
 async function logEvent(ctx: Ctx, kind: string, data: Record<string, unknown> = {}) {
   if (ctx.p.is_test) return; // keeps the balance numbers about real play
   await ctx.c.query(
-    "insert into game_events (day, player_id, class, level, is_bot, plugin, model, kind, data) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-    [ctx.day, ctx.p.id, ctx.p.class, ctx.p.level, Boolean(ctx.p.is_bot), current()?.plugin ?? null, current()?.model ?? null, kind, JSON.stringify(data)]);
+    "insert into game_events (day, player_id, class, level, is_bot, plugin, kind, data) values ($1,$2,$3,$4,$5,$6,$7,$8)",
+    [ctx.day, ctx.p.id, ctx.p.class, ctx.p.level, Boolean(ctx.p.is_bot), current()?.plugin ?? null, kind, JSON.stringify(data)]);
 }
 
 /** Totals for a finished fight, from its saved rounds plus the last one. */
@@ -1800,7 +1802,7 @@ api.post("/event", async (c) => {
     const out = rollOutcome(choice);
     const { got, monster: m0, quest } = await applyEffects(ctx, out.effects, lvl, [pe.x, pe.y], e.id === "hermit" ? "a hermit" : "what you saw");
     const monster = m0 !== null ? pickMonster(t.level + m0, regionAt(t.x, t.y)) : null;
-    ctx.events.push({ kind: "event_outcome", event: e.id, choice: choice.id, outcome: out.key, ...(cost ? { paid: cost } : {}), got });
+    ctx.events.push({ kind: "event_outcome", event: e.id, choice: choice.id, chose: choice.label, outcome: out.key, scene: e.description, ...(cost ? { paid: cost } : {}), got, ...(monster ? { fight: true } : {}) });
     if (quest) await startQuest(ctx, quest, true);
     if (monster) {
       await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, monster]);
@@ -2120,12 +2122,15 @@ const GATE_GUARDS: Partial<Record<TownId, Monster>> = {
   ashford: { name: "Nan Silt", level: 7, hp: 340, max_hp: 340, str: 68, def: 26, gold: 11000, exp: 8500 },
   brightwater: { name: "Grey Hob", level: 7, hp: 360, max_hp: 360, str: 70, def: 27, gold: 12000, exp: 9000 },
 };
-const GATE_LINES: Partial<Record<TownId, { note: string; hint: string }>> = {
+const GATE_LINES: Partial<Record<TownId, { note: string; scene: string; hint: string }>> = {
   ironhold: { note: "the road to the gate runs under a broken bridge, and something lives there; it won't let anyone through who hasn't beaten it, and there's no running",
+    scene: "the road below Ironhold's walls; Old Grudge, the troll under the broken bridge, comes up out of the gully",
     hint: "A set piece: they've reached the road below the town's walls, and Old Grudge, the troll under the broken bridge, comes up out of the gully. No running, no way round. Make it big, then the fight menu without (R)un." },
   ashford: { note: "the south road comes down to the river Ash at a wide stone ford below the town, and something has taken a toll at the crossing since before the walls went up; it won't let anyone cross who hasn't beaten it, and there's no running",
+    scene: "Ashford's roofs and the Lamphouse tower across the river; Nan Silt, the river hag who keeps the ford, rises out of the shallows wanting her toll, riddling about it",
     hint: "A set piece: Ashford's roofs and the Lamphouse tower are across the river, and Nan Silt, the river hag who keeps the ford, rises out of the shallows wanting her toll, riddling about it. No running, no way round. Make it big, then the fight menu without (R)un." },
   brightwater: { note: "the old north road into Brightwater crosses a toll-bridge nobody has kept since the Siege, and something keeps it now; it won't let a stranger by until they've beaten it, and there's no running",
+    scene: "Brightwater's roofs in sight; Grey Hob, the hobgoblin who keeps the old toll-bridge on the north road, steps out to collect",
     hint: "A set piece: Brightwater's roofs are in sight, and Grey Hob, the hobgoblin who keeps the old toll-bridge on the north road, steps out to collect. No running, no way round. Make it big, then the fight menu without (R)un." },
 };
 /** Where someone returns to and wakes up: their start town's tile (Brightwater is 0, 0). */
@@ -2144,7 +2149,7 @@ async function startGateFight(ctx: Ctx, town: TownId) {
   if (!g) return;
   const m: Monster = { ...g };
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'gate',$2)", [ctx.p.id, m]);
-  ctx.events.push({ kind: "gate_ambush", monster: m, town: town === "brightwater" ? "Brightwater" : TOWN_TILES[town as keyof typeof TOWN_TILES].name, note: GATE_LINES[town]!.note });
+  ctx.events.push({ kind: "gate_ambush", monster: m, town: town === "brightwater" ? "Brightwater" : TOWN_TILES[town as keyof typeof TOWN_TILES].name, note: GATE_LINES[town]!.note, scene: GATE_LINES[town]!.scene });
   ctx.hint = GATE_LINES[town]!.hint;
 }
 

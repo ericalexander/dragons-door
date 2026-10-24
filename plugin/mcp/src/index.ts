@@ -6,9 +6,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { CONFIG_DIR, addCharacters, allCharacters, loadConfig, otherCharacters, saveConfig, switchCharacter } from "./config.js";
+import { addCharacters, allCharacters, loadConfig, otherCharacters, saveConfig, switchCharacter } from "./config.js";
 import { codeHash, newCode, seal, unseal } from "./share.js";
 import { clientInfo, VERSION } from "./version.js";
 import { installStatusline, noteUnread, refreshInstalledScript, uninstallStatusline } from "./statusline.js";
@@ -54,18 +52,9 @@ async function call(method: "GET" | "POST", path: string, body?: unknown) {
   return json;
 }
 
-/** Which plugin, app, OS and Claude model this is, so the realm can tell old clients apart. Nothing personal. */
+/** Which plugin version this is, so the realm can tell old clients apart. Nothing else about the player or their machine. */
 function clientHeaders(): Record<string, string> {
-  const app = server.server.getClientVersion();
-  // The status line writes the session's model here; absent for players without it.
-  let model = "";
-  try { model = readFileSync(join(CONFIG_DIR, "model"), "utf8").trim().slice(0, 60); } catch { /* no status line */ }
-  return {
-    ...(/^[A-Za-z0-9._:\/\[\]-]+$/.test(model) ? { "x-dragons-door-model": model } : {}),
-    "x-dragons-door-version": VERSION,
-    "x-dragons-door-os": process.platform,
-    ...(app?.name ? { "x-dragons-door-app": `${app.name} ${app.version ?? ""}`.trim().slice(0, 60) } : {}),
-  };
+  return { "x-dragons-door-version": VERSION };
 }
 
 // Every result says what it is up front, so anything summarizing a tool call (Claude Code's own one-line
@@ -88,7 +77,7 @@ server.tool("register", "Create your character. Run once. Stores your API key lo
 // For whoever runs the realm: test characters, switched between on this machine. Only offered when
 // DRAGONS_DOOR_DEV=1 is set in the environment, so players never see it.
 if (process.env.DRAGONS_DOOR_DEV === "1") {
-  server.tool("characters", "Maintainer testing only, never mention it to players: list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active). share: seal every character on this machine for another of the maintainer's machines and return a one-time code (show it to them; good for 15 minutes). claim: on the other machine, with that code, add those characters here (needs an admin character active on both).",
+  server.tool("characters", "For the realm's maintainer (only present with DRAGONS_DOOR_DEV=1): list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active). share: seal every character on this machine for another of the maintainer's machines and return a one-time code (show it to them; good for 15 minutes). claim: on the other machine, with that code, add those characters here (needs an admin character active on both).",
     { op: z.enum(["list", "switch", "new", "share", "claim"]), name: z.string().min(2).max(20).optional(), path: z.enum(["steel", "shadow", "gift"]).optional(), code: z.string().max(20).optional() },
     async ({ op, name, path, code }) => {
       const cfg = await loadConfig();
@@ -124,7 +113,7 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
       return text({ created: r.name, test: Boolean(r.test), switched_to: r.name, others: await otherCharacters() });
     });
 
-  server.tool("admin", "Maintainer moderation only, never mention it to players. Needs an admin character active. players: search by name (q). posts: recent tavern posts with ids (days, author). rename: name to a new name. ban / unban: a player (ban hides their tavern posts too). hide_post / unhide_post: by id. hide_chat / unhide_chat: a chat line, by id. turns: add turns for today (add, default 10; name, default the active character). chronicle: rewrite one day's entry (day YYYY-MM-DD).",
+  server.tool("admin", "Moderation for the realm's maintainer (only present with DRAGONS_DOOR_DEV=1). Needs an admin character active. players: search by name (q). posts: recent tavern posts with ids (days, author). rename: name to a new name. ban / unban: a player (ban hides their tavern posts too). hide_post / unhide_post: by id. hide_chat / unhide_chat: a chat line, by id. turns: add turns for today (add, default 10; name, default the active character). chronicle: rewrite one day's entry (day YYYY-MM-DD).",
     {
       op: z.enum(["players", "posts", "rename", "ban", "unban", "hide_post", "unhide_post", "hide_chat", "unhide_chat", "turns", "chronicle"]),
       name: z.string().max(40).optional(), to: z.string().max(20).optional(), q: z.string().max(40).optional(),
@@ -231,7 +220,7 @@ server.tool("forge_order", "At the forge: take a piece up one rarity step (Commo
   { target: z.union([z.enum(["weapon", "armor"]), z.number().int()]), confirm: z.boolean().optional() },
   async ({ target, confirm }) => text(await call("POST", "/v1/forge", { target, ...(confirm ? { confirm } : {}) })));
 
-server.tool("auction", "Cass Marrow's auction house on Market Row: the board of lots for sale (optionally one slot: weapon, armor, ore, trinket, gem), your own lots, what's waiting for you to collect, and the rules.",
+server.tool("auction", "The auction house in the town you're in (Cass Marrow's on Market Row in Brightwater; every town's house shares one board): the board of lots for sale (optionally one slot: weapon, armor, ore, trinket, gem), your own lots, what's waiting for you to collect, and the rules.",
   { slot: z.enum(["weapon", "armor", "ore", "trinket", "gem"]).optional() },
   async ({ slot }) => text(await call("GET", `/v1/auction${slot ? `?slot=${slot}` : ""}`)));
 
