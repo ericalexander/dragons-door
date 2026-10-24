@@ -60,8 +60,19 @@ const ADJECTIVES = ["Whispering", "Ashen", "Crooked", "Grey", "Weeping", "Old", 
   "Thornback", "Cold", "Wren's", "Hanging", "Bitter", "Lonely", "Red", "Howling", "Broken", "Silver", "Hollow", "Moth", "Kettle"];
 const CAVE_NAMES = ["Hollow", "Grotto", "Deeps", "Cave", "Warren"];
 
-/** Towns out in the world, by tile. Brightwater is the centre; the others sit where the land put them. */
-export const TOWN_TILES = { ironhold: { x: -4, y: -11, name: "Ironhold" }, ashford: { x: 4, y: 10, name: "Ashford" } } as const;
+/**
+ * Towns out in the world, by tile. Brightwater is the centre; the others sit where the land put them.
+ * The live realm's seed and town tiles are private (DRAGONS_DOOR_WORLD_SEED and DRAGONS_DOOR_TOWNS, set on the
+ * server), so its map can't be drawn from this public code; the places below are for local play only.
+ */
+const DEV_TOWNS = { ironhold: [-4, -11], ashford: [4, 10] } as const;
+function townTiles() {
+  let set: Partial<Record<keyof typeof DEV_TOWNS, [number, number]>> = {};
+  try { set = JSON.parse(process.env.DRAGONS_DOOR_TOWNS ?? "{}"); } catch { /* fall back to local places */ }
+  const at = (id: keyof typeof DEV_TOWNS) => { const v = set[id] ?? DEV_TOWNS[id]; return { x: Number(v[0]), y: Number(v[1]) }; };
+  return { ironhold: { ...at("ironhold"), name: "Ironhold" }, ashford: { ...at("ashford"), name: "Ashford" } };
+}
+export const TOWN_TILES: { readonly ironhold: { x: number; y: number; name: string }; readonly ashford: { x: number; y: number; name: string } } = townTiles();
 export type TownId = "brightwater" | keyof typeof TOWN_TILES;
 /** How far the gentle land around a town out in the world reaches. */
 export const POCKET = 4;

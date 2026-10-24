@@ -283,7 +283,7 @@ $("z-in").addEventListener("click", () => zoom(4)); $("z-out").addEventListener(
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-$("meta").textContent = `World seed ${WORLD.seed} · ${N}×${N} tiles · activity as of ${WORLD.generated}`;
+$("meta").textContent = `Seed: ${WORLD.seed} · ${N}×${N} tiles · activity as of ${WORLD.generated}`;
 let savedZoom = null; try { savedZoom = localStorage.getItem("atlas-cs"); } catch (e) {}
 // Fit the whole map to the box the first time; after that, keep the viewer's own zoom.
 if (!savedZoom) state.cs = Math.max(10, Math.min(28, Math.floor(($("mapbox").clientWidth - 2 * M - 2) / N)));
