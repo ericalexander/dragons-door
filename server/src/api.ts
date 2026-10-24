@@ -2775,6 +2775,98 @@ api.get("/mail/peek", async (c) => {
   return c.json({ unread: Number(row.unread), latest: row.latest ? Number(row.latest) : 0, from: (row.senders ?? []).filter(Boolean).slice(0, 5), news: Number(row.news) });
 });
 
+// ---------- live chat (the side pane's; the narrator never sees it) ----------
+
+/** Which room a player is in: their town, or "the road" for anyone out in the wild. */
+function chatRoom(p: { pos_x: number | null; pos_y: number | null }): { room: string; name: string } {
+  if (p.pos_x === null || p.pos_x === undefined) return { room: "brightwater", name: "Brightwater" };
+  const t = townAt(p.pos_x, p.pos_y!);
+  return t ? { room: t, name: TOWN_TILES[t as keyof typeof TOWN_TILES]?.name ?? t } : { room: "road", name: "the road" };
+}
+const CHAT_MAX = 240, CHAT_GAP_MS = 2000, CHAT_PER_5MIN = 30;
+
+/** The player behind a key, for chat: light, outside withPlayer, so polling never rolls the day or reads mail. */
+async function chatPlayer(c: { req: { header: (n: string) => string | undefined } }) {
+  const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
+  if (!key) return null;
+  const r = await pool.query<{ id: string; name: string; level: number; role: string; is_test: boolean; admin: boolean; banned_at: string | null; pos_x: number | null; pos_y: number | null }>(
+    "update players set last_seen = now() where api_key_hash = $1 returning id, name, level, role, is_test, admin, banned_at, pos_x, pos_y", [hash(key)]);
+  return r.rows[0] ?? null;
+}
+
+/**
+ * New chat since `since` (an id; 0 for the last half hour): the player's room, and whispers to or from them.
+ * Muted senders, banned ones and hidden lines are left out; test characters only see each other.
+ */
+api.get("/chat", async (c) => {
+  const me = await chatPlayer(c);
+  if (!me) return c.json({ error: "unauthorized" }, 401);
+  if (me.banned_at) return c.json({ error: "banned" }, 403);
+  const since = Math.max(0, Number(c.req.query("since") ?? 0) || 0);
+  const { room, name } = chatRoom(me);
+  const rows = (await pool.query<{ id: string; room: string; from_name: string; to_name: string | null; body: string; created_at: string; from_id: string }>(
+    `select c.id::text, c.room, f.name as from_name, t.name as to_name, c.body, c.created_at, c.from_player as from_id
+     from chat c join players f on f.id = c.from_player left join players t on t.id = c.to_player
+     where c.hidden_at is null and f.banned_at is null and f.is_test = $3
+       and (($2::bigint > 0 and c.id > $2) or ($2::bigint = 0 and c.created_at > now() - interval '30 minutes'))
+       and ((c.to_player is null and c.room = $4) or c.to_player = $1 or (c.from_player = $1 and c.to_player is not null))
+       and not exists (select 1 from mutes m where m.player_id = $1 and m.muted_id = c.from_player)
+     order by c.id desc limit 40`, [me.id, since, me.is_test, room])).rows.reverse();
+  // Who else is in the room now: anyone who did something in the last fifteen minutes, in the same town or on the road.
+  const here = (await pool.query<{ name: string; pos_x: number | null; pos_y: number | null }>(
+    `select name, pos_x, pos_y from players where role <> 'npc' and is_test = $2 and banned_at is null
+       and last_seen > now() - interval '15 minutes' and id <> $1 order by last_seen desc limit 60`, [me.id, me.is_test])).rows
+    .filter((x) => chatRoom(x).room === room).slice(0, 20).map((x) => x.name);
+  return c.json({
+    room, room_name: name, you: me.name, here,
+    messages: rows.map((m) => ({ id: Number(m.id), from: m.from_name, body: m.body, at: m.created_at,
+      ...(m.to_name ? { whisper: true, to: m.to_name, mine: m.from_id === me.id } : { mine: m.from_id === me.id }) })),
+    last_id: rows.length ? Number(rows[rows.length - 1].id) : since,
+  });
+});
+
+/** Say something in the room, or whisper to one player ({ to }). Level 2 and up; a couple of seconds apart. */
+api.post("/chat", async (c) => {
+  const me = await chatPlayer(c);
+  if (!me) return c.json({ error: "unauthorized" }, 401);
+  if (me.banned_at) return c.json({ error: "banned" }, 403);
+  const body = z.object({ body: z.string().max(1000).transform(cleanText).pipe(z.string().min(1).max(CHAT_MAX)), to: z.string().trim().min(1).max(40).optional() })
+    .safeParse(await c.req.json().catch(() => ({})));
+  if (!body.success) return c.json({ error: "bad_message", max: CHAT_MAX }, 400);
+  if (me.role === "player" && me.level < SEASONED_LEVEL) return c.json({ error: "too_new", needed_level: SEASONED_LEVEL }, 403);
+  const recent = (await pool.query<{ n: string; last: string | null }>(
+    "select count(*)::text as n, max(created_at)::text as last from chat where from_player = $1 and created_at > now() - interval '5 minutes'", [me.id])).rows[0];
+  if (Number(recent.n) >= CHAT_PER_5MIN) return c.json({ error: "slow_down", per_5_minutes: CHAT_PER_5MIN }, 429);
+  if (recent.last && Date.now() - new Date(recent.last).getTime() < CHAT_GAP_MS) return c.json({ error: "slow_down", wait_ms: CHAT_GAP_MS }, 429);
+  let to: { id: string; name: string } | null = null;
+  if (body.data.to) {
+    const r = await pool.query<{ id: string; name: string; role: string; is_test: boolean }>("select id, name, role, is_test from players where lower(name) = lower($1)", [body.data.to]);
+    const t = r.rows[0];
+    if (!t || t.role !== "player" || t.is_test !== me.is_test) return c.json({ error: "no_such_player", name: body.data.to }, 404);
+    if (t.id === me.id) return c.json({ error: "whisper_self" }, 400);
+    to = t;
+    // Muted: it looks sent from here and never arrives (as with mail).
+    if ((await pool.query("select 1 from mutes where player_id = $1 and muted_id = $2", [t.id, me.id])).rowCount) return c.json({ ok: true, id: 0 });
+  }
+  const { room } = chatRoom(me);
+  const r = await pool.query<{ id: string }>("insert into chat (room, from_player, to_player, body) values ($1,$2,$3,$4) returning id", [room, me.id, to?.id ?? null, body.data.body]);
+  return c.json({ ok: true, id: Number(r.rows[0].id), room, ...(to ? { to: to.name } : {}) });
+});
+
+/** The keeper hides a chat line (or shows it again). */
+api.post("/admin/hide_chat", async (c) => {
+  const body = z.object({ id: z.number().int(), hidden: z.boolean().optional() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAdmin(ctx);
+    const hide = body.hidden !== false;
+    const r = await ctx.c.query<{ from_name: string; body: string }>(
+      "update chat c set hidden_at = $2 from players p where c.id = $1 and p.id = c.from_player returning p.name as from_name, c.body", [body.id, hide ? new Date() : null]);
+    if (!r.rowCount) { ctx.events.push({ kind: "admin_error", error: "no_such_line", id: body.id }); return; }
+    await audit(ctx, hide ? "hide_chat" : "unhide_chat", r.rows[0].from_name, { id: body.id, body: r.rows[0].body });
+    ctx.events.push({ kind: "admin_done", action: hide ? "hide_chat" : "unhide_chat", id: body.id, author: r.rows[0].from_name });
+  }));
+});
+
 // ---------- the auction house ----------
 
 interface ARow {

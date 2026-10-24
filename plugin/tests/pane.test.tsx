@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 const PANE = {
@@ -23,6 +23,7 @@ function engine(on: Parameters<TestBody>[1], reply: () => string, opened: { n: n
   on('ui.open', () => { opened.n++; return { value: { isPlaced: true } } })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', () => ({ result: {}, text: reply() }))
+  mock.clock(on)
 }
 
 test("a session that isn't playing never sees the pane", async ($, on) => {
@@ -114,5 +115,48 @@ test('the map comes with a move, and a map the player asks for replaces it', asy
   await $.tool.call({ tool: TOOL })
   ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /T @/ }))?.text).toBe('T @')
+  await ui.unmount()
+})
+
+/** Stands for the player's machine and the realm's chat: their key on disk, and the chat endpoints. */
+function realm(on: Parameters<TestBody>[1], sent: { body: unknown }[]) {
+  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/eric' : undefined }))
+  on('fs.read', (_, e) => {
+    expect(e.path).toBe('/home/eric/.config/dragons-door/config.json')
+    return { value: JSON.stringify({ api_key: 'door_test_key_1234', name: 'Ossian Vale' }) }
+  })
+  on('http.fetch', (_, e) => {
+    expect(e.url.startsWith('https://api.dragonsdoor.gg/v1/chat')).toBe(true)
+    expect(e.init?.headers?.authorization).toBe('Bearer door_test_key_1234')
+    if (e.init?.method === 'POST') { sent.push({ body: JSON.parse(e.init.body ?? '{}') }); return { value: { status: 200, ok: true, headers: {}, text: '{"ok":true,"id":9}' } } }
+    const lines = sent.map((s, i) => ({ id: i + 1, from: 'Ossian Vale', body: (s.body as { body: string }).body, mine: true, ...((s.body as { to?: string }).to ? { whisper: true, to: (s.body as { to: string }).to } : {}) }))
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ room: 'brightwater', room_name: 'Brightwater', here: ['Hilde'], messages: [{ id: 0, from: 'Hilde', body: 'Keep it in the bank.', mine: false }, ...lines], last_id: lines.length }) } }
+  })
+}
+
+test('chat: say a line and whisper one, straight to the realm, and see them in the pane', async ($, on) => {
+  const opened = { n: 0 }, sent: { body: unknown }[] = []
+  engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [] }), opened)
+  realm(on, sent)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.input({ key: 'say', text: 'Anyone seen the boot?' })
+  await ui.input({ key: 'say', text: '@Old Tam: the locket?' })
+  expect(sent.map(s => s.body)).toEqual([{ body: 'Anyone seen the boot?' }, { to: 'Old Tam', body: 'the locket?' }])
+  expect((await ui.find({ type: 'Text', text: /Keep it in the bank/ }))?.text).toBe('Hilde: Keep it in the bank.')
+  expect((await ui.find({ type: 'Text', text: /locket/ }))?.text).toBe('→ Old Tam: the locket?')
+  expect((await ui.find({ type: 'Text', text: /^here:/ }))?.text).toBe('here: Hilde')
+  await ui.unmount()
+})
+
+test('chat on mobile reads but has no field to type in', async ($, on) => {
+  const opened = { n: 0 }
+  engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [] }), opened)
+  await $.session.start({ cwd: '/', surface: 'mobile', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
+  const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
+  expect(texts.filter(t => /Reading|Chat|Quiet/.test(t ?? ''))).toEqual(['Quiet. Say something.', 'Reading only on this device.'])
   await ui.unmount()
 })

@@ -7,13 +7,72 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Character, Game } from '../types'
+import type { Character, Chat, ChatLine, Game } from '../types'
 
 const PANE = 'dragons-door'
 const TITLE = "Dragon's Door"
 // Change the tag when Game's fields change: it declines what an earlier version stored.
 const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
   { isPlaying: false, isShown: false, character: null, actions: [], map: [], online: [], at: 0 } as Game, { shape: 'game-4' })
+
+const chat = atom({ plugin: 'dragons-door', key: 'chat' } as const,
+  { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '' } as Chat, { shape: 'chat-1' })
+/** How often the pane asks the realm for new chat while it's showing. */
+const CHAT_EVERY_MS = 5000
+
+/** The player's own game key and the realm's address, from the file the plugin keeps (the active character). */
+async function credentials($: EngineInterface): Promise<{ key: string; url: string } | null> {
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+  const dir = (await $.env.get('DRAGONS_DOOR_CONFIG_DIR')) ?? (home ? `${home}/.config/dragons-door` : null)
+  if (!dir) return null
+  try {
+    const cfg = JSON.parse(await $.fs.read(`${dir}/config.json`) as string) as { api_key?: string; api_url?: string }
+    if (!cfg.api_key) return null
+    const url = (await $.env.get('DRAGONS_DOOR_API_URL')) ?? (cfg.api_url && !/lord-ebon/.test(cfg.api_url) ? cfg.api_url : 'https://api.dragonsdoor.gg')
+    return { key: cfg.api_key, url: url.replace(/\/$/, '') }
+  } catch { return null }
+}
+
+const CHAT_NOTE: Record<string, string> = {
+  too_new: 'You can chat from level 2.', slow_down: 'Easy: a line every couple of seconds.', no_such_player: 'Nobody here by that name.',
+  whisper_self: "That's you.", bad_message: 'Say something shorter.', banned: 'The realm has barred you.', unauthorized: 'Enter the realm first.',
+}
+
+/** The realm's error word from a failed reply, if it said one. */
+const errorOf = (text: string) => { try { return (JSON.parse(text || '{}') as { error?: string }).error ?? '' } catch { return '' } }
+
+/** Ask the realm what's been said since the last line we have. */
+async function pollChat($: EngineInterface) {
+  const g = await read($, game)
+  if (!g.isPlaying || !g.isShown) return
+  const cred = await credentials($)
+  if (!cred) return
+  const before = await read($, chat)
+  const fresh = before.who !== cred.key.slice(-8)
+  const res = await $.http.fetch(`${cred.url}/v1/chat?since=${fresh ? 0 : before.lastId}`, { headers: { authorization: `Bearer ${cred.key}` } })
+  if (!res.ok) { await update($, chat, c => ({ ...c, note: CHAT_NOTE[errorOf(res.text)] ?? c.note })); return }
+  const r = JSON.parse(res.text) as { room: string; room_name: string; here: string[]; messages: ChatLine[]; last_id: number }
+  await update($, chat, c => {
+    const moved = fresh || c.room !== r.room
+    const lines = [...(moved ? [] : c.lines), ...r.messages.filter(m => moved || !c.lines.some(x => x.id === m.id))].slice(-40)
+    return { ...c, room: r.room, roomName: r.room_name, here: r.here, lines, lastId: Math.max(r.last_id, moved ? 0 : c.lastId), who: cred.key.slice(-8) }
+  })
+}
+
+/** Send a line: "@Name words" whispers to Name; anything else goes to the room. */
+async function say($: EngineInterface, text: string) {
+  const t = text.trim()
+  if (!t) return
+  const cred = await credentials($)
+  if (!cred) { await update($, chat, c => ({ ...c, note: CHAT_NOTE.unauthorized! })); return }
+  // "@Name words" for a one-word name, "@Two Words: words" for a longer one.
+  const m = /^@([^:@]+?):\s*([\s\S]+)$/.exec(t) ?? /^@(\S+)\s+([\s\S]+)$/.exec(t)
+  const body = m ? { to: m[1]!.trim(), body: m[2]! } : { body: t }
+  const res = await $.http.fetch(`${cred.url}/v1/chat`, { method: 'POST', headers: { authorization: `Bearer ${cred.key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  if (!res.ok) { await update($, chat, c => ({ ...c, note: CHAT_NOTE[errorOf(res.text)] ?? "That didn't go through." })); return }
+  await update($, chat, c => ({ ...c, draft: '', note: '' }))
+  await pollChat($)
+}
 
 /** A Dragon's Door result, or null: every one starts with the game's label (the plugin's text() adds it). */
 function parse(text: string | undefined): Record<string, unknown> | null {
@@ -46,6 +105,8 @@ async function show($: EngineInterface) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'door-pane', description: "Show the Dragon's Door pane" })
+    // The chat feed: only does anything while the player is in the realm and the pane is showing.
+    $.clock.every(CHAT_EVERY_MS, () => { void pollChat($).catch(() => undefined) })
     return next(e)
   })
 
@@ -94,8 +155,13 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const els = $.ui.resolve(e)
+    const { Box, Text } = els
+    // Mobile draws no text field yet, whatever its table lists: there the chat is read-only.
+    const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : null
     const g = await read($, game)
+    const ch = await read($, chat)
+    const room = Math.max(3, Math.min(12, (e.props?.scroll?.bodyRows ?? 40) - 34))
     // Drawing means a surface shows it: from here on the narrator leaves the status line out.
     if (g.isPlaying && !g.isShown) await update($, game, x => ({ ...x, isShown: true }))
     const c = g.character
@@ -137,6 +203,15 @@ export const register: Register = on => {
         {waiting.length > 0 && section('Waiting', ...waiting.map(t => <Text>{t}</Text>))}
         {(c.quests?.length ?? 0) > 0 && section('Quests', ...c.quests!.map(q => <Text>{q.title}{q.days_left !== undefined ? <Text dimColor> · {q.days_left} days</Text> : null}</Text>))}
         {g.online.length > 0 && section('In the realm now', <Text>{g.online.map(x => `● ${x}`).join('  ')}</Text>)}
+        {section(ch.roomName ? `Chat · ${ch.roomName}` : 'Chat',
+          ...(ch.here.length ? [<Text dimColor>here: {ch.here.slice(0, 8).join(', ')}{ch.here.length > 8 ? ` +${ch.here.length - 8}` : ''}</Text>] : []),
+          ...(ch.lines.length === 0 ? [<Text dimColor>Quiet. Say something.</Text>] : ch.lines.slice(-room).map(l => l.whisper
+            ? <Text italic color="remember">{l.mine ? `→ ${l.to}` : `${l.from} whispers`}: {l.body}</Text>
+            : <Text><Text bold color={l.mine ? 'suggestion' : undefined}>{l.from}</Text>: {l.body}</Text>)),
+          ...(ch.note ? [<Text color="warning">{ch.note}</Text>] : []),
+          ...(Input ? [<Input key="say" value={ch.draft} placeholder="Say something · @Name to whisper" submitLabel="send"
+            onInput={v => { void update($, chat, c => ({ ...c, draft: v })) }}
+            onSubmit={v => { void say($, v) }} />] : [<Text dimColor>Reading only on this device.</Text>]))}
       </Box>
     )
   })

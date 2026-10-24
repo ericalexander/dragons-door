@@ -23,8 +23,21 @@ export type Game = {
   at: number;
 };
 
+/** One line of chat as the pane shows it. */
+export type ChatLine = { id: number; from: string; body: string; whisper?: boolean; to?: string; mine: boolean };
+/** The room the player is in and what's been said there, polled from the realm while the pane is up. */
+export type Chat = {
+  room: string; roomName: string; here: string[]; lines: ChatLine[]; lastId: number;
+  /** Whose key the lines were fetched with: a switch of character starts over. */
+  who: string;
+  /** What went wrong with the last send or read, in a few words, or "". */
+  note: string;
+  /** What the player is typing, kept so a redraw doesn't wipe it. */
+  draft: string;
+};
+
 declare module 'claude-code' {
   interface PluginState {
-    'dragons-door': { game: Shaped<Game> }
+    'dragons-door': { game: Shaped<Game>; chat: Shaped<Chat> }
   }
 }
