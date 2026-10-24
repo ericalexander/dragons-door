@@ -60,7 +60,7 @@ const errorOf = (text: string) => { try { return (JSON.parse(text || '{}') as { 
 /** Ask the realm what's been said since the last line we have. */
 async function pollChat($: EngineInterface) {
   const g = await read($, game)
-  if (!g.isPlaying || !(await read($, chat)).isOpen) return
+  if (!g.isPlaying) return
   const cred = await credentials($)
   if (!cred) return
   const before = await read($, chat)
@@ -93,7 +93,8 @@ async function tick($: EngineInterface) {
     await saw($, 'chat')
     if ((await read($, chat)).unread > 0) { await update($, chat, x => ({ ...x, unread: 0 })); await $.ui.open({ id: CHAT_PANE, title: chatTitle(0) }) }
   }
-  await pollChat($)
+  // Fetch while the chat tab is open, as Claude Code says it is now (a remembered flag can go stale across an update).
+  if (panes.length === 0 || panes.some(p => p.id === CHAT_PANE)) await pollChat($)
 }
 
 /** Send a line: "@Name words" whispers to Name; anything else goes to the room. */

@@ -213,3 +213,23 @@ test('new lines while the chat tab is behind Status show on its title; bringing 
   expect((await ui.find({ type: 'Text', text: /Race you/ }))?.text).toBe('Pip: Race you to the gate')
   await ui.unmount()
 })
+
+test('chat keeps arriving when the mod thinks the tab is closed but it is on screen', async ($, on) => {
+  // ui.open says "not placed" (what the mod would remember after a reset), while ui.panes shows the chat tab in front.
+  on('command.register', () => ({ value: { command: 'door-pane' } }))
+  on('ui.open', () => ({ value: { isPlaced: false, reason: 'narrow' } }))
+  on('ui.panes', () => ({ value: [{ id: 'dragons-door-chat', title: 'chat', isShown: true, isFocused: false, isPlaced: true }] }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('tool.call', () => ({ result: {}, text: JSON.stringify({ game: LABEL, events: [], state, actions: [] }) }))
+  mock.store(on)
+  const clock = mock.clock(on, { now: Date.parse('2026-10-24T12:00:00Z') })
+  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/eric' : undefined }))
+  on('fs.read', () => ({ value: JSON.stringify({ api_key: 'door_test_key_1234' }) }))
+  on('http.fetch', () => ({ value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ room: 'brightwater', room_name: 'Brightwater', here: [], messages: [{ id: 3, from: 'Eric', body: 'Yawn', mine: true }], last_id: 3 }) } }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  await clock.advance(5000)
+  const ui = await $.ui.mount({ ...CHAT, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /Yawn/ }))?.text).toBe('Eric: Yawn')
+  await ui.unmount()
+})
