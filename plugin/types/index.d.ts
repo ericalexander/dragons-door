@@ -17,6 +17,8 @@ export type Game = {
   actions: string[];
   /** The map around the player, as the realm draws it: it comes with every move and status. */
   map: string[];
+  /** Places they can travel straight back to (towns and caves they've been to), nearest first. */
+  places: { name: string; x: number; y: number; kind: string }[];
   /** Who the last rankings said was in the realm now. */
   online: string[];
   /** When the state last changed, ms since the epoch. */

@@ -16,7 +16,7 @@ const CHAT_TITLE = '✉ Player chat'
 const chatTitle = (unread: number) => unread > 0 ? `${CHAT_TITLE} · ${unread} new` : CHAT_TITLE
 // Change the tag when Game's fields change: it declines what an earlier version stored.
 const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
-  { isPlaying: false, isShown: false, character: null, actions: [], map: [], online: [], at: 0 } as Game, { shape: 'game-4' })
+  { isPlaying: false, isShown: false, character: null, actions: [], map: [], places: [], online: [], at: 0 } as Game, { shape: 'game-5' })
 
 const chat = atom({ plugin: 'dragons-door', key: 'chat' } as const,
   { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '', isOpen: false, unread: 0, seen: { status: false, chat: false } } as Chat, { shape: 'chat-4' })
@@ -183,6 +183,7 @@ export const register: Register = on => {
     const events = (Array.isArray(r.events) ? r.events : []) as Ev[]
     // The realm sends the map with every move and status (surroundings), and when they look at it (map).
     const map = (events.find(x => x.kind === 'map') ?? events.find(x => x.kind === 'surroundings'))?.map
+    const places = (events.find(x => x.kind === 'surroundings') as { places?: Game['places'] } | undefined)?.places
     const ranks = events.find(x => x.kind === 'rankings')?.players
     const first = !(await read($, game)).isPlaying
     await update($, game, g => ({
@@ -191,6 +192,7 @@ export const register: Register = on => {
       character: (r.state as Character | undefined) ?? g.character,
       actions: Array.isArray(r.actions) ? (r.actions as string[]) : g.actions,
       map: Array.isArray(map) ? (map as string[]).slice(0, 15) : g.map,
+      places: Array.isArray(places) ? places.slice(0, 8) : g.places,
       online: Array.isArray(ranks) ? (ranks as { name: string; online?: boolean }[]).filter(p => p.online).map(p => p.name).slice(0, 12) : g.online,
       at: Date.now(),
     }))
@@ -215,7 +217,7 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const g = await read($, game)
     const hintStatus = !(await read($, chat)).seen.chat
     const c = g.character
@@ -258,7 +260,12 @@ export const register: Register = on => {
             // You (@) stand out in bold and the accent colour; towns (T) and caves (O) in bold.
             <Text mono>{line.split(/([@TO])/).filter(Boolean).map(part =>
               part === '@' ? <Text mono bold color="claude">@</Text> : part === 'T' || part === 'O' ? <Text mono bold>{part}</Text> : part)}</Text>
-          ))}</Box>] : []))}
+          ))}</Box>] : []),
+          // One click to go back somewhere they've been: sent as if they'd typed it, so the narrator tells the journey.
+          ...(g.places.length > 0 && c.alive && !c.in_encounter ? [<Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
+            {g.places.map(pl => <Button key={`go-${pl.x}-${pl.y}`} label={`${pl.kind === 'cave' ? 'O' : 'T'} ${pl.name}`}
+              onPress={() => { void $.prompt.submit({ text: `Travel to ${pl.name} (${pl.x}, ${pl.y})`, asUser: true }).catch(() => undefined) }} />)}
+          </Box>] : []))}
         {waiting.length > 0 && section('Waiting', ...waiting.map(t => <Text>{t}</Text>))}
         {(c.quests?.length ?? 0) > 0 && section('Quests', ...c.quests!.map(q => <Text>{q.title}{q.days_left !== undefined ? <Text dimColor> · {q.days_left} days</Text> : null}</Text>))}
         {g.online.length > 0 && section('In the realm now', <Text>{g.online.map(x => `● ${x}`).join('  ')}</Text>)}

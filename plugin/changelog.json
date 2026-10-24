@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.20.0",
+    "lore": "Someone has pinned the places you know to the edge of your map, each with a little flag. Touch one and your feet already know the way.",
+    "plain": "Under the map in the side pane, the towns and caves you've been to are buttons: click one to travel there (it's free, as travel to a known place always is). Your pane's map now marks you, towns and caves in bold."
+  },
+  {
     "version": "0.19.0",
     "lore": "The board beside you has grown a slate at the bottom, and people have started chalking on it. Whoever's in town with you can read it and answer. Lean close and you can write to one of them alone.",
     "plain": "The side pane now has live chat: talk with whoever's in the same town (or on the road with you), and @Name to whisper to one player. It's between players only; the narrator never sees it. You can chat from level 2."

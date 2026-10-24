@@ -246,3 +246,21 @@ test('on the map, you and the towns and caves are drawn bold', async ($, on) => 
   expect(marks).toEqual(['T', '@', 'O'])
   await ui.unmount()
 })
+
+test('a known place under the map is one click away: it asks the narrator to travel there, as if typed; not mid-fight', async ($, on) => {
+  const opened = { n: 0 }, prompts: { text: string; asUser?: boolean }[] = []
+  let fighting = false
+  engine(on, () => JSON.stringify({ game: LABEL, events: [{ kind: 'surroundings', map: ['T @'], places: [{ name: 'Ironhold', x: -4, y: -11, kind: 'town' }, { name: 'the Old Seam', x: 3, y: -2, kind: 'cave' }] }], state: { ...state, in_encounter: fighting }, actions: [] }), opened)
+  on('prompt.submit', (_, e) => { prompts.push({ text: e.text, asUser: (e.origin as { asUser?: boolean }).asUser }); return { text: e.text } })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'go--4--11' })
+  expect(prompts).toEqual([{ text: 'Travel to Ironhold (-4, -11)', asUser: true }])
+  await ui.unmount()
+  fighting = true
+  await $.tool.call({ tool: TOOL })
+  ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await expect(ui.press({ key: 'go--4--11' })).rejects.toBeDefined()
+  await ui.unmount()
+})

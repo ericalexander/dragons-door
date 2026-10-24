@@ -113,9 +113,19 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     // so the pane never has to ask for it. Plugins from before the pane (0.18.6) don't get it.
     if (ctx.p.role === "player" && info?.plugin && !older(info.plugin, "0.18.6") && !ctx.events.some((x) => x.kind === "map")
         && (opts.surroundings || startedAt !== `${ctx.p.pos_x},${ctx.p.pos_y},${ctx.p.cave_depth}`)) {
-      const seen = new Set([...(await exploredSet(ctx)), ...(await heardSet(ctx)).keys()]);
+      const explored = await exploredSet(ctx);
+      const seen = new Set([...explored, ...(await heardSet(ctx)).keys()]);
       const [x, y] = inWild(ctx.p) ? [ctx.p.pos_x!, ctx.p.pos_y!] : [0, 0];
-      ctx.events.push({ kind: "surroundings", for: "the side pane; don't print it", map: renderMap(x, y, seen) });
+      // Places they could travel straight back to (towns and caves they've been to), nearest first, for the pane's buttons.
+      // Home is always somewhere they know the way back to, explored or not.
+      if ((ctx.p.start_town ?? "brightwater") === "brightwater") explored.add("0,0");
+      const places = [...explored].map((k) => k.split(",").map(Number) as [number, number])
+        .map(([px, py]) => tileAt(px, py))
+        .filter((t) => (t.x === 0 && t.y === 0) || t.poi === "town" || t.poi === "cave")
+        .filter((t) => !(t.x === x && t.y === y && !ctx.p.cave_depth))
+        .sort((a, b) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y)) - Math.max(Math.abs(b.x - x), Math.abs(b.y - y)))
+        .slice(0, 8).map((t) => ({ name: t.name, x: t.x, y: t.y, kind: t.x === 0 && t.y === 0 ? "town" : t.poi }));
+      ctx.events.push({ kind: "surroundings", for: "the side pane; don't print it", map: renderMap(x, y, seen), places });
     }
     const enc = await c.query("select 1 from encounters where player_id = $1", [ctx.p.id]);
     const inEnc = enc.rowCount! > 0;
