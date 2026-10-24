@@ -90,6 +90,8 @@ const innCostSim = (p: SimPlayer) => Math.floor(GAME.innCostPerLevel * p.level *
 const shopPrice = (p: SimPlayer, price: number) => (ROMANCE ? Math.ceil(price * (1 - charmDiscount(p.charm))) : price);
 
 function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
+  // GIFT=n: a friend sends n gold every day by courier (GIFT_DAYS=d: only for the first d days).
+  if (process.env.GIFT && day <= Number(process.env.GIFT_DAYS ?? 9999)) p.gold += Number(process.env.GIFT);
   // A bard's set in the tavern (PERFORM=0 to leave it out): an average crowd, same formula as /perform.
   if (p.class === "bard" && process.env.PERFORM !== "0") {
     const ms = GAME.monsters.filter((m) => m.level === p.level);
@@ -240,6 +242,8 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
   const { PATHS, SPECIALIZE_AT } = PATHS_MOD;
   const begin = process.env.BASE === "1" ? cls : PATHS[pathOfClass(cls)].base;
   const p: SimPlayer = fresh(begin);
+  // GEAR_GIFT=n: a friend hands over a tier-n weapon and armor on day one.
+  if (process.env.GEAR_GIFT) { p.weapon_id = Number(process.env.GEAR_GIFT); p.armor_id = Number(process.env.GEAR_GIFT); }
   let deaths = 0;
   let farthest = 0; // ring reached so far
   const ores: Record<number, number> = {};

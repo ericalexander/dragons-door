@@ -17,6 +17,7 @@ import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
+import { GEAR_ABOVE_LEVEL, GIFT_MIN_LEVEL, GOLD_PER_LEVEL, ITEMS_PER_DAY, courierFee, nextDay, townName, townOfCharacter, townOfPlayer } from "./gifts.js";
 import { PATHS, SPECIALIZE_AT, SPECS, SPEC_SWITCH_DAYS, SPEC_SWITCH_PER_LEVEL, pathOfClass, specsOf, type Path, type Spec } from "./paths.js";
 import { countryOf, regionAt, rollFind } from "./bestiary.js";
 import { DIRS, LEGEND, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
@@ -113,9 +114,10 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const unreadMail = await unreadCount(ctx);
     const newsUnread = await unreadNews(ctx);
     const journal = ctx.p.role === "player" ? await questJournal(ctx) : [];
+    const giftsWaiting = ctx.p.role === "player" ? Number((await c.query<{ n: string }>("select count(*)::text as n from gifts where to_player = $1 and state = 'sent' and arrives_day <= $2", [ctx.p.id, ctx.day])).rows[0].n) : 0;
     return {
       events: ctx.events,
-      state: { ...publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))), quests: journal },
+      state: { ...publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))), quests: journal, ...(giftsWaiting ? { gifts_waiting: giftsWaiting } : {}) },
       actions: (() => {
         const a = legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive);
         // Plugins from before exploration have no way out of town: keep offering them the old forest.
@@ -2259,7 +2261,9 @@ api.post("/talk", async (c) => {
       const h = await heardOf(ctx.c, ctx.p.id, who.name, ctx.day);
       heardPieces = Math.min(h.n, pieces.length);
       const sore = mind.grudge?.name.toLowerCase() === ctx.p.name.toLowerCase();
-      if (!again && !sore && heardPieces < pieces.length && !h.today && Math.random() < PAST_CHANCE) {
+      // A recent gift warms them a little toward telling you more (never enough to buy a secret on its own).
+      const fond = (await ctx.c.query("select 1 from gifts where from_player = $1 and to_player = $2 and state = 'kept' and sent_day > $3::date - 7 limit 1", [ctx.p.id, who.id, ctx.day])).rowCount;
+      if (!again && !sore && heardPieces < pieces.length && !h.today && Math.random() < (fond ? Math.min(0.75, PAST_CHANCE + 0.2) : PAST_CHANCE)) {
         await ctx.c.query("insert into player_lore (player_id, key, day, how) values ($1, $2, $3, 'talk') on conflict do nothing", [ctx.p.id, personKey(who.name, heardPieces), ctx.day]);
         past = { piece: PIECE_NAMES[heardPieces] ?? "more", told: pieces[heardPieces], ...(heardPieces ? { you_already_know: pieces.slice(0, heardPieces) } : {}) };
         heardPieces++;
@@ -2575,22 +2579,130 @@ api.post("/drop", async (c) => {
 // ---------- mail ----------
 
 api.post("/mail", async (c) => {
-  const body = z.object({ to: z.string().trim().min(1).max(40), body: z.string().trim().min(1).max(500).transform(cleanText).pipe(z.string().min(1)) }).parse(await c.req.json());
+  const body = z.object({
+    to: z.string().trim().min(1).max(40), body: z.string().trim().min(1).max(500).transform(cleanText).pipe(z.string().min(1)),
+    // A gift by courier, optional: gold from the purse, gems, and/or one item from the bag (its bag id).
+    gold: z.number().int().min(0).max(10_000_000).optional(), gems: z.number().int().min(0).max(1000).optional(), item: z.number().int().optional(),
+    confirm: z.boolean().optional(),
+  }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     if (!seasoned(ctx, "send mail")) return;
     if (ctx.t.messages_sent >= GAME.messagesPerDay) { ctx.events.push({ kind: "mail_limit", per_day: GAME.messagesPerDay }); return; }
-    const r = await ctx.c.query<{ id: string; name: string; is_bot: boolean; role: string }>("select id, name, is_bot, role from players where lower(name) = lower($1)", [body.to]);
+    const r = await ctx.c.query<{ id: string; name: string; is_bot: boolean; role: string; is_test: boolean; pos_x: number | null; pos_y: number | null; start_town: string | null; home: string | null; level: number }>(
+      "select p.id, p.name, p.is_bot, p.role, p.is_test, p.pos_x, p.pos_y, p.start_town, b.home, p.level from players p left join bots b on b.player_id = p.id where lower(p.name) = lower($1)", [body.to]);
     if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.to }); return; }
     const to = r.rows[0];
     if (to.id === ctx.p.id) { ctx.events.push({ kind: "mail_self" }); return; }
     // Nobody's mailbag takes more than this many letters a day, however many senders there are.
     const inbound = await ctx.c.query<{ n: string }>("select count(*)::text as n from messages where to_player = $1 and created_at > now() - interval '1 day'", [to.id]);
     if (Number(inbound.rows[0].n) >= GAME.messagesPerDay) { ctx.events.push({ kind: "mailbag_full", to: to.name }); return; }
+
+    const gold = body.gold ?? 0, gems = body.gems ?? 0;
+    const hasGift = gold > 0 || gems > 0 || body.item !== undefined;
+    let gift: { gold: number; gems: number; slot: string | null; item_id: number | null; rarity: number; item_name: string | null; fee: number; worth: number; between: boolean; from_town: TownId; to_town: TownId } | null = null;
+    if (hasGift) {
+      requireAlive(ctx);
+      await requireNoEncounter(ctx);
+      // The courier works from a town, any town.
+      const fromTown = requireTown(ctx, "the courier", ["brightwater", "ironhold"]) as TownId;
+      if (ctx.p.level < GIFT_MIN_LEVEL) { ctx.events.push({ kind: "too_new", what: "send gifts", needed_level: GIFT_MIN_LEVEL }); return; }
+      if (to.role === "player" && to.is_test !== ctx.p.is_test) { ctx.events.push({ kind: "gift_refused", reason: "test characters and real ones can't send each other gifts" }); return; }
+      const sentToday = (await ctx.c.query<{ gold: string; items: string }>(
+        "select coalesce(sum(gold), 0)::text as gold, count(*) filter (where slot is not null)::text as items from gifts where from_player = $1 and sent_day = $2 and not returned", [ctx.p.id, ctx.day])).rows[0];
+      const goldCap = GOLD_PER_LEVEL * ctx.p.level, goldLeft = Math.max(0, goldCap - Number(sentToday.gold));
+      if (gold > goldLeft) { ctx.events.push({ kind: "gift_limit", what: "gold", per_day: goldCap, left_today: goldLeft }); return; }
+      if (body.item !== undefined && Number(sentToday.items) >= ITEMS_PER_DAY) { ctx.events.push({ kind: "gift_limit", what: "items", per_day: ITEMS_PER_DAY, left_today: 0 }); return; }
+      if (gems > ctx.p.gems) { ctx.events.push({ kind: "not_enough_gems", gems: ctx.p.gems }); return; }
+      let slot: string | null = null, itemId: number | null = null, rar = 0, itemName: string | null = null, itemWorth = 0;
+      if (body.item !== undefined) {
+        const row = await ownRow(ctx, body.item);
+        if (row.slot === "quest") { ctx.events.push({ kind: "gift_refused", reason: "that's not yours to send" }); return; }
+        // Gear far beyond someone would carry them past the early climb (top-tier gear on day one halves it, in the simulator).
+        if ((row.slot === "weapon" || row.slot === "armor") && to.role === "player" && row.item_id > to.level + GEAR_ABOVE_LEVEL) {
+          ctx.events.push({ kind: "gift_refused", reason: "too fine for them yet", their_level: to.level, finest_you_can_send: to.level + GEAR_ABOVE_LEVEL }); return;
+        }
+        slot = row.slot; itemId = row.item_id; rar = row.rarity ?? 0; itemName = Bag.item(row.slot, row.item_id, rar).name; itemWorth = Bag.item(row.slot, row.item_id, rar).cost;
+      }
+      const toTown = to.role === "npc" ? townOfCharacter(to.name) : townOfPlayer(to, to.home);
+      const worth = gold + gems * GEM_SELL * 2 + itemWorth;
+      const between = toTown !== fromTown;
+      gift = { gold, gems, slot, item_id: itemId, rarity: rar, item_name: itemName, fee: courierFee(worth, between), worth, between, from_town: fromTown, to_town: toTown };
+      // Without confirm, the courier names the price and nothing moves. Townsfolk go straight through.
+      if (!body.confirm && !ctx.p.is_bot) {
+        ctx.events.push({ kind: "gift_quote", to: to.name, gold, gems, item: itemName, fee: gift.fee, total_gold: gold + gift.fee, purse: ctx.p.gold,
+          ...(ctx.p.gold < gold + gift.fee ? { short_by: gold + gift.fee - ctx.p.gold } : {}), between_towns: between, to_town: townName(toTown), arrives: "next dawn", gold_left_today: goldLeft });
+        return;
+      }
+      if (ctx.p.gold < gold + gift.fee) { ctx.events.push({ kind: "too_poor", cost: gold + gift.fee, gold: ctx.p.gold }); return; }
+    }
+
     await saveTurns(ctx, { messages_sent: ctx.t.messages_sent + 1 });
-    // If they've muted you, it looks sent from your side but never arrives.
+    // If they've muted you, it looks sent from your side but never arrives (a gift comes back at dawn).
     const muted = await ctx.c.query("select 1 from mutes where player_id = $1 and muted_id = $2", [to.id, ctx.p.id]);
-    if (!muted.rowCount) await ctx.c.query("insert into messages (from_player, to_player, body) values ($1,$2,$3)", [ctx.p.id, to.id, body.body]);
-    ctx.events.push({ kind: "mail_sent", to: to.name, townsfolk: to.role === "townsfolk", character: to.role === "npc", sent_left: GAME.messagesPerDay - ctx.t.messages_sent });
+    const msg = muted.rowCount ? null : (await ctx.c.query<{ id: string }>("insert into messages (from_player, to_player, body) values ($1,$2,$3) returning id", [ctx.p.id, to.id, body.body])).rows[0];
+    if (gift) {
+      await savePlayer(ctx, { gold: ctx.p.gold - gift.gold - gift.fee, gems: ctx.p.gems - gift.gems });
+      if (body.item !== undefined) await ctx.c.query("delete from inventory where id = $1 and player_id = $2", [body.item, ctx.p.id]);
+      const arrives = nextDay(ctx.day);
+      await ctx.c.query(
+        `insert into gifts (message_id, from_player, to_player, gold, gems, slot, item_id, rarity, fee, sent_day, arrives_day, returned)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        muted.rowCount
+          ? [null, to.id, ctx.p.id, gift.gold, gift.gems, gift.slot, gift.item_id, gift.rarity, gift.fee, ctx.day, arrives, true]
+          : [msg!.id, ctx.p.id, to.id, gift.gold, gift.gems, gift.slot, gift.item_id, gift.rarity, gift.fee, ctx.day, arrives, false]);
+      await logEvent(ctx, "gift", { to: to.name, role: to.role, gold: gift.gold, gems: gift.gems, item: gift.item_name, fee: gift.fee, worth: gift.worth });
+      // A gift to someone you're courting warms things a little (once a day).
+      if (SUITORS.some((x) => x.name === to.name) && !(await ctx.c.query("select 1 from gifts g join players t on t.id = g.to_player where g.from_player = $1 and g.sent_day = $2 and t.name = any($3::text[]) and g.message_id is distinct from $4", [ctx.p.id, ctx.day, SUITORS.map((x) => x.name), msg?.id ?? null])).rowCount) {
+        await savePlayer(ctx, { charm: ctx.p.charm + 1 });
+      }
+    }
+    ctx.events.push({ kind: "mail_sent", to: to.name, townsfolk: to.role === "townsfolk", character: to.role === "npc", sent_left: GAME.messagesPerDay - ctx.t.messages_sent,
+      ...(gift ? { gift: { gold: gift.gold, gems: gift.gems, item: gift.item_name, fee: gift.fee, arrives: "next dawn", to_town: townName(gift.to_town) } } : {}) });
+  }));
+});
+
+/** What's waiting for this player from the courier, and what they've sent that's still on the road. */
+async function giftsFor(ctx: Ctx) {
+  const rows = (await ctx.c.query<{ id: string; dir: string; other: string | null; gold: number; gems: number; slot: string | null; item_id: number | null; rarity: number; arrives_day: string; returned: boolean }>(
+    `select g.id::text, case when g.to_player = $1 then 'in' else 'out' end as dir,
+            case when g.to_player = $1 then f.name else t.name end as other,
+            g.gold, g.gems, g.slot, g.item_id, g.rarity, g.arrives_day::text, g.returned
+     from gifts g left join players f on f.id = g.from_player join players t on t.id = g.to_player
+     where g.state = 'sent' and (g.to_player = $1 or (g.from_player = $1 and not g.returned))
+     order by g.id`, [ctx.p.id])).rows;
+  const what = (g: typeof rows[number]) => ({ gold: g.gold, gems: g.gems, item: g.slot && g.item_id !== null ? Bag.item(g.slot as Bag.Slot, g.item_id, g.rarity).name : null });
+  return {
+    waiting: rows.filter((g) => g.dir === "in" && g.arrives_day <= ctx.day).map((g) => ({ id: Number(g.id), from: g.returned ? "returned to you, unclaimed" : g.other, ...what(g) })),
+    on_the_road_to_you: rows.filter((g) => g.dir === "in" && g.arrives_day > ctx.day).length,
+    sent: rows.filter((g) => g.dir === "out").map((g) => ({ to: g.other, ...what(g), arrives: g.arrives_day > ctx.day ? "next dawn" : "waiting for them to collect" })),
+  };
+}
+
+/** Collect what the courier brought: one gift by id, or everything waiting. Items need room in the bag. */
+api.post("/mail/collect", async (c) => {
+  const body = z.object({ id: z.number().int().optional() }).parse(await c.req.json().catch(() => ({})));
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    const rows = (await ctx.c.query<{ id: string; gold: number; gems: number; slot: string | null; item_id: number | null; rarity: number; from_name: string | null; returned: boolean }>(
+      `select g.id::text, g.gold, g.gems, g.slot, g.item_id, g.rarity, f.name as from_name, g.returned from gifts g left join players f on f.id = g.from_player
+       where g.to_player = $1 and g.state = 'sent' and g.arrives_day <= $2 and ($3::bigint is null or g.id = $3) order by g.id for update of g`, [ctx.p.id, ctx.day, body.id ?? null])).rows;
+    if (!rows.length) { ctx.events.push({ kind: "nothing_to_collect" }); return; }
+    const cap = Bag.bag(ctx.p.bag_id).capacity;
+    let used = await Bag.used(ctx.c, ctx.p.id), gold = 0, gems = 0;
+    const got: Record<string, unknown>[] = [], left: Record<string, unknown>[] = [];
+    for (const g of rows) {
+      let itemName: string | null = null;
+      if (g.slot && g.item_id !== null) {
+        const it = Bag.item(g.slot as Bag.Slot, g.item_id, g.rarity);
+        if (used + it.weight > cap) { left.push({ id: Number(g.id), item: it.name, reason: "bag_full", weight: it.weight }); continue; }
+        await ctx.c.query("insert into inventory (player_id, slot, item_id, rarity) values ($1,$2,$3,$4)", [ctx.p.id, g.slot, g.item_id, g.rarity]);
+        used += it.weight; itemName = it.name;
+      }
+      gold += g.gold; gems += g.gems;
+      await ctx.c.query("update gifts set state = 'collected', settled_at = now() where id = $1", [g.id]);
+      got.push({ from: g.returned ? "your own gift, back unclaimed" : g.from_name, gold: g.gold, gems: g.gems, item: itemName });
+    }
+    if (gold || gems) await savePlayer(ctx, { gold: ctx.p.gold + gold, gems: ctx.p.gems + gems });
+    ctx.events.push({ kind: "collected", gifts: got, gold, gems, ...(left.length ? { left_waiting: left } : {}), bag_used: used, bag_capacity: cap });
   }));
 });
 
@@ -2611,8 +2723,10 @@ api.get("/mail", async (c) => c.json(await withPlayer(c.req.header("authorizatio
      where (m.to_player = $1 or m.from_player = $1) and not (m.id = any($2::bigint[]))
      order by m.id desc limit 20`, [ctx.p.id, unread.rows.map((x) => x.id)]);
   const muted = await ctx.c.query<{ name: string }>("select p.name from mutes m join players p on p.id = m.muted_id where m.player_id = $1 order by p.name", [ctx.p.id]);
+  const gifts = await giftsFor(ctx);
   ctx.events.push({
     kind: "mail_inbox",
+    ...(gifts.waiting.length || gifts.sent.length || gifts.on_the_road_to_you ? { gifts } : {}),
     unread: unread.rows.sort((a, b) => Number(a.id) - Number(b.id)).map((x) => ({ from: x.from_name, body: x.body, sent_at: x.created_at })),
     history: r.rows.reverse(),
     still_unread: Number(still.rows[0].n),

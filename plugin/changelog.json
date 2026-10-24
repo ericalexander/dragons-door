@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.17.0",
+    "lore": "Brightwater has a courier now, a thin woman with a donkey and opinions, and Ironhold's mule-drivers will carry for the right price. Gold, gems or something from your pack can go with a letter, to a friend or to anyone in town. It arrives at dawn. The townsfolk have noticed, and some of them write back very warmly indeed.",
+    "plain": "From level 3 you can send gold, gems or an item with a letter (send_mail, from any town). It arrives the next morning; collect yours from the mail. Townsfolk and characters thank you, and gold you send them counts toward what they're saving for."
+  },
+  {
     "version": "0.16.9",
     "lore": "The smiths of Dragon's Door have been arguing about names again, and this time they won: your gear answers to the forge that made it now, and the forest's small fry have names that fit them. And Mother Quill, turning the oldest pages she has, says the thing behind the Door was never called red. The Lantern Kings had another name for it. Vael the Watchful.",
     "plain": "Weapons from the Quarryman's Axe up and armor from Blackened Mail up have new names (same stats), a few early monsters are renamed, and the dragon is now Vael the Watchful. Nothing you own changes."
