@@ -40,16 +40,23 @@ const RESULT_NOTE = "The Dragon's Door side pane is showing the player's numbers
 const OURS = /^mcp__plugin_dragons-door_/
 
 /** Ask the realm for the map where the player stands, through the plugin's own MCP server. */
-async function refreshMap($: EngineInterface, at: string) {
-  try {
-    const server = await $.mcp.connect('dragons-door')
-    if (!server.isConnected) return
-    const res = await $.mcp.call(server.server, 'map', {})
-    const block = res.content?.find((b: { type: string }) => b.type === 'text') as { text?: string } | undefined
-    const r = parse(block?.text)
-    const m = (Array.isArray(r?.events) ? (r!.events as Ev[]) : []).find(x => x.kind === 'map')?.map
-    if (Array.isArray(m)) await update($, game, g => ({ ...g, map: (m as string[]).slice(0, 15), mapAt: at }))
-  } catch { /* the map can wait for the next move */ }
+async function refreshMap($: EngineInterface, at: string, server: string) {
+  // The server's name as the tool call spelled it (plugin_dragons-door_dragons-door), which $.mcp.call takes;
+  // failing that, whatever the session runs this plugin's server under.
+  const names = [server, 'plugin:dragons-door:dragons-door']
+  try { const c = await $.mcp.connect('dragons-door'); if (c.isConnected && !names.includes(c.server)) names.push(c.server) } catch { /* use the first */ }
+  for (const name of names) {
+    try {
+      const res = await $.mcp.call(name, 'map', {})
+      const block = res.content?.find((b: { type: string }) => b.type === 'text') as { text?: string } | undefined
+      const r = parse(block?.text)
+      const m = (Array.isArray(r?.events) ? (r!.events as Ev[]) : []).find(x => x.kind === 'map')?.map
+      if (Array.isArray(m)) { await update($, game, g => ({ ...g, map: (m as string[]).slice(0, 15), mapAt: at })); return }
+      $.ui.log(`dragons-door pane: map from ${name} had no map (${(block?.text ?? '').slice(0, 120)})`, { to: 'debug' })
+    } catch (err) {
+      $.ui.log(`dragons-door pane: map from ${name} failed: ${(err as Error)?.message ?? err}`, { to: 'debug' })
+    }
+  }
 }
 
 /** Open the pane, and remember whether a surface is drawing it. */
@@ -92,7 +99,7 @@ export const register: Register = on => {
     // Moved? Fetch the map around them (a read, straight from the plugin's own server; the narrator never sees it).
     const here = (r.state as Character | undefined)?.place
     const at = here ? `${here.x},${here.y}` : 'town'
-    if (r.state && !Array.isArray(map) && at !== (await read($, game)).mapAt) await refreshMap($, at)
+    if (r.state && !Array.isArray(map) && at !== (await read($, game)).mapAt) await refreshMap($, at, e.tool.replace(/^mcp__/, '').replace(/__[^_].*$/, ''))
     else if (Array.isArray(map)) await update($, game, g => ({ ...g, mapAt: at }))
     // Right beside the result, where the narrator reads it, not just in the system prompt: the pane has the numbers.
     if (ran.deny === undefined && (await read($, game)).isShown) return { ...ran, context: [...(ran.context ?? []), RESULT_NOTE] }

@@ -108,6 +108,7 @@ test('after a move the pane fetches the map itself, once per place', async ($, o
   on('mcp.call', (_, e) => {
     maps.n++
     expect(e.tool).toBe('map')
+    expect(e.server).toBe('plugin_dragons-door_dragons-door')
     return { value: { content: [{ type: 'text', text: JSON.stringify({ game: LABEL, events: [{ kind: 'map', map: [`row ${maps.n}`, '  @'] }] }) }], isError: false } }
   })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
