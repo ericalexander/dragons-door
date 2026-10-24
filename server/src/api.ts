@@ -21,7 +21,7 @@ import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk
 import { GEAR_ABOVE_LEVEL, GIFT_MIN_LEVEL, GOLD_PER_LEVEL, ITEMS_PER_DAY, courierFee, nextDay, townName, townOfCharacter, townOfPlayer } from "./gifts.js";
 import { PATHS, SPECIALIZE_AT, SPECS, SPEC_SWITCH_DAYS, SPEC_SWITCH_PER_LEVEL, pathOfClass, specsOf, type Path, type Spec } from "./paths.js";
 import { countryOf, regionAt, rollFind } from "./bestiary.js";
-import { DIRS, LEGEND, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
+import { DIRS, LEGEND, placeAt, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
@@ -123,7 +123,7 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
       if ((ctx.p.start_town ?? "brightwater") === "brightwater") explored.add("0,0");
       const places = [...explored].map((k) => k.split(",").map(Number) as [number, number])
         .map(([px, py]) => tileAt(px, py))
-        .filter((t) => (t.x === 0 && t.y === 0) || t.poi === "town" || t.poi === "cave")
+        .filter((t) => (t.x === 0 && t.y === 0) || t.poi === "town" || t.poi === "cave" || t.poi === "shrine")
         .filter((t) => !(t.x === x && t.y === y && !ctx.p.cave_depth))
         .sort((a, b) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y)) - Math.max(Math.abs(b.x - x), Math.abs(b.y - y)))
         .slice(0, 8).map((t) => ({ name: t.name, x: t.x, y: t.y, kind: t.x === 0 && t.y === 0 ? "town" : t.poi }));
@@ -810,7 +810,9 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
   switch (n.kind) {
     case "joins": return String(n.detail.line);
     case "gate_won": return `${n.actor} fought past ${n.detail.monster} on the road and walked into ${n.detail.place}.`;
-    case "discovery": return n.detail.poi === "town" ? `${n.actor} made it to ${n.detail.place}, the hillfort few in Brightwater have ever seen, past Old Grudge on the road below the walls.` : `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;
+    case "discovery": return n.detail.poi === "town"
+      ? (n.detail.place === "Ashford" ? `${n.actor} made it to Ashford, down the south road, past Nan Silt at the ford.` : `${n.actor} made it to ${n.detail.place}, the hillfort few in Brightwater have ever seen, past Old Grudge on the road below the walls.`)
+      : `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : n.detail.poi === "shrine" ? ", the old shrine up in the hills" : ""}.`;
     case "join": return `${n.actor} has entered the realm.`;
     case "meeting_called": return `${n.detail.where ?? "The town"} meets on a question: ${n.detail.question} Every voice counts until ${n.detail.closes_on ?? "the meeting closes"}.`;
     case "meeting_result": return `${n.detail.town ? (n.detail.town === "brightwater" ? "Brightwater" : n.detail.town === "ironhold" ? "Ironhold" : "Ashford") : "The realm"} has decided: ${n.detail.winner}. (${n.detail.question})${n.detail.tie_broken_by_town ? " The adventurers were split; the townsfolk settled it." : ""}`;
@@ -1509,6 +1511,7 @@ api.post("/move", async (c) => {
       ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
     await questTriggers(ctx, { arrive: { x, y } });
     if (t.poi === "town") { await arriveInTown(ctx, t); return; }
+    if (t.poi === "shrine") await atShrine(ctx, t);
     if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, x, y);
     if (!ctx.events.some((e) => e.kind === "quest" || e.kind === "wild_event")) await maybeJournal(ctx, "wild", t.ring);
   }));
@@ -1557,6 +1560,7 @@ api.post("/travel", async (c) => {
     ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true, distance, ...(others.length ? { others_here: others } : {}) });
     await questTriggers(ctx, { arrive: { x: body.x, y: body.y } });
     if (t.poi === "town") { await arriveInTown(ctx, t); return; }
+    if (t.poi === "shrine") await atShrine(ctx, t);
     if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, body.x, body.y, Math.min(ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP * distance), true);
   }));
 });
@@ -2196,6 +2200,19 @@ async function startGateFight(ctx: Ctx, town: TownId) {
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'gate',$2)", [ctx.p.id, m]);
   ctx.events.push({ kind: "gate_ambush", monster: m, town: town === "brightwater" ? "Brightwater" : TOWN_TILES[town as keyof typeof TOWN_TILES].name, note: GATE_LINES[town]!.note, scene: GATE_LINES[town]!.scene });
   ctx.hint = GATE_LINES[town]!.hint;
+}
+
+/** A hand-placed place out in the wild (the hill shrine): what it is, and what the town decided it should be, or that it's still deciding. */
+async function atShrine(ctx: Ctx, t: Tile) {
+  const p = placeAt(t.x, t.y);
+  if (!p) return;
+  let decided: string | null = null, deciding: { question: string; last_day: string } | null = null;
+  if (p.meeting) {
+    const m = (await ctx.c.query<Poll>("select id::int, question, options, closes::text, status, result from polls where id = $1", [p.meeting])).rows[0];
+    if (m?.status === "closed" && m.result) decided = m.options.find((o) => o.id === m.result!.winner)?.label ?? null;
+    else if (m) deciding = { question: m.question, last_day: m.closes };
+  }
+  ctx.events.push({ kind: "shrine", name: p.name, about: p.about ?? "", ...(decided ? { the_town_decided: decided } : {}), ...(deciding ? { the_town_is_deciding: deciding } : {}) });
 }
 
 /** Any town meeting open here: the question, its choices, whether this player has voted, and how many players have. Votes stay secret until it closes. */

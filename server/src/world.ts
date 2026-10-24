@@ -17,7 +17,7 @@ export interface Tile {
   /** Roughly the level of what lives there. */
   level: number;
   name: string;
-  poi: "cave" | "town" | null;
+  poi: "cave" | "town" | "shrine" | null;
 }
 
 export const DIRS = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] } as const;
@@ -95,10 +95,18 @@ export const OLD_WORKINGS = (() => {
   return { x, y, name: "the Old Silver Workings" };
 })();
 
+/** Places set down by hand (a shrine, a ruin), kept in the private lore with their tiles: loadLore hands them over. */
+export interface Place { key: string; x: number; y: number; name: string; poi: "shrine"; about?: string; meeting?: number }
+let PLACES = new Map<string, Place>();
+export function setPlaces(list: Place[]) { PLACES = new Map(list.map((p) => [`${p.x},${p.y}`, p])); }
+export const placeAt = (x: number, y: number) => PLACES.get(`${x},${y}`) ?? null;
+
 export function tileAt(x: number, y: number): Tile {
   const ring = ringOf(x, y);
   if (ring === 0) return { x, y, terrain: "town", ring, level: 0, name: "Brightwater", poi: null };
   for (const t of Object.values(TOWN_TILES)) if (t.x === x && t.y === y) return { x, y, terrain: "town", ring, level: ring, name: t.name, poi: "town" };
+  const placed = PLACES.get(`${x},${y}`);
+  if (placed) { const saved = PLACES; PLACES = new Map(); try { const under = tileAt(x, y); return { ...under, name: placed.name, poi: placed.poi }; } finally { PLACES = saved; } }
   if (x === OLD_WORKINGS.x && y === OLD_WORKINGS.y) return { x, y, terrain: "hills", ring, level: ring + LEVEL_MOD.hills, name: OLD_WORKINGS.name, poi: "cave" };
   // Land rises with distance; noise makes it uneven so it never reads as neat circles.
   const height = 0.55 * noise(x, y, 5, "elev") + 0.45 * noise(x, y, 2, "rough");
@@ -127,8 +135,8 @@ export function tileAt(x: number, y: number): Tile {
   return { x, y, terrain, ring, level, name, poi };
 }
 
-export const SYMBOL: Record<Terrain | "cave" | "you", string> = { town: "T", meadow: ".", forest: "%", marsh: "~", hills: "n", crags: "^", cave: "O", you: "@" };
-export const LEGEND = "@ you  T town  . meadow  % forest  ~ marsh  n hills  ^ crags  O cave  ? unexplored";
+export const SYMBOL: Record<Terrain | "cave" | "shrine" | "you", string> = { shrine: "+", town: "T", meadow: ".", forest: "%", marsh: "~", hills: "n", crags: "^", cave: "O", you: "@" };
+export const LEGEND = "@ you  T town  . meadow  % forest  ~ marsh  n hills  ^ crags  O cave  + shrine  ? unexplored";
 
 /** An ASCII map around (cx, cy): explored tiles drawn, their unexplored neighbours as '?', the rest blank. */
 export function renderMap(cx: number, cy: number, explored: Set<string>, radius = 4): string[] {
@@ -139,7 +147,7 @@ export function renderMap(cx: number, cy: number, explored: Set<string>, radius 
     for (let x = cx - radius; x <= cx + radius; x++) {
       if (x === cx && y === cy) { line += SYMBOL.you; continue; }
       if (x === 0 && y === 0) { line += SYMBOL.town; continue; }
-      if (explored.has(key(x, y))) { const t = tileAt(x, y); line += t.poi === "cave" ? SYMBOL.cave : SYMBOL[t.terrain]; continue; }
+      if (explored.has(key(x, y))) { const t = tileAt(x, y); line += t.poi === "cave" ? SYMBOL.cave : t.poi === "shrine" ? SYMBOL.shrine : SYMBOL[t.terrain]; continue; }
       const near = Object.values(DIRS).some(([dx, dy]) => explored.has(key(x + dx, y + dy)) || (x + dx === 0 && y + dy === 0));
       line += near ? "?" : " ";
     }
