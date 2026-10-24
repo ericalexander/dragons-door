@@ -34,6 +34,8 @@ const n = (v: number) => v.toLocaleString('en-US')
 
 const PANE_NOTE = "Dragon's Door: the player can see a side pane with their character, HP, mana or specials, gold, turns, place, map, what's waiting and what they can do, drawn from the game's own state. While it's showing, leave the status line out of your replies (the menu of hotkeys stays). Everything else in the narrator's rules still holds."
 
+const RESULT_NOTE = "The Dragon's Door side pane is showing the player's numbers right now. Don't print the status line in this reply; give the menu only."
+
 /** Open the pane, and remember whether a surface is drawing it. */
 async function show($: EngineInterface) {
   const r = await $.ui.open({ id: PANE, title: TITLE })
@@ -71,6 +73,8 @@ export const register: Register = on => {
       at: Date.now(),
     }))
     if (first) await show($)
+    // Right beside the result, where the narrator reads it, not just in the system prompt: the pane has the numbers.
+    if (ran.deny === undefined && (await read($, game)).isShown) return { ...ran, context: [...(ran.context ?? []), RESULT_NOTE] }
     return ran
   }).catch(($, e, next) => next(e)) // the pane only watches: if drawing fails, the game call goes on as it was
 

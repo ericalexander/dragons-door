@@ -87,3 +87,15 @@ test('while the pane is up the narrator is told to leave the status line out, an
   const during = await $.prompt.compose(COMPOSE)
   expect(during.sections.some(s => s.id === 'dragons-door:pane')).toBe(true)
 })
+
+test('each game result tells the narrator the pane has the numbers, once the pane is up', async ($, on) => {
+  const opened = { n: 0 }
+  let reply = JSON.stringify({ game: LABEL, events: [], state, actions: [] })
+  engine(on, () => reply, opened)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const r = await $.tool.call({ tool: TOOL })
+  reply = 'total 0'
+  expect('context' in r && r.context?.some(t => t.includes('side pane'))).toBe(true)
+  const other = await $.tool.call({ tool: 'Bash', command: 'ls' })
+  expect('context' in other && other.context?.some(t => t.includes('side pane'))).toBeFalsy()
+})
