@@ -239,7 +239,7 @@ export const register: Register = on => {
     const where = c.place ? `${c.place.name}${c.cave_depth ? `, ${c.cave_depth} down` : ''}` : 'Brightwater'
     const ground = c.place ? `${c.place.terrain}, level ${c.place.level}` : 'in town'
     return (
-      <Box flexDirection="column" paddingX={1}>
+      <Box flexDirection="column" paddingX={1} paddingTop={1}>
         {hintStatus && <Text dimColor>Tabs: ⚔ Status | ✉ Player chat · click one, or ctrl+x tab</Text>}
         <Text bold color="claude">{c.name}</Text>
         <Text dimColor>{c.class}, level {c.level}{c.path ? ` · ${c.path}` : ''}</Text>
@@ -274,7 +274,7 @@ export const register: Register = on => {
     const room = Math.max(4, (e.props?.scroll?.bodyRows ?? 24) - 6)
     if (!g.isPlaying) return <Box paddingX={1}><Text dimColor>Enter the realm to chat with whoever's there.</Text></Box>
     return (
-      <Box flexDirection="column" paddingX={1}>
+      <Box flexDirection="column" paddingX={1} paddingTop={1}>
         {hintChat && <Text dimColor>Tabs: ⚔ Status | ✉ Player chat · click one, or ctrl+x tab</Text>}
         <Text bold color="claude">{ch.roomName || 'Player chat'}</Text>
         <Text dimColor>{ch.here.length ? `here: ${ch.here.slice(0, 12).join(', ')}${ch.here.length > 12 ? ` +${ch.here.length - 12}` : ''}` : 'Nobody else here right now.'}</Text>
