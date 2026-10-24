@@ -85,6 +85,12 @@
   .key { font-size: 13px; color: var(--ink-faint); margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
   .key .sw { display: inline-block; width: 12px; height: 12px; background: var(--wax); vertical-align: -1px; margin-right: 2px; }
   .key .sw.f { opacity: .35; }
+  .exits { margin-top: 22px; display: grid; gap: 14px; }
+  .exits-h { font-family: var(--mono, monospace); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); border-top: 1px solid var(--ink); padding-top: 8px; }
+  .exit { margin: 0; padding: 0 0 0 14px; border-left: 3px solid var(--rule); }
+  .exit p { margin: 0; font-style: italic; }
+  .exit footer { font-size: 14px; color: var(--ink-faint); margin-top: 4px; }
+  .exit footer b { color: var(--ink); font-style: normal; }
   .said { margin: 10px 0 0; padding: 0; list-style: none; }
   .said li { margin: 6px 0; font-style: italic; }
   .said li b { font-style: normal; }
@@ -160,7 +166,10 @@
     box.innerHTML = d.meetings.map((m) => {
       const closed = m.status === "closed", r = m.result || {};
       const where = m.town ? TOWN[m.town] || m.town : "The whole realm";
-      const said = m.townsfolk_said.length ? `<ul class="said">${m.townsfolk_said.slice(0, 6).map((s) => `<li><b>${esc(s.name)}:</b> “${esc(s.said)}”</li>`).join("")}</ul>` : "";
+      const exits = m.exit_polls || [];
+      const said = exits.length
+        ? `<div class="exits"><div class="exits-h">Exit polls</div>${exits.map((x) => `<blockquote class="exit"><p>“${esc(x.said)}”</p><footer><b>${esc(x.name)}</b> · voted ${esc(x.choice)}</footer></blockquote>`).join("")}</div>`
+        : m.townsfolk_said.length ? `<ul class="said">${m.townsfolk_said.slice(0, 6).map((s) => `<li><b>${esc(s.name)}:</b> “${esc(s.said)}”</li>`).join("")}</ul>` : "";
       return `<section class="day"><div class="status">${esc(where)} · ${closed ? "decided" : `open until the end of ${esc(fmt(m.last_day))}`} </div>${m.art && ART[m.art] ? `<figure class="art" aria-hidden="true">${ART[m.art]}</figure>` : ""}<h2>${esc(m.question)}</h2><div class="entry">${m.about ? `<p>${esc(m.about)}</p>` : ""}${results(m)}${said}</div></section>`;
     }).join("");
   }).catch(() => { document.getElementById("meetings").innerHTML = '<p class="quiet">The meetings aren\'t answering right now. They\'ll be back.</p>'; });

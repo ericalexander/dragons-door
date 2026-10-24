@@ -1310,8 +1310,8 @@ api.post("/vote", async (c) => {
 /** Town meetings for the website: open ones (question, choices, how many have voted) and settled ones with their results. */
 api.get("/public/polls", async (c) => {
   const out = await tx(async (db) => {
-    const rows = (await db.query<Poll & { voters: string; art: string | null }>(
-      `select p.id::int, p.town, p.question, p.about, p.options, p.opens::text, p.closes::text, p.status, p.result, p.art,
+    const rows = (await db.query<Poll & { voters: string; art: string | null; interviews: Record<string, { name: string; said: string }> }>(
+      `select p.id::int, p.town, p.question, p.about, p.options, p.opens::text, p.closes::text, p.status, p.result, p.art, p.interviews,
               (select count(*) from poll_votes v where v.poll_id = p.id and not v.townsfolk)::text as voters
        from polls p order by p.status = 'open' desc, p.closes desc limit 30`)).rows;
     // Who could vote: adventurers from level 2 (anywhere; they can walk to the meeting), and the townsfolk of that town.
@@ -1328,6 +1328,7 @@ api.get("/public/polls", async (c) => {
       // Running count, shown live like an election night: adventurers decide, townsfolk break a tie.
       tally: p.status === "closed" && p.result ? p.result : tally(p, counts.filter((v) => Number(v.poll_id) === p.id).flatMap((v) => Array(Number(v.n)).fill({ choice: v.choice, townsfolk: v.townsfolk }))),
       townsfolk_voted: Number(folkVoted.find((f) => Number(f.poll_id) === p.id)?.n ?? 0), townsfolk: folkFor(p.town), ...(p.status === "closed" ? { result: p.result } : {}),
+      exit_polls: p.options.filter((o) => p.interviews?.[o.id]).map((o) => ({ choice: o.label, name: p.interviews[o.id].name, said: p.interviews[o.id].said })),
       townsfolk_said: said.filter((x) => Number(x.poll_id) === p.id).map((x) => ({ name: x.name, said: x.why })),
     }));
   });

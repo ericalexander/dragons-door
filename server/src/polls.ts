@@ -7,6 +7,8 @@
 import type { PoolClient } from "pg";
 import type { Personality } from "./schedule.js";
 import type { TownId } from "./world.js";
+import { TOWNSFOLK } from "./letters.js";
+import { plain, write } from "./llm.js";
 
 export type Appeal = "careful" | "bold" | "faith" | "profit" | "kin" | "curiosity" | "order" | "mercy";
 export interface PollOption { id: string; label: string; appeals?: Appeal[]; line?: string }
@@ -113,6 +115,28 @@ export async function settlePolls(c: PoolClient, day: string): Promise<string[]>
       await c.query("insert into tavern (day, author, body, town) values ($1, $2, $3, $4)", [day, f.name, v.why.slice(0, 280), f.home]);
       log.push(`${f.name} voted ${v.choice} in meeting ${p.id}`);
     }
+    log.push(...await exitPolls(c, p));
+  }
+  return log;
+}
+
+const INTERVIEW = `You write one exit-poll interview for a town meeting in Dragon's Door, a fantasy village text game. A townsperson has just voted and stops for a word on their way out of the square. Write only what they say: two or three short sentences, first person, in their own voice, saying how they voted and why. Plain words, no stage directions, no quotation marks, no names of other real players. Stay inside the fiction. Never reveal anyone's secrets or invent history; their reason comes from the facts given.`;
+
+/** One interview per choice: the first townsperson who voted for it, in their own voice. Written once; a plain line stands in if the writer is away. */
+async function exitPolls(c: PoolClient, p: Poll): Promise<string[]> {
+  const done = ((await c.query<{ interviews: Record<string, unknown> }>("select interviews from polls where id = $1", [p.id])).rows[0]?.interviews ?? {}) as Record<string, unknown>;
+  const log: string[] = [];
+  for (const o of p.options) {
+    if (done[o.id]) continue;
+    const v = (await c.query<{ name: string; personality: Personality; why: string | null }>(
+      `select pl.name, b.personality, v.why from poll_votes v join players pl on pl.id = v.player_id join bots b on b.player_id = pl.id
+       where v.poll_id = $1 and v.choice = $2 and v.townsfolk order by v.day, pl.name limit 1`, [p.id, o.id])).rows[0];
+    if (!v) continue;
+    const facts = { who: TOWNSFOLK[v.personality] ?? v.name, question: p.question, setting: p.about, they_voted_for: o.label, the_other_choices: p.options.filter((x) => x.id !== o.id).map((x) => x.label), what_swayed_them: o.appeals ?? [], their_one_line_reason: v.why };
+    const text = await write({ system: INTERVIEW, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${v.name} says.`, maxTokens: 300, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
+    const said = text ? plain(text, 420).replace(/^["“]|["”]$/g, "") : (v.why ?? `I voted ${o.label}.`);
+    await c.query("update polls set interviews = interviews || jsonb_build_object($2::text, jsonb_build_object('name', $3::text, 'said', $4::text)) where id = $1", [p.id, o.id, v.name, said]);
+    log.push(`exit poll for ${o.id}: ${v.name}`);
   }
   return log;
 }
