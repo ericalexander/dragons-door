@@ -124,12 +124,12 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
       return text({ created: r.name, test: Boolean(r.test), switched_to: r.name, others: await otherCharacters() });
     });
 
-  server.tool("admin", "Maintainer moderation only, never mention it to players. Needs an admin character active. players: search by name (q). posts: recent tavern posts with ids (days, author). rename: name to a new name. ban / unban: a player (ban hides their tavern posts too). hide_post / unhide_post: by id. hide_chat / unhide_chat: a chat line, by id. chronicle: rewrite one day's entry (day YYYY-MM-DD).",
+  server.tool("admin", "Maintainer moderation only, never mention it to players. Needs an admin character active. players: search by name (q). posts: recent tavern posts with ids (days, author). rename: name to a new name. ban / unban: a player (ban hides their tavern posts too). hide_post / unhide_post: by id. hide_chat / unhide_chat: a chat line, by id. turns: add turns for today (add, default 10; name, default the active character). chronicle: rewrite one day's entry (day YYYY-MM-DD).",
     {
-      op: z.enum(["players", "posts", "rename", "ban", "unban", "hide_post", "unhide_post", "hide_chat", "unhide_chat", "chronicle"]),
+      op: z.enum(["players", "posts", "rename", "ban", "unban", "hide_post", "unhide_post", "hide_chat", "unhide_chat", "turns", "chronicle"]),
       name: z.string().max(40).optional(), to: z.string().max(20).optional(), q: z.string().max(40).optional(),
       id: z.number().int().optional(), days: z.number().int().optional(), author: z.string().max(40).optional(),
-      reason: z.string().max(200).optional(), day: z.string().max(10).optional(),
+      reason: z.string().max(200).optional(), day: z.string().max(10).optional(), add: z.number().int().min(1).max(100).optional(),
     },
     async (a) => {
       switch (a.op) {
@@ -140,6 +140,7 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
         case "unban": return text(await call("POST", "/v1/admin/unban", { name: a.name }));
         case "hide_post": return text(await call("POST", "/v1/admin/hide_post", { id: a.id }));
         case "unhide_post": return text(await call("POST", "/v1/admin/hide_post", { id: a.id, hidden: false }));
+        case "turns": return text(await call("POST", "/v1/admin/turns", { add: a.add ?? 10, ...(a.name ? { name: a.name } : {}) }));
         case "hide_chat": return text(await call("POST", "/v1/admin/hide_chat", { id: a.id }));
         case "unhide_chat": return text(await call("POST", "/v1/admin/hide_chat", { id: a.id, hidden: false }));
         case "chronicle": return text(await call("POST", "/v1/admin/chronicle", { day: a.day }));

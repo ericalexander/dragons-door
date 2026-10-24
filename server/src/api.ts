@@ -2860,6 +2860,24 @@ api.post("/chat", async (c) => {
   return c.json({ ok: true, id: Number(r.rows[0].id), room, ...(to ? { to: to.name } : {}) });
 });
 
+/** The keeper tops up a character's turns for today (their own by default): logged like any hand edit. */
+api.post("/admin/turns", async (c) => {
+  const body = z.object({ add: z.number().int().min(1).max(100), name: z.string().trim().min(1).max(40).optional() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAdmin(ctx);
+    const who = body.name
+      ? (await ctx.c.query<{ id: string; name: string }>("select id, name from players where lower(name) = lower($1)", [body.name])).rows[0]
+      : { id: ctx.p.id, name: ctx.p.name };
+    if (!who) { ctx.events.push({ kind: "admin_error", error: "no_such_player", name: body.name }); return; }
+    const r = await ctx.c.query<{ forest_fights: number }>(
+      "update turns set forest_fights = forest_fights + $3 where player_id = $1 and day = $2 returning forest_fights", [who.id, ctx.day, body.add]);
+    if (!r.rowCount) { ctx.events.push({ kind: "admin_error", error: "not_played_today", name: who.name, note: "they get a fresh day's turns the first time they play today" }); return; }
+    if (who.id === ctx.p.id) ctx.t.forest_fights = r.rows[0].forest_fights;
+    await audit(ctx, "turns", who.name, { add: body.add, now: r.rows[0].forest_fights });
+    ctx.events.push({ kind: "admin_done", action: "turns", name: who.name, added: body.add, turns_now: r.rows[0].forest_fights });
+  }));
+});
+
 /** The keeper hides a chat line (or shows it again). */
 api.post("/admin/hide_chat", async (c) => {
   const body = z.object({ id: z.number().int(), hidden: z.boolean().optional() }).parse(await c.req.json());
