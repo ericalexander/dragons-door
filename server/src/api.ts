@@ -2387,6 +2387,10 @@ api.post("/talk", async (c) => {
         if (!s?.talk.includes(who.name)) continue;
         if (s.needs_secret && !(pieces.length > 0 && heardPieces >= pieces.length)) continue;
         if (s.needs_pieces && heardPieces < s.needs_pieces) continue;
+        if (s.after) {
+          const prior = (await ctx.c.query<{ outcome: string | null }>("select outcome from quests where player_id = $1 and quest = $2 and status = 'done'", [ctx.p.id, s.after.quest])).rows[0];
+          if (!prior || (s.after.outcomes && !s.after.outcomes.includes(prior.outcome ?? ""))) continue;
+        }
         // What's on their mind right now can make them ask: Grimwald out looking for his boot asks about it.
         const onMind = s.on_goal && mind.goal?.kind === s.on_goal.kind;
         if (past && !onMind) continue;

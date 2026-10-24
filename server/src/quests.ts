@@ -60,7 +60,9 @@ export interface QuestDef {
   /** How it can start. Events start quests with a { quest } effect; a talk start offers it. */
   start_on?: { talk: string[]; chance: number; needs_secret?: boolean; /** Or: at least this many pieces of their past heard. */ needs_pieces?: number;
     /** While the townsperson's own goal is this kind (Grimwald exploring, so talking about his boot), they ask far more often, even after a piece of their past. */
-    on_goal?: { kind: string; chance: number } };
+    on_goal?: { kind: string; chance: number };
+    /** Only after the player finished this quest (with one of these endings, if given). */
+    after?: { quest: string; outcomes?: string[] } };
   steps: QStep[];
   /** What the narrator says if it runs out of time, by the step it was on (or "default"). */
   expired: Record<string, string>;
