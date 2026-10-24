@@ -57,7 +57,9 @@ export interface QuestDef {
   /** Days before it closes on its own, from the start. */
   days: number;
   /** How it can start. Events start quests with a { quest } effect; a talk start offers it. */
-  start_on?: { talk: string[]; chance: number; needs_secret?: boolean; /** Or: at least this many pieces of their past heard. */ needs_pieces?: number };
+  start_on?: { talk: string[]; chance: number; needs_secret?: boolean; /** Or: at least this many pieces of their past heard. */ needs_pieces?: number;
+    /** While the townsperson's own goal is this kind (Grimwald exploring, so talking about his boot), they ask far more often, even after a piece of their past. */
+    on_goal?: { kind: string; chance: number } };
   steps: QStep[];
   /** What the narrator says if it runs out of time, by the step it was on (or "default"). */
   expired: Record<string, string>;
@@ -97,7 +99,7 @@ export const QUESTS: QuestDef[] = [
     title: "Grimwald's Other Boot",
     item: { name: "Grimwald's Boot", sell: 5 },
     days: 7,
-    start_on: { talk: ["Grimwald"], chance: 0.35 },
+    start_on: { talk: ["Grimwald"], chance: 0.35, on_goal: { kind: "explore", chance: 0.8 } },
     steps: [
       {
         id: "offered",
