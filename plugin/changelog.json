@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.20.1",
+    "lore": "People in this realm have started paying attention. Mention you're saving for plate, and someone may ask next week how the saving's going. Gifts you sent are remembered too, and so are favors.",
+    "plain": "Townsfolk and the realm's characters now remember you: when you met, what you told them, gifts they kept and quests you did together, and they may bring it up next time you talk."
+  },
+  {
     "version": "0.20.0",
     "lore": "Someone has pinned the places you know to the edge of your map, each with a little flag. Touch one and your feet already know the way.",
     "plain": "Under the map in the side pane, the towns and caves you've been to are buttons: click one to travel there (it's free, as travel to a known place always is). Your pane's map now marks you, towns and caves in bold."

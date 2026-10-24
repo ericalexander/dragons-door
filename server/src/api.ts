@@ -2192,13 +2192,59 @@ async function rumorFacts(ctx: Ctx, kind: Rumor): Promise<Record<string, unknown
   }
 }
 
+/** How many notes of what you said each person keeps, and how long a note can be. */
+export const NOTES_KEPT = 5;
+export const NOTE_MAX = 100;
+
+/** "yesterday", "3 days ago": how long since a day, said the way a person would. */
+export function sinceDay(today: string, day: string): string {
+  const n = Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(day + "T00:00:00Z")) / 86_400_000);
+  return n <= 0 ? "earlier today" : n === 1 ? "yesterday" : n < 7 ? `${n} days ago` : n < 14 ? "last week" : n < 45 ? `${Math.round(n / 7)} weeks ago` : "a long while back";
+}
+
+/** What someone remembers of this player: when they met, how often they've talked, what the player said, gifts kept, quests done together. Null on a first meeting. */
+async function recall(ctx: Ctx, whoId: string, name: string) {
+  const m = (await ctx.c.query<{ first_met: string; last_talk: string; talks: number; notes: { day: string; line: string }[] }>(
+    "select first_met::text, last_talk::text, talks, notes from npc_memory where player_id = $1 and npc = $2", [ctx.p.id, name])).rows[0];
+  const gifts = (await ctx.c.query<{ gold: number; gems: number; slot: string | null; item_id: number | null; rarity: number; sent_day: string }>(
+    "select gold, gems, slot, item_id, rarity, sent_day::text from gifts where from_player = $1 and to_player = $2 and state = 'kept' order by id desc limit 3", [ctx.p.id, whoId])).rows;
+  const mine = (await ctx.c.query<{ quest: string; status: string; outcome: string | null }>(
+    "select quest, status, outcome from quests where player_id = $1 and status in ('active', 'done')", [ctx.p.id])).rows;
+  const quests = mine.map((q) => ({ q, def: questById(q.quest) })).filter(({ def }) => def?.start_on?.talk.includes(name))
+    .map(({ q, def }) => ({ quest: def!.title, ...(q.status === "done" ? { how_it_ended: q.outcome } : { still_going: true }) }));
+  if (!m && !gifts.length) return null;
+  return {
+    ...(m ? { first_met: sinceDay(ctx.day, m.first_met), times_talked: m.talks, last_time: sinceDay(ctx.day, m.last_talk) } : {}),
+    ...(m?.notes.length ? { you_said: m.notes.map((n) => ({ when: sinceDay(ctx.day, n.day), line: n.line })) } : {}),
+    ...(gifts.length ? { gifts_from_you: gifts.map((g) => ({ when: sinceDay(ctx.day, g.sent_day), gold: g.gold || undefined, gems: g.gems || undefined,
+      item: g.slot && g.item_id !== null ? Bag.item(g.slot as Bag.Slot, g.item_id, g.rarity).name : undefined })) } : {}),
+    ...(quests.length ? { quests_together: quests } : {}),
+  };
+}
+
+/** Count the talk and keep a note of what the player said: one plain line per person per day (a later talk that day replaces it), the newest few days. */
+async function remember(ctx: Ctx, name: string, again: boolean, said?: string) {
+  const line = said ? cleanText(said).slice(0, NOTE_MAX).trim() : "";
+  const note = line ? JSON.stringify([{ day: ctx.day, line }]) : "[]";
+  await ctx.c.query(
+    `insert into npc_memory (player_id, npc, first_met, last_talk, talks, notes) values ($1, $2, $3, $3, 1, $4::jsonb)
+     on conflict (player_id, npc) do update set last_talk = $3, talks = npc_memory.talks + $5,
+       notes = (select coalesce(jsonb_agg(x order by i), '[]'::jsonb) from (
+         select x, i from jsonb_array_elements(
+           case when $4::jsonb = '[]'::jsonb then npc_memory.notes
+                else coalesce((select jsonb_agg(o order by n) from jsonb_array_elements(npc_memory.notes) with ordinality e(o, n) where o->>'day' <> $3::text), '[]'::jsonb) || $4::jsonb end
+         ) with ordinality as t(x, i)
+         order by i desc limit $6) k)`,
+    [ctx.p.id, name, ctx.day, note, again ? 0 : 1, NOTES_KEPT]);
+}
+
 /**
  * Talk to someone who's about: a townsperson in the square, the tavern or the same spot in the wild,
  * or one of the fixed characters where they keep. The narrator plays the conversation. Now and then
  * (at most once a day) they let slip a place someone found, and it's marked on your map.
  */
 api.post("/talk", async (c) => {
-  const body = z.object({ to: z.string().trim().min(1).max(40) }).parse(await c.req.json());
+  const body = z.object({ to: z.string().trim().min(1).max(40), said: z.string().max(300).optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
@@ -2289,8 +2335,11 @@ api.post("/talk", async (c) => {
         await logEvent(ctx, "past", { from: who.name, piece: heardPieces });
       }
     }
+    const remembers = await recall(ctx, who.id, who.name);
+    await remember(ctx, who.name, again, body.said);
     ctx.events.push({
       kind: "talk", name: who.name, where, again, ...looksOf(who.name),
+      ...(remembers ? { remembers } : { first_meeting: true }),
       ...(who.role === "townsfolk" ? {
         townsfolk: true, class: who.class, level: who.level,
         ...(mind.goal && who.personality ? { on_mind: goalLabel(who.name, who.personality, mind.goal) } : {}),
@@ -2304,7 +2353,7 @@ api.post("/talk", async (c) => {
     const pastHint = !past ? "" : past.piece === "secret"
       ? " They also tell you their secret (past.told), in their own words: it costs them something, they lower their voice, and it's plainly not for repeating."
       : ` Somewhere in it they let you in on a piece of their past (past.told), in their own words, only as much as fits the moment.`;
-    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${again ? " You've already talked today; keep it brief." : ""}`;
+    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${again ? " You've already talked today; keep it brief." : ""}${remembers ? " They remember the player (remembers): at most one callback, only if it fits, as they'd naturally bring it up; never list it." : ""}`;
     const before = ctx.hint;
     // Talking can move a quest along, or a townsperson might ask a favor.
     await questTriggers(ctx, { talk: { name: who.name, townsfolk: who.role === "townsfolk" } });
