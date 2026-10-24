@@ -11,7 +11,7 @@
  */
 import { Hono } from "hono";
 import { timingSafeEqual } from "node:crypto";
-import { api, settleAuctions } from "./api.js";
+import { api, CHAT_KEEP_DAYS, settleAuctions } from "./api.js";
 import { INTERNAL_TOKEN } from "./request.js";
 import { PLAN, sessionTime, type Personality } from "./schedule.js";
 export { sessionTime } from "./schedule.js";
@@ -1161,6 +1161,8 @@ bots.on(["GET", "POST"], "/bots/run", async (c) => {
   // Close any auctions whose time is up, even if nobody visits the house today.
   let auctions: string[] = [];
   try { auctions = await tx(async (cl) => settleAuctions(cl, realmDay((await realmSettings(cl)).resetHourUtc, when))); } catch (e) { auctions = [`error: ${(e as Error).message}`]; }
+  // Chat is kept for 30 days, then gone.
+  try { await pool.query(`delete from chat where created_at < now() - interval '${CHAT_KEEP_DAYS} days'`); } catch { /* next run */ }
   // The courier's morning round: townsfolk take their gifts, and a week's unclaimed ones go home.
   let gifts: string[] = [];
   try { gifts = await tx(async (cl) => settleGifts(cl, realmDay((await realmSettings(cl)).resetHourUtc, when))); } catch (e) { gifts = [`error: ${(e as Error).message}`]; }

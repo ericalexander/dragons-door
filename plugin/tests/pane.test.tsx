@@ -23,7 +23,7 @@ function engine(on: Parameters<TestBody>[1], reply: () => string, opened: { n: n
   on('ui.open', () => { opened.n++; return { value: { isPlaced: true } } })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', () => ({ result: {}, text: reply() }))
-  mock.clock(on)
+  mock.clock(on, { now: Date.parse('2026-10-24T12:00:00Z') })
 }
 
 test("a session that isn't playing never sees the pane", async ($, on) => {
@@ -130,7 +130,7 @@ function realm(on: Parameters<TestBody>[1], sent: { body: unknown }[]) {
     expect(e.init?.headers?.authorization).toBe('Bearer door_test_key_1234')
     if (e.init?.method === 'POST') { sent.push({ body: JSON.parse(e.init.body ?? '{}') }); return { value: { status: 200, ok: true, headers: {}, text: '{"ok":true,"id":9}' } } }
     const lines = sent.map((s, i) => ({ id: i + 1, from: 'Ossian Vale', body: (s.body as { body: string }).body, mine: true, ...((s.body as { to?: string }).to ? { whisper: true, to: (s.body as { to: string }).to } : {}) }))
-    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ room: 'brightwater', room_name: 'Brightwater', here: ['Hilde'], messages: [{ id: 0, from: 'Hilde', body: 'Keep it in the bank.', mine: false }, ...lines], last_id: lines.length }) } }
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ room: 'brightwater', room_name: 'Brightwater', here: ['Hilde'], messages: [{ id: 0, from: 'Hilde', body: 'Keep it in the bank.', mine: false, at: '2000-01-01T00:00:00Z' }, ...lines], last_id: lines.length }) } }
   })
 }
 
@@ -144,7 +144,7 @@ test('chat: say a line and whisper one, straight to the realm, and see them in t
   await ui.input({ key: 'say', text: 'Anyone seen the boot?' })
   await ui.input({ key: 'say', text: '@Old Tam: the locket?' })
   expect(sent.map(s => s.body)).toEqual([{ body: 'Anyone seen the boot?' }, { to: 'Old Tam', body: 'the locket?' }])
-  expect((await ui.find({ type: 'Text', text: /Keep it in the bank/ }))?.text).toBe('Hilde: Keep it in the bank.')
+  expect((await ui.find({ type: 'Text', text: /Keep it in the bank/ }))?.text).toMatch(/^Hilde: Keep it in the bank\. · \d+d ago$/)
   expect((await ui.find({ type: 'Text', text: /locket/ }))?.text).toBe('→ Old Tam: the locket?')
   expect((await ui.find({ type: 'Text', text: /^here:/ }))?.text).toBe('here: Hilde')
   await ui.unmount()

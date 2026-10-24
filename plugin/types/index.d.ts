@@ -24,7 +24,7 @@ export type Game = {
 };
 
 /** One line of chat as the pane shows it. */
-export type ChatLine = { id: number; from: string; body: string; whisper?: boolean; to?: string; mine: boolean };
+export type ChatLine = { id: number; from: string; body: string; whisper?: boolean; to?: string; mine: boolean; /** When it was said, ISO. */ at?: string };
 /** The room the player is in and what's been said there, polled from the realm while the pane is up. */
 export type Chat = {
   room: string; roomName: string; here: string[]; lines: ChatLine[]; lastId: number;

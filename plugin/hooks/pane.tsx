@@ -16,7 +16,7 @@ const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
   { isPlaying: false, isShown: false, character: null, actions: [], map: [], online: [], at: 0 } as Game, { shape: 'game-4' })
 
 const chat = atom({ plugin: 'dragons-door', key: 'chat' } as const,
-  { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '' } as Chat, { shape: 'chat-1' })
+  { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '' } as Chat, { shape: 'chat-2' })
 /** How often the pane asks the realm for new chat while it's showing. */
 const CHAT_EVERY_MS = 5000
 
@@ -36,6 +36,19 @@ async function credentials($: EngineInterface): Promise<{ key: string; url: stri
 const CHAT_NOTE: Record<string, string> = {
   too_new: 'You can chat from level 2.', slow_down: 'Easy: a line every couple of seconds.', no_such_player: 'Nobody here by that name.',
   whisper_self: "That's you.", bad_message: 'Say something shorter.', banned: 'The realm has barred you.', unauthorized: 'Enter the realm first.',
+}
+
+/** How long ago a line was said, once it's old enough to matter ("2h ago", "yesterday"), else "". */
+function ago(at: string | undefined, now: number): string {
+  const t = at ? Date.parse(at) : NaN
+  if (Number.isNaN(t)) return ''
+  const min = Math.floor((now - t) / 60000)
+  if (min < 10) return ''
+  if (min < 60) return `${min}m ago`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  return d === 1 ? 'yesterday' : `${d}d ago`
 }
 
 /** The realm's error word from a failed reply, if it said one. */
@@ -161,6 +174,7 @@ export const register: Register = on => {
     const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : null
     const g = await read($, game)
     const ch = await read($, chat)
+    const now = await $.clock.now()
     const room = Math.max(3, Math.min(12, (e.props?.scroll?.bodyRows ?? 40) - 34))
     // Drawing means a surface shows it: from here on the narrator leaves the status line out.
     if (g.isPlaying && !g.isShown) await update($, game, x => ({ ...x, isShown: true }))
@@ -205,9 +219,12 @@ export const register: Register = on => {
         {g.online.length > 0 && section('In the realm now', <Text>{g.online.map(x => `● ${x}`).join('  ')}</Text>)}
         {section(ch.roomName ? `Chat · ${ch.roomName}` : 'Chat',
           ...(ch.here.length ? [<Text dimColor>here: {ch.here.slice(0, 8).join(', ')}{ch.here.length > 8 ? ` +${ch.here.length - 8}` : ''}</Text>] : []),
-          ...(ch.lines.length === 0 ? [<Text dimColor>Quiet. Say something.</Text>] : ch.lines.slice(-room).map(l => l.whisper
-            ? <Text italic color="remember">{l.mine ? `→ ${l.to}` : `${l.from} whispers`}: {l.body}</Text>
-            : <Text><Text bold color={l.mine ? 'suggestion' : undefined}>{l.from}</Text>: {l.body}</Text>)),
+          ...(ch.lines.length === 0 ? [<Text dimColor>Quiet. Say something.</Text>] : ch.lines.slice(-room).map(l => {
+            const when = ago(l.at, now)
+            return l.whisper
+              ? <Text italic color="remember">{l.mine ? `→ ${l.to}` : `${l.from} whispers`}: {l.body}{when ? <Text dimColor> · {when}</Text> : null}</Text>
+              : <Text><Text bold color={l.mine ? 'suggestion' : undefined}>{l.from}</Text>: {l.body}{when ? <Text dimColor> · {when}</Text> : null}</Text>
+          })),
           ...(ch.note ? [<Text color="warning">{ch.note}</Text>] : []),
           ...(Input ? [<Input key="say" value={ch.draft} placeholder="Say something · @Name to whisper" submitLabel="send"
             onInput={v => { void update($, chat, c => ({ ...c, draft: v })) }}

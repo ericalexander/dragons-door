@@ -2784,6 +2784,8 @@ function chatRoom(p: { pos_x: number | null; pos_y: number | null }): { room: st
   return t ? { room: t, name: TOWN_TILES[t as keyof typeof TOWN_TILES]?.name ?? t } : { room: "road", name: "the road" };
 }
 const CHAT_MAX = 240, CHAT_GAP_MS = 2000, CHAT_PER_5MIN = 30;
+/** Chat is deleted after this many days (the site's privacy note says so). */
+export const CHAT_KEEP_DAYS = 30;
 
 /** The player behind a key, for chat: light, outside withPlayer, so polling never rolls the day or reads mail. */
 async function chatPlayer(c: { req: { header: (n: string) => string | undefined } }) {
@@ -2804,14 +2806,19 @@ api.get("/chat", async (c) => {
   if (me.banned_at) return c.json({ error: "banned" }, 403);
   const since = Math.max(0, Number(c.req.query("since") ?? 0) || 0);
   const { room, name } = chatRoom(me);
-  const rows = (await pool.query<{ id: string; room: string; from_name: string; to_name: string | null; body: string; created_at: string; from_id: string }>(
-    `select c.id::text, c.room, f.name as from_name, t.name as to_name, c.body, c.created_at, c.from_player as from_id
+  // New lines since the last id; on a first read, the room's last 20 lines however old and the last 20 whispers
+  // to or from you, so a newcomer sees the conversation. Nothing older than the 30 days chat is kept.
+  const sel = `select c.id::text, c.room, f.name as from_name, t.name as to_name, c.body, c.created_at, c.from_player as from_id
      from chat c join players f on f.id = c.from_player left join players t on t.id = c.to_player
-     where c.hidden_at is null and f.banned_at is null and f.is_test = $3
-       and (($2::bigint > 0 and c.id > $2) or ($2::bigint = 0 and c.created_at > now() - interval '30 minutes'))
-       and ((c.to_player is null and c.room = $4) or c.to_player = $1 or (c.from_player = $1 and c.to_player is not null))
-       and not exists (select 1 from mutes m where m.player_id = $1 and m.muted_id = c.from_player)
-     order by c.id desc limit 40`, [me.id, since, me.is_test, room])).rows.reverse();
+     where c.hidden_at is null and f.banned_at is null and f.is_test = $3 and c.created_at > now() - interval '${CHAT_KEEP_DAYS} days'
+       and not exists (select 1 from mutes m where m.player_id = $1 and m.muted_id = c.from_player)`;
+  type Row = { id: string; room: string; from_name: string; to_name: string | null; body: string; created_at: string; from_id: string };
+  const rows = since > 0
+    ? (await pool.query<Row>(`${sel} and c.id > $2 and ((c.to_player is null and c.room = $4) or c.to_player = $1 or (c.from_player = $1 and c.to_player is not null))
+         order by c.id desc limit 40`, [me.id, since, me.is_test, room])).rows.reverse()
+    : [...(await pool.query<Row>(`${sel} and $2::bigint = 0 and c.to_player is null and c.room = $4 order by c.id desc limit 20`, [me.id, 0, me.is_test, room])).rows,
+       ...(await pool.query<Row>(`${sel} and $2::bigint = 0 and $4::text is not null and (c.to_player = $1 or (c.from_player = $1 and c.to_player is not null)) order by c.id desc limit 20`, [me.id, 0, me.is_test, room])).rows]
+      .sort((a, b) => Number(a.id) - Number(b.id));
   // Who else is in the room now: anyone who did something in the last fifteen minutes, in the same town or on the road.
   const here = (await pool.query<{ name: string; pos_x: number | null; pos_y: number | null }>(
     `select name, pos_x, pos_y from players where role <> 'npc' and is_test = $2 and banned_at is null
