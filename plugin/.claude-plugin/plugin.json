@@ -1,6 +1,6 @@
 {
   "name": "dragons-door",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "description": "A daily-turn multiplayer text RPG in the spirit of the old BBS door games, played inside Claude Code in one shared realm.",
   "author": {
     "name": "Eric Alexander"
@@ -13,6 +13,5 @@
   ],
   "license": "MIT",
   "homepage": "https://dragonsdoor.gg",
-  "repository": "https://github.com/ericalexander/dragons-door",
-  "types": "./types/index.d.ts"
+  "repository": "https://github.com/ericalexander/dragons-door"
 }

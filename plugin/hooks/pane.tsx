@@ -48,9 +48,9 @@ function ago(at: string | undefined, now: number): string {
   const min = Math.floor((now - t) / 60000)
   if (min < 10) return ''
   if (min < 60) return `${min}m ago`
-  const h = Math.floor(min / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
+  const hours = Math.floor(min / 60)
+  if (hours < 24) return `${hours}h ago`
+  const d = Math.floor(hours / 24)
   return d === 1 ? 'yesterday' : `${d}d ago`
 }
 

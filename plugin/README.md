@@ -29,6 +29,17 @@ The first time, you pick a name and a path (Steel, Shadow or the gift), and you'
 - **The side pane** (`hooks/pane.tsx`) shows your character, the map and Player chat beside the conversation. It reads only this game's own tool results, keeps a little state of its own (which tabs you've seen), fetches chat from the game server with your character key, sends chat when you type it, and when you click a place on the map it asks Claude to travel there for you. It changes nothing else.
 - **Maintainer tools** (for running the realm) are only there when `DRAGONS_DOOR_DEV=1` is set, and the server only honours them for its admins.
 
+## The side pane, in detail
+
+The side pane is a Claude Code mod (`hooks/pane.tsx`). Everything it does:
+
+- **Reads:** the results of this game's own tools (it ignores every other tool call); `HOME` or `USERPROFILE`, `DRAGONS_DOOR_CONFIG_DIR` and `DRAGONS_DOOR_API_URL` from the environment, to find the game's config file; and your character key from that file (`~/.config/dragons-door/config.json`), the same key the game's MCP server uses.
+- **Fetches:** every few seconds while the Player chat tab is open, `GET https://api.dragonsdoor.gg/v1/chat` (or the server in your config) with your character key, for new chat lines in your town. When you type in the chat box, `POST https://api.dragonsdoor.gg/v1/chat` with your key and exactly the words you typed. It contacts nothing else.
+- **Submits prompts:** only when you click a place under the map, and only the text `Travel to <place> (x, y)` for the place you clicked, as if you'd typed it.
+- **Runs:** no shell commands and no other tools. It adds one slash command, `/door-pane`, which reopens the pane, and it opens its two tabs (Status and Player chat) the first time the game answers in a session.
+- **Stores:** which tabs you've already seen, in the mod's own storage. It writes no files.
+- **Draws:** a group of this game's tool calls shows a short "the realm answers" line instead of the raw calls.
+
 ## What goes to the game server
 
 The plugin talks only to `https://api.dragonsdoor.gg` (or a server you point it at with `DRAGONS_DOOR_API_URL`). Each call carries your character key and the plugin's version number, plus what that action needs (a direction, a purchase, a message you wrote). Your conversations with Claude are never sent.
