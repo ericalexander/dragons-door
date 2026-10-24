@@ -10,13 +10,15 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 import type { Character, Chat, ChatLine, Game } from '../types'
 
 const PANE = 'dragons-door'
-const TITLE = "Dragon's Door"
+const TITLE = 'Status'
+const CHAT_PANE = 'dragons-door-chat'
+const CHAT_TITLE = 'Player chat'
 // Change the tag when Game's fields change: it declines what an earlier version stored.
 const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
   { isPlaying: false, isShown: false, character: null, actions: [], map: [], online: [], at: 0 } as Game, { shape: 'game-4' })
 
 const chat = atom({ plugin: 'dragons-door', key: 'chat' } as const,
-  { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '' } as Chat, { shape: 'chat-2' })
+  { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '', isOpen: false } as Chat, { shape: 'chat-3' })
 /** How often the pane asks the realm for new chat while it's showing. */
 const CHAT_EVERY_MS = 5000
 
@@ -57,7 +59,7 @@ const errorOf = (text: string) => { try { return (JSON.parse(text || '{}') as { 
 /** Ask the realm what's been said since the last line we have. */
 async function pollChat($: EngineInterface) {
   const g = await read($, game)
-  if (!g.isPlaying || !g.isShown) return
+  if (!g.isPlaying || !(await read($, chat)).isOpen) return
   const cred = await credentials($)
   if (!cred) return
   const before = await read($, chat)
@@ -109,10 +111,13 @@ const RESULT_NOTE = "The Dragon's Door side pane is showing the player's numbers
 /** The game's tools, as the engine names them: mcp__plugin_dragons-door_<server>__<tool>. */
 const OURS = /^mcp__plugin_dragons-door_/
 
-/** Open the pane, and remember whether a surface is drawing it. */
+/** Open both panes (the surface draws them as tabs), and remember whether a surface is drawing each. */
 async function show($: EngineInterface) {
   const r = await $.ui.open({ id: PANE, title: TITLE })
   await update($, game, g => ({ ...g, isShown: Boolean(r?.isPlaced) }))
+  const c = await $.ui.open({ id: CHAT_PANE, title: CHAT_TITLE })
+  await update($, chat, x => ({ ...x, isOpen: Boolean(c?.isPlaced) }))
+  if (c?.isPlaced) void pollChat($).catch(() => undefined)
 }
 
 export const register: Register = on => {
@@ -156,6 +161,7 @@ export const register: Register = on => {
 
   on('ui.close', async ($, e, next) => {
     if (e.id === PANE) await update($, game, g => ({ ...g, isShown: false }))
+    if (e.id === CHAT_PANE) await update($, chat, c => ({ ...c, isOpen: false }))
     return next(e)
   })
 
@@ -168,14 +174,8 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const els = $.ui.resolve(e)
-    const { Box, Text } = els
-    // Mobile draws no text field yet, whatever its table lists: there the chat is read-only.
-    const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : null
+    const { Box, Text } = $.ui.resolve(e)
     const g = await read($, game)
-    const ch = await read($, chat)
-    const now = await $.clock.now()
-    const room = Math.max(3, Math.min(12, (e.props?.scroll?.bodyRows ?? 40) - 34))
     // Drawing means a surface shows it: from here on the narrator leaves the status line out.
     if (g.isPlaying && !g.isShown) await update($, game, x => ({ ...x, isShown: true }))
     const c = g.character
@@ -217,18 +217,41 @@ export const register: Register = on => {
         {waiting.length > 0 && section('Waiting', ...waiting.map(t => <Text>{t}</Text>))}
         {(c.quests?.length ?? 0) > 0 && section('Quests', ...c.quests!.map(q => <Text>{q.title}{q.days_left !== undefined ? <Text dimColor> · {q.days_left} days</Text> : null}</Text>))}
         {g.online.length > 0 && section('In the realm now', <Text>{g.online.map(x => `● ${x}`).join('  ')}</Text>)}
-        {section(ch.roomName ? `Player chat · ${ch.roomName}` : 'Player chat',
-          ...(ch.here.length ? [<Text dimColor>here: {ch.here.slice(0, 8).join(', ')}{ch.here.length > 8 ? ` +${ch.here.length - 8}` : ''}</Text>] : []),
-          ...(ch.lines.length === 0 ? [<Text dimColor>Quiet. Say something.</Text>] : ch.lines.slice(-room).map(l => {
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: CHAT_PANE }, async ($, e) => {
+    const els = $.ui.resolve(e)
+    const { Box, Text } = els
+    // Mobile draws no text field yet, whatever its table lists: there the chat is read-only.
+    const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : null
+    const g = await read($, game)
+    const ch = await read($, chat)
+    if (g.isPlaying && !ch.isOpen) await update($, chat, x => ({ ...x, isOpen: true }))
+    const now = await $.clock.now()
+    const room = Math.max(4, (e.props?.scroll?.bodyRows ?? 24) - 6)
+    if (!g.isPlaying) return <Box paddingX={1}><Text dimColor>Enter the realm to chat with whoever's there.</Text></Box>
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        <Text bold color="claude">{ch.roomName || 'Player chat'}</Text>
+        <Text dimColor>{ch.here.length ? `here: ${ch.here.slice(0, 12).join(', ')}${ch.here.length > 12 ? ` +${ch.here.length - 12}` : ''}` : 'Nobody else here right now.'}</Text>
+        <Box flexDirection="column" marginTop={1}>
+          {ch.lines.length === 0 ? <Text dimColor>Quiet. Say something.</Text> : ch.lines.slice(-room).map(l => {
             const when = ago(l.at, now)
             return l.whisper
               ? <Text italic color="remember">{l.mine ? `→ ${l.to}` : `${l.from} whispers`}: {l.body}{when ? <Text dimColor> · {when}</Text> : null}</Text>
               : <Text><Text bold color={l.mine ? 'suggestion' : undefined}>{l.from}</Text>: {l.body}{when ? <Text dimColor> · {when}</Text> : null}</Text>
-          })),
-          ...(ch.note ? [<Text color="warning">{ch.note}</Text>] : []),
-          ...(Input ? [<Input key="say" value={ch.draft} placeholder="Say something · @Name to whisper" submitLabel="send"
-            onInput={v => { void update($, chat, c => ({ ...c, draft: v })) }}
-            onSubmit={v => { void say($, v) }} />] : [<Text dimColor>Reading only on this device.</Text>]))}
+          })}
+        </Box>
+        {ch.note ? <Text color="warning">{ch.note}</Text> : null}
+        <Box marginTop={1}>
+          {Input
+            ? <Input key="say" value={ch.draft} placeholder="Say something · @Name to whisper" submitLabel="send"
+                onInput={v => { void update($, chat, c => ({ ...c, draft: v })) }}
+                onSubmit={v => { void say($, v) }} />
+            : <Text dimColor>Reading only on this device.</Text>}
+        </Box>
       </Box>
     )
   })

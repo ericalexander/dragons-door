@@ -6,6 +6,7 @@ const PANE = {
   props: { title: "Dragon's Door", isFocused: false, bodyColumns: 36, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 const TOOL = 'mcp__plugin_dragons-door_dragons-door__status'
+const CHAT = { ...PANE, requestId: 'dragons-door-chat', props: { ...PANE.props, title: 'Player chat' } } as const
 const LABEL = "Dragon's Door, a text RPG (game state for the narrator)"
 
 const state = {
@@ -20,7 +21,7 @@ const state = {
 /** Stands for the engine: answers every tool call with the given text, and counts the pane opening. */
 function engine(on: Parameters<TestBody>[1], reply: () => string, opened: { n: number }) {
   on('command.register', () => ({ value: { command: 'door-pane' } }))
-  on('ui.open', () => { opened.n++; return { value: { isPlaced: true } } })
+  on('ui.open', (_, e) => { if (e.id === 'dragons-door') opened.n++; return { value: { isPlaced: true } } })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', () => ({ result: {}, text: reply() }))
   mock.clock(on, { now: Date.parse('2026-10-24T12:00:00Z') })
@@ -140,7 +141,7 @@ test('chat: say a line and whisper one, straight to the realm, and see them in t
   realm(on, sent)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: TOOL })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const ui = await $.ui.mount({ ...CHAT, surface: 'terminal' })
   await ui.input({ key: 'say', text: 'Anyone seen the boot?' })
   await ui.input({ key: 'say', text: '@Old Tam: the locket?' })
   expect(sent.map(s => s.body)).toEqual([{ body: 'Anyone seen the boot?' }, { to: 'Old Tam', body: 'the locket?' }])
@@ -155,8 +156,23 @@ test('chat on mobile reads but has no field to type in', async ($, on) => {
   engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [] }), opened)
   await $.session.start({ cwd: '/', surface: 'mobile', isInteractive: true })
   await $.tool.call({ tool: TOOL })
-  const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
+  const ui = await $.ui.mount({ ...CHAT, surface: 'mobile' })
   const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
-  expect(texts.filter(t => /Reading|Chat|Quiet/.test(t ?? ''))).toEqual(['Quiet. Say something.', 'Reading only on this device.'])
+  expect(texts.filter(t => /Reading|Quiet/.test(t ?? ''))).toEqual(['Quiet. Say something.', 'Reading only on this device.'])
+  await ui.unmount()
+})
+
+test('two panes, Status and Player chat, open together; the status pane has no chat in it', async ($, on) => {
+  const titles: string[] = []
+  on('command.register', () => ({ value: { command: 'door-pane' } }))
+  on('ui.open', (_, e) => { titles.push(e.title ?? e.id); return { value: { isPlaced: true } } })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('tool.call', () => ({ result: {}, text: JSON.stringify({ game: LABEL, events: [], state, actions: [] }) }))
+  mock.clock(on, { now: Date.parse('2026-10-24T12:00:00Z') })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  expect(titles).toEqual(['Status', 'Player chat'])
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Quiet|whisper/ })).toBeUndefined()
   await ui.unmount()
 })

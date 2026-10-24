@@ -34,6 +34,8 @@ export type Chat = {
   note: string;
   /** What the player is typing, kept so a redraw doesn't wipe it. */
   draft: string;
+  /** Whether the Player chat pane is open: chat is only fetched while it is. */
+  isOpen: boolean;
 };
 
 declare module 'claude-code' {
