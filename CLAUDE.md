@@ -14,3 +14,6 @@
 ## The world map
 - `server/src/world.ts` generates every tile from `DRAGONS_DOOR_WORLD_SEED` (default `dragons-door-world-1`) and its coordinates; nothing about terrain is stored. Changing the seed or the generator reshapes the world under everyone's feet, so don't, once players have explored it.
 - Stored: `players.pos_x/pos_y` (null = in town), `explored` (per player), `discoveries` (first finder of each tile).
+
+## The atlas
+- `tools/atlas/` builds a maintainer's map of the whole world (Eric's private artifact "Dragon's Door Atlas", https://claude.ai/artifact/FyR7WzHvjyBp4mGLDtJTQW). Refresh it whenever towns, caves or the generator change, and now and then for activity: query aggregate explored counts (real players, townsfolk) and discoveries into `tools/atlas/activity.json`, run `npx tsx tools/atlas/gen.mts tools/atlas` then `python3 tools/atlas/build.py tools/atlas`, and republish `tools/atlas/atlas.html` to that URL.

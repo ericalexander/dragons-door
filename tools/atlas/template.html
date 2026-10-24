@@ -1,0 +1,293 @@
+<title>Dragon's Door Atlas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Layout: a surveyor's sheet. The map on the left, a field notebook on the right that reads whatever tile you point at. */
+  :root {
+    --paper: #efe4c9; --paper-hi: #f7efdc; --ink: #2a1c10; --ink-soft: #4a3322; --ink-faint: #6b4a2e;
+    --rule: #b89c70; --wax: #8f2a1c; --gold: #b07a2a; --sea: #3d6a78;
+    --t-meadow: #d9cf8f; --t-forest: #6f8a4e; --t-marsh: #7f9a8c; --t-hills: #c29a5b; --t-crags: #8c7a6b; --t-town: #2a1c10;
+    --grid: rgba(42, 28, 16, .14); --veil: rgba(239, 228, 201, .72);
+    --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", "Gill Sans", "Trebuchet MS", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --paper: #1b1510; --paper-hi: #241c15; --ink: #ecdfc4; --ink-soft: #cdbb9b; --ink-faint: #a8936f;
+    --rule: #5c4a34; --wax: #d4644f; --gold: #d9a85a; --sea: #7fb0bf;
+    --t-meadow: #8a8450; --t-forest: #4a6236; --t-marsh: #4f6b61; --t-hills: #8f6d3c; --t-crags: #5e5248; --t-town: #ecdfc4;
+    --grid: rgba(236, 223, 196, .12); --veil: rgba(27, 21, 16, .74); color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --paper: #1b1510; --paper-hi: #241c15; --ink: #ecdfc4; --ink-soft: #cdbb9b; --ink-faint: #a8936f;
+    --rule: #5c4a34; --wax: #d4644f; --gold: #d9a85a; --sea: #7fb0bf;
+    --t-meadow: #8a8450; --t-forest: #4a6236; --t-marsh: #4f6b61; --t-hills: #8f6d3c; --t-crags: #5e5248; --t-town: #ecdfc4;
+    --grid: rgba(236, 223, 196, .12); --veil: rgba(27, 21, 16, .74); color-scheme: dark }
+  * { box-sizing: border-box; }
+  body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4.4vw, 46px); line-height: 1; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+  .meta { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; padding-block: 14px; }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); background: var(--paper-hi); }
+  .seg button { font: 500 14px var(--body); color: var(--ink-soft); background: none; border: 0; padding: 7px 12px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--rule); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .seg button:focus-visible, .zoom button:focus-visible, label:focus-within { outline: 2px solid var(--wax); outline-offset: 2px; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--ink-soft); }
+  .toggles label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .toggles input { accent-color: var(--wax); }
+  .zoom { display: inline-flex; gap: 4px; margin-left: auto; }
+  .zoom button { font: 500 16px var(--mono); width: 32px; height: 32px; border: 1px solid var(--rule); background: var(--paper-hi); color: var(--ink); cursor: pointer; }
+  .sheet { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+  @media (max-width: 900px) { .sheet { grid-template-columns: minmax(0, 1fr); } }
+  .mapbox { overflow: auto; border: 1px solid var(--rule); background: var(--paper-hi); max-height: 82vh; min-width: 0; }
+  canvas { display: block; cursor: crosshair; }
+  aside { display: grid; gap: 18px; min-width: 0; }
+  .card { border-top: 1px solid var(--ink); padding-top: 8px; }
+  .kicker { font: 500 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); }
+  .tile-name { font-family: var(--display); font-size: 26px; font-weight: 700; line-height: 1.1; margin: 4px 0 6px; text-wrap: balance; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; font-size: 14px; }
+  dt { color: var(--ink-faint); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; font-size: 14px; }
+  .sw { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; border: 1px solid var(--rule); }
+  .ramp { height: 10px; border: 1px solid var(--rule); margin: 6px 0 2px; }
+  .ramp-labels { display: flex; justify-content: space-between; font: 12px var(--mono); color: var(--ink-faint); }
+  .places { list-style: none; margin: 0; padding: 0; font-size: 14px; max-height: 320px; overflow: auto; }
+  .places li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 3px 0; border-bottom: 1px dotted var(--rule); cursor: pointer; }
+  .places li:hover { color: var(--wax); }
+  .places .c { font: 12px var(--mono); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+  .note { font-size: 14px; color: var(--ink-soft); margin: 6px 0 0; }
+  .hint { font-size: 13px; color: var(--ink-faint); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Dragon's Door Atlas</h1>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <div class="bar">
+    <div class="seg" role="group" aria-label="What the map shows" id="modes">
+      <button type="button" data-mode="terrain" aria-pressed="true">Terrain</button>
+      <button type="button" data-mode="danger" aria-pressed="false">Danger</button>
+      <button type="button" data-mode="players" aria-pressed="false">Players have been</button>
+      <button type="button" data-mode="folk" aria-pressed="false">Townsfolk have been</button>
+      <button type="button" data-mode="gaps" aria-pressed="false">Room for something new</button>
+    </div>
+    <div class="toggles">
+      <label><input type="checkbox" id="t-places" checked> Towns and caves</label>
+      <label><input type="checkbox" id="t-pockets" checked> Starter ground</label>
+      <label><input type="checkbox" id="t-rings"> Rings</label>
+      <label><input type="checkbox" id="t-found"> First found</label>
+      <label><input type="checkbox" id="t-levels"> Level numbers</label>
+    </div>
+    <div class="zoom"><button type="button" id="z-out" aria-label="Zoom out">−</button><button type="button" id="z-in" aria-label="Zoom in">+</button></div>
+  </div>
+
+  <div class="sheet">
+    <div class="mapbox" id="mapbox"><canvas id="map" aria-label="Map of Dragon's Door, every tile within reach of Brightwater"></canvas></div>
+    <aside>
+      <section class="card" aria-live="polite">
+        <div class="kicker" id="tile-kicker">Point at a tile</div>
+        <div class="tile-name" id="tile-name">Brightwater</div>
+        <dl id="tile-facts"></dl>
+        <p class="hint">Click a tile to pin it; click again to let go.</p>
+      </section>
+      <section class="card">
+        <div class="kicker" id="legend-title">Terrain</div>
+        <div id="legend"></div>
+        <p class="note" id="legend-note"></p>
+      </section>
+      <section class="card">
+        <div class="kicker">Places</div>
+        <ul class="places" id="places"></ul>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+const WORLD = /*WORLD*/null;
+const R = WORLD.radius, N = 2 * R + 1;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const T = WORLD.terrains; // town, meadow, forest, marsh, hills, crags
+const idx = (x, y) => (y + R) * N + (x + R);
+const tile = (x, y) => { const t = WORLD.tiles[idx(x, y)]; return { x, y, terrain: T[t[0]], level: t[1], poi: t[2] === 1 ? "cave" : t[2] === 2 ? "town" : null, name: WORLD.names[t[3]] }; };
+const keyOf = (x, y) => `${x},${y}`;
+const count = (list) => { const m = new Map(); for (const [x, y, n] of list || []) m.set(keyOf(x, y), n ?? 1); return m; };
+const players = count(WORLD.activity.explored), folk = count(WORLD.activity.townsfolk), found = count(WORLD.activity.discovered);
+const towns = WORLD.towns;
+const townAt = (x, y) => towns.find((t) => t.x === x && t.y === y);
+
+// Distance to the nearest town or cave, for spotting empty country.
+const pois = [];
+for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) if (tile(x, y).poi) pois.push([x, y]);
+const gap = new Map();
+for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) {
+  let d = 99; for (const [px, py] of pois) d = Math.min(d, Math.max(Math.abs(px - x), Math.abs(py - y)));
+  gap.set(keyOf(x, y), d);
+}
+const maxGap = Math.max(...gap.values());
+
+const state = { mode: "terrain", cs: 20, hover: null, pin: null };
+try { const z = Number(localStorage.getItem("atlas-cs")); if (z >= 8 && z <= 44) state.cs = z; } catch (e) {}
+const $ = (id) => document.getElementById(id);
+const canvas = $("map"), ctx = canvas.getContext("2d");
+const M = 26; // margin for coordinates
+
+function mix(a, b, t) {
+  const pa = parse(a), pb = parse(b);
+  return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(",")})`;
+}
+function parse(c) {
+  if (c.startsWith("#")) { const h = c.length === 4 ? c.slice(1).split("").map((x) => x + x).join("") : c.slice(1); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); }
+  const m = c.match(/[\d.]+/g); return m ? m.slice(0, 3).map(Number) : [0, 0, 0];
+}
+
+function fillFor(t) {
+  const c = css(`--t-${t.terrain}`);
+  const k = keyOf(t.x, t.y);
+  if (state.mode === "terrain") return c;
+  if (t.poi === "town") return css("--t-town");
+  const base = css("--paper-hi");
+  if (state.mode === "danger") return mix(css("--t-meadow"), css("--wax"), (t.level - 1) / 11);
+  if (state.mode === "players") { const n = players.get(k) || 0; return n ? mix(css("--gold"), css("--wax"), Math.min(1, (n - 1) / 3)) : mix(base, c, .25); }
+  if (state.mode === "folk") { const n = folk.get(k) || 0; return n ? mix(css("--t-marsh"), css("--sea"), Math.min(1, (n - 1) / 5)) : mix(base, c, .25); }
+  if (state.mode === "gaps") { const d = gap.get(k); return d <= 2 ? mix(base, c, .3) : mix(css("--paper-hi"), css("--gold"), Math.min(1, (d - 2) / Math.max(1, maxGap - 2))); }
+  return c;
+}
+
+function draw() {
+  const cs = state.cs, size = N * cs + M * 2;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = size * dpr; canvas.height = size * dpr; canvas.style.width = size + "px"; canvas.style.height = size + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = css("--paper-hi"); ctx.fillRect(0, 0, size, size);
+  const px = (x) => M + (x + R) * cs, py = (y) => M + (y + R) * cs;
+  for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) {
+    const t = tile(x, y);
+    ctx.fillStyle = fillFor(t); ctx.fillRect(px(x), py(y), cs, cs);
+  }
+  // grid
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1; ctx.beginPath();
+  for (let i = 0; i <= N; i++) { ctx.moveTo(M + i * cs + .5, M); ctx.lineTo(M + i * cs + .5, M + N * cs); ctx.moveTo(M, M + i * cs + .5); ctx.lineTo(M + N * cs, M + i * cs + .5); }
+  ctx.stroke();
+  // rings around Brightwater
+  if ($("t-rings").checked) {
+    ctx.strokeStyle = css("--ink-faint"); ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+    for (const r of [4, 8, 12, 16]) if (r <= R) ctx.strokeRect(px(-r), py(-r), (2 * r + 1) * cs, (2 * r + 1) * cs);
+    ctx.setLineDash([]);
+  }
+  // starter ground round the towns out in the world
+  if ($("t-pockets").checked) {
+    ctx.strokeStyle = css("--sea"); ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
+    for (const t of towns) if (t.id !== "brightwater") { const p = WORLD.pocket; ctx.strokeRect(px(t.x - p) + .5, py(t.y - p) + .5, (2 * p + 1) * cs - 1, (2 * p + 1) * cs - 1); }
+    ctx.setLineDash([]);
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  if ($("t-levels").checked && cs >= 14) {
+    ctx.font = `${Math.round(cs * .45)}px ${css("--mono")}`; ctx.fillStyle = css("--ink");
+    for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) { const t = tile(x, y); if (!t.poi) ctx.fillText(t.level, px(x) + cs / 2, py(y) + cs / 2 + 1); }
+  }
+  if ($("t-found").checked) {
+    ctx.fillStyle = css("--wax");
+    for (const k of found.keys()) { const [x, y] = k.split(",").map(Number); if (Math.abs(x) <= R && Math.abs(y) <= R) { ctx.beginPath(); ctx.arc(px(x) + cs - 4, py(y) + 4, Math.max(1.5, cs * .1), 0, 7); ctx.fill(); } }
+  }
+  if ($("t-places").checked) {
+    for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) {
+      const t = tile(x, y);
+      if (t.poi === "cave") { ctx.strokeStyle = css("--ink"); ctx.lineWidth = Math.max(1.5, cs * .1); ctx.fillStyle = css("--ink"); ctx.beginPath(); ctx.arc(px(x) + cs / 2, py(y) + cs / 2, cs * .28, Math.PI, 0); ctx.lineTo(px(x) + cs * .78, py(y) + cs * .75); ctx.lineTo(px(x) + cs * .22, py(y) + cs * .75); ctx.closePath(); ctx.fill(); }
+    }
+    for (const t of towns) {
+      ctx.fillStyle = css("--wax"); ctx.fillRect(px(t.x) + 2, py(t.y) + 2, cs - 4, cs - 4);
+      ctx.fillStyle = css("--paper-hi"); ctx.font = `700 ${Math.round(cs * .6)}px ${css("--display")}`; ctx.fillText(t.id === "brightwater" ? "★" : "T", px(t.x) + cs / 2, py(t.y) + cs / 2 + 1);
+      const label = t.name; ctx.font = `700 ${Math.max(12, Math.round(cs * .7))}px ${css("--display")}`;
+      const w = ctx.measureText(label).width + 10, lx = px(t.x) + cs / 2, ly = py(t.y) - cs * .55;
+      ctx.fillStyle = css("--veil"); ctx.fillRect(lx - w / 2, ly - cs * .42, w, cs * .84);
+      ctx.fillStyle = css("--ink"); ctx.fillText(label, lx, ly + 1);
+    }
+  }
+  // coordinates every 2 tiles, north at the top
+  ctx.fillStyle = css("--ink-faint"); ctx.font = `11px ${css("--mono")}`;
+  for (let i = -R; i <= R; i += 2) { ctx.fillText(i, px(i) + cs / 2, M / 2); ctx.fillText(i, M / 2, py(i) + cs / 2); }
+  ctx.font = `700 13px ${css("--display")}`; ctx.fillStyle = css("--ink"); ctx.fillText("N", size - M / 2, M / 2);
+  // hover and pin
+  for (const [t, col] of [[state.hover, "--ink"], [state.pin, "--wax"]]) if (t) { ctx.strokeStyle = css(col); ctx.lineWidth = 2.5; ctx.strokeRect(px(t.x) + 1, py(t.y) + 1, cs - 2, cs - 2); }
+}
+
+function describe(t) {
+  if (!t) return;
+  const k = keyOf(t.x, t.y), town = townAt(t.x, t.y);
+  const dir = (t.y < 0 ? `${-t.y} north` : t.y > 0 ? `${t.y} south` : "") + (t.x && t.y ? ", " : "") + (t.x > 0 ? `${t.x} east` : t.x < 0 ? `${-t.x} west` : "");
+  $("tile-kicker").textContent = `(${t.x}, ${t.y})${dir ? " · " + dir + " of Brightwater" : ""}`;
+  $("tile-name").textContent = town ? town.name : t.name.replace(/^the /, "The ");
+  const rows = [
+    ["Land", town ? "town" : t.terrain + (t.poi === "cave" ? ", with a cave" : "")],
+    ["Danger", town || (t.x === 0 && t.y === 0) ? "none inside the walls" : `level ${t.level}`],
+    ["Ring", Math.max(Math.abs(t.x), Math.abs(t.y))],
+    ["Players", t.x === 0 && t.y === 0 ? "everyone passes through" : players.get(k) ? `${players.get(k)} of ${WORLD.activity.players} have been` : "nobody yet"],
+    ["Townsfolk", folk.get(k) ? `${folk.get(k)} have been` : "none"],
+    ["First found", found.has(k) ? "yes" : "not yet"],
+    ["Nearest place", gap.get(k) === 0 ? "here" : `${gap.get(k)} step${gap.get(k) > 1 ? "s" : ""} away`],
+  ];
+  if (town && town.note) rows.push(["Notes", town.note]);
+  $("tile-facts").innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${String(b).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]))}</dd>`).join("");
+}
+
+function legend() {
+  const L = $("legend"), titles = { terrain: "Terrain", danger: "Danger (monster level)", players: "Where players have been", folk: "Where townsfolk have been", gaps: "Room for something new" };
+  $("legend-title").textContent = titles[state.mode];
+  const notes = {
+    terrain: "Caves turn up only in hills and crags. Dashed boxes are the gentle starter ground round Ironhold and Ashford.",
+    danger: "Land gets harder with distance from Brightwater, eased near the other towns.",
+    players: `Real players only (${WORLD.activity.players} so far). Darker means more of them have walked it.`,
+    folk: "The townsfolk wander on their own. Darker means more of them have been there.",
+    gaps: "Gold marks country far from any town or cave: the emptiest stretches, where a new place would matter most.",
+  };
+  $("legend-note").textContent = notes[state.mode];
+  if (state.mode === "terrain") {
+    L.innerHTML = `<div class="legend">${["meadow", "forest", "marsh", "hills", "crags"].map((t) => `<div><span class="sw" style="background:var(--t-${t})"></span>${t}</div>`).join("")}<div><span class="sw" style="background:var(--wax)"></span>town</div></div>`;
+    return;
+  }
+  const ramps = { danger: ["--t-meadow", "--wax", "level 1", "level 12"], players: ["--gold", "--wax", "1 player", "4+"], folk: ["--t-marsh", "--sea", "1", "6+"], gaps: ["--paper-hi", "--gold", "3 steps", `${maxGap} steps`] };
+  const [a, b, la, lb] = ramps[state.mode];
+  L.innerHTML = `<div class="ramp" style="background:linear-gradient(90deg, var(${a}), var(${b}))"></div><div class="ramp-labels"><span>${la}</span><span>${lb}</span></div>`;
+}
+
+function places() {
+  const list = [];
+  for (const t of towns) list.push({ ...t, kind: "town", level: "" });
+  for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) { const t = tile(x, y); if (t.poi === "cave") list.push({ name: t.name.replace(/^the /, "The "), x, y, kind: "cave", level: t.level }); }
+  list.sort((a, b) => (a.kind === b.kind ? Math.max(Math.abs(a.x), Math.abs(a.y)) - Math.max(Math.abs(b.x), Math.abs(b.y)) : a.kind === "town" ? -1 : 1));
+  $("places").innerHTML = list.map((p) => `<li data-x="${p.x}" data-y="${p.y}"><span>${p.name}</span><span class="c">${p.kind === "cave" ? "L" + p.level : "town"}</span><span class="c">${p.x}, ${p.y}</span></li>`).join("");
+  $("places").addEventListener("click", (e) => { const li = e.target.closest("li"); if (!li) return; state.pin = tile(+li.dataset.x, +li.dataset.y); describe(state.pin); draw(); scrollTo(state.pin); });
+}
+
+function scrollTo(t) { const box = $("mapbox"); box.scrollLeft = M + (t.x + R) * state.cs - box.clientWidth / 2; box.scrollTop = M + (t.y + R) * state.cs - box.clientHeight / 2; }
+function at(e) {
+  const r = canvas.getBoundingClientRect(), x = Math.floor((e.clientX - r.left - M) / state.cs) - R, y = Math.floor((e.clientY - r.top - M) / state.cs) - R;
+  return Math.abs(x) <= R && Math.abs(y) <= R ? tile(x, y) : null;
+}
+canvas.addEventListener("mousemove", (e) => { const t = at(e); if (t && (!state.hover || t.x !== state.hover.x || t.y !== state.hover.y)) { state.hover = t; if (!state.pin) describe(t); draw(); } });
+canvas.addEventListener("mouseleave", () => { state.hover = null; draw(); });
+canvas.addEventListener("click", (e) => { const t = at(e); state.pin = t && state.pin && t.x === state.pin.x && t.y === state.pin.y ? null : t; describe(state.pin || t); draw(); });
+$("modes").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; state.mode = b.dataset.mode; for (const x of $("modes").children) x.setAttribute("aria-pressed", String(x === b)); legend(); draw(); });
+for (const id of ["t-places", "t-pockets", "t-rings", "t-found", "t-levels"]) $(id).addEventListener("change", draw);
+const zoom = (d) => { state.cs = Math.max(8, Math.min(44, state.cs + d)); try { localStorage.setItem("atlas-cs", state.cs); } catch (e) {} draw(); };
+$("z-in").addEventListener("click", () => zoom(4)); $("z-out").addEventListener("click", () => zoom(-4));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+$("meta").textContent = `World seed ${WORLD.seed} · ${N}×${N} tiles · activity as of ${WORLD.generated}`;
+let savedZoom = null; try { savedZoom = localStorage.getItem("atlas-cs"); } catch (e) {}
+// Fit the whole map to the box the first time; after that, keep the viewer's own zoom.
+if (!savedZoom) state.cs = Math.max(10, Math.min(28, Math.floor(($("mapbox").clientWidth - 2 * M - 2) / N)));
+describe(tile(0, 0)); legend(); places(); draw();
+requestAnimationFrame(() => scrollTo(tile(0, 0)));
+document.fonts && document.fonts.ready.then(draw);
+</script>
