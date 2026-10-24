@@ -1314,11 +1314,17 @@ api.get("/public/polls", async (c) => {
       `select p.id::int, p.town, p.question, p.about, p.options, p.opens::text, p.closes::text, p.status, p.result, p.art,
               (select count(*) from poll_votes v where v.poll_id = p.id and not v.townsfolk)::text as voters
        from polls p order by p.status = 'open' desc, p.closes desc limit 30`)).rows;
+    // Who could vote: adventurers from level 2 (anywhere; they can walk to the meeting), and the townsfolk of that town.
+    const canVote = Number((await db.query<{ n: string }>("select count(*)::text n from players where role = 'player' and not is_test and level >= $1", [VOTE_MIN_LEVEL])).rows[0].n);
+    const folkIn = (await db.query<{ home: string; n: string }>("select b.home, count(*)::text n from bots b join players p on p.id = b.player_id group by b.home")).rows;
+    const folkFor = (town: string | null) => folkIn.filter((f) => !town || f.home === town).reduce((a, f) => a + Number(f.n), 0);
+    const folkVoted = (await db.query<{ poll_id: string; n: string }>("select poll_id::text, count(*)::text n from poll_votes where townsfolk group by poll_id")).rows;
     const said = (await db.query<{ poll_id: string; name: string; why: string }>(
       "select v.poll_id::text, pl.name, v.why from poll_votes v join players pl on pl.id = v.player_id where v.townsfolk and v.why is not null order by v.day, pl.name")).rows;
     return rows.map((p) => ({
       id: p.id, town: p.town, question: p.question, about: p.about, ...(p.art ? { art: p.art } : {}), options: p.options.map((o) => ({ id: o.id, label: o.label })), opens: p.opens, last_day: p.closes,
-      status: p.status, voters: Number(p.voters), ...(p.status === "closed" ? { result: p.result } : {}),
+      status: p.status, voters: Number(p.voters), can_vote: canVote,
+      townsfolk_voted: Number(folkVoted.find((f) => Number(f.poll_id) === p.id)?.n ?? 0), townsfolk: folkFor(p.town), ...(p.status === "closed" ? { result: p.result } : {}),
       townsfolk_said: said.filter((x) => Number(x.poll_id) === p.id).map((x) => ({ name: x.name, said: x.why })),
     }));
   });
