@@ -19,7 +19,7 @@ import * as Bag from "./bag.js";
 import { GEM_SELL } from "./caves.js";
 
 export type ListSlot = "weapon" | "armor" | "ore" | "trinket" | "gem";
-export const TOWNS = { brightwater: "Brightwater", ironhold: "Ironhold" } as const;
+export const TOWNS = { brightwater: "Brightwater", ironhold: "Ironhold", ashford: "Ashford" } as const;
 export type Town = keyof typeof TOWNS;
 
 export const AUCTION = {

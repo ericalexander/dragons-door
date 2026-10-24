@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.21.0",
+    "lore": "Far down the south road, where it crosses the river Ash, the realm's oldest town has opened its gates to you: a herald on the Exchange steps, a counting house that holds half the realm's debts, and a cellar where the quick and quiet learn their trade. Mind the ford. Something there still collects a toll.",
+    "plain": "Ashford, the third town, is open, a long walk down the south road from Brightwater. New Shadow characters start there, its Undercroft trains the Shadow path, and it has its own tavern, healer, bank, shop and auction house. The first time you walk in, you'll have to get past the ford."
+  },
+  {
     "version": "0.20.1",
     "lore": "People in this realm have started paying attention. Mention you're saving for plate, and someone may ask next week how the saving's going. Gifts you sent are remembered too, and so are favors.",
     "plain": "Townsfolk and the realm's characters now remember you: when you met, what you told them, gifts they kept and quests you did together, and they may bring it up next time you talk."

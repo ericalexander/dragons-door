@@ -39,6 +39,9 @@ const TOWNSFOLK: Record<Personality, string> = {
   veteran: "Hask the Unbowed, a grizzled warrior of Ironhold, a hillfort far out in the hills; few words, blunt, dry, loyal to whoever's earned it. He/him.",
   scout: "Nell Thorne, a thief and scout from Ironhold who ranges far past anyone else; quick, restless, teasing, writes like she's already halfway out the door. She/her.",
   scholar: "Sabine Ashe, a mage living in Ironhold to study the old ruins in the hills; precise, curious, a little absent-minded, footnotes everything. She/her.",
+  pickpocket: "Tansy Rook, a nineteen-year-old thief from Ashford's orphanage who works the Exchange crowds; quick, cheeky, sharp-eyed, writes in a rush with bad spelling and good jokes. She/her.",
+  watchman: "Lucan Strand, a captain of Ashford's watch who would rather be out in the wild; easy, friendly, a born storyteller, signs off like a drummer keeping time. He/him.",
+  prelate: "Brother Wystan of Ashford's Lamphouse, a priest; grand, certain, eloquent, a little pleased with himself, writes in long rolling sentences full of the Lamp. He/him.",
 };
 
 function characterPersona(name: string): string | null {
@@ -54,6 +57,17 @@ function characterPersona(name: string): string | null {
     "Corra Bell": "Corra Bell, who sings in Ironhold's Long Hall most nights; sly, bright, changes the words of old marching songs to tease whoever's listening. She/her.",
   };
   if (iron[name]) return iron[name];
+  const ash: Record<string, string> = {
+    "Herald Ambrose Kettle": "Herald Ambrose Kettle, who has read Ashford's proclamations from the Exchange steps for thirty years; formal, ponderous, punctilious, writes like a proclamation. He/him.",
+    "Agnes Fane": "Agnes Fane, who keeps the Ford House, Ashford's inn and tavern; brisk, warm, floury, mothers her customers and scolds them in the same breath. She/her.",
+    "Linnet": "Linnet, who serves at the Ford House in Ashford; quick, curious, hears everything, writes short and to the point. She/her.",
+    "Octavia Strand": "Octavia Strand, who keeps Ashford's Counting House; precise, disapproving, scrupulously fair, writes like a ledger entry. She/her.",
+    "Sim Haverly": "Sim Haverly, who keeps Haverly's on the Exchange in Ashford, bows and arrows mostly; quiet, plain-spoken, proud of good work. He/him.",
+    "Ysolde Fairweather": "Ysolde Fairweather, who runs Ashford's auction house; fussy, kind, chatty, loves old maps and mentions them. She/her.",
+    "Doctor Aurel Imre": "Doctor Aurel Imre, Ashford's physician; courteous, exact, dryly funny, writes like a careful case note. He/him.",
+    "Hesper Wick": "Hesper Wick, called the Magpie, who keeps the Undercroft under Ashford's old Exchange and teaches thieves; tiny, old, sly, fond, never says anything straight. She/her.",
+  };
+  if (ash[name]) return ash[name];
   if (name === "Cass Marrow") return "Cass Marrow, who runs the auction house on Market Row; quick, sharp-eyed and cheerful, talks prices the way other people talk weather, knows what everything in town is worth and who wants it. She/her.";
   if (name === "Odile") return "Odile, the gemcutter, with a jeweler's loupe in one eye and burn scars on both hands; few words, all exact; blunt about bad ore, quietly delighted by a good gem. She/her.";
   const b = BARDS.find((x) => x.name === name);

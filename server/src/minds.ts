@@ -82,6 +82,9 @@ const LEANS: Record<Personality, [GoalKind, number][]> = {
   veteran:  [["level", 3], ["rich", 2], ["far", 1]],
   scout:    [["far", 4], ["cave", 3], ["explore", 2]],
   scholar:  [["explore", 3], ["cave", 2], ["level", 2]],
+  pickpocket: [["rich", 4], ["save", 2], ["explore", 1]],
+  watchman: [["level", 3], ["far", 2], ["explore", 2]],
+  prelate:  [["gear", 3], ["level", 2], ["save", 1]],
 };
 
 const round100 = (n: number) => Math.max(100, Math.round(n / 100) * 100);
@@ -318,6 +321,9 @@ const BASE: Record<Personality, Partial<Record<Activity, number>>> = {
   veteran:  { hunt: 3, explore: 0.5, tavern: 0.8, shop: 1, rest: 0.1 },
   scout:    { hunt: 2, explore: 3, tavern: 0.3, rest: 0.1 },
   scholar:  { hunt: 1.5, explore: 2, tavern: 1.5, shop: 0.3, rest: 0.2 },
+  pickpocket: { hunt: 2, explore: 1, tavern: 1.5, shop: 0.8, rest: 0.1 },
+  watchman: { hunt: 3, explore: 1.5, tavern: 1, rest: 0.1 },
+  prelate:  { hunt: 1.5, explore: 0.4, tavern: 1.5, shop: 0.6, rest: 0.2 },
 };
 
 const FIGHTING: Activity[] = ["hunt", "explore", "mine"];
@@ -407,6 +413,9 @@ const AWAY: Record<Personality, string[]> = {
   veteran: ["up on the wall all day; it's his watch", "gone hunting alone, the way he does once a month"],
   scout: ["off somewhere past the ridge; she didn't say where", "mapping a valley nobody's named yet"],
   scholar: ["copying an inscription in a ruin two days' walk away", "shut in with her notes; the door has a sign on it"],
+  pickpocket: ["off on an errand for someone she won't name", "gone down the river on a barge; back when she's back"],
+  watchman: ["on the watch all day and all night; it's his turn at the ford", "riding the south road with a patrol"],
+  prelate: ["at a council dinner, saying grace at length", "in retreat at the Lamphouse; the door is shut"],
 };
 
 /** About one day in thirty, each townsperson is simply gone for the day. Stable per day, so the square agrees. */

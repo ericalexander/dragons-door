@@ -6,7 +6,9 @@ import { createHash } from "node:crypto";
 
 export type Personality = "banker" | "drunk" | "raider" | "gossip" | "pious" | "reckless" | "seer" | "braggart"
   // Ironhold's townsfolk
-  | "veteran" | "scout" | "scholar";
+  | "veteran" | "scout" | "scholar"
+  // Ashford's townsfolk
+  | "pickpocket" | "watchman" | "prelate";
 export type Doing = "forest" | "tavern" | "shop" | "fields";
 export interface Slot { at: string; doing: Doing[]; sleeps?: "inn" | "fields" }
 
@@ -23,6 +25,10 @@ export const PLAN: Record<Personality, Slot[]> = {
   veteran:  [{ at: "06:00", doing: ["forest"] }, { at: "12:30", doing: ["shop", "forest"] }, { at: "18:30", doing: ["forest", "tavern"], sleeps: "inn" }],
   scout:    [{ at: "07:30", doing: ["forest"] }, { at: "15:00", doing: ["forest"], sleeps: "inn" }],
   scholar:  [{ at: "10:00", doing: ["forest"] }, { at: "16:00", doing: ["tavern", "forest"] }, { at: "21:00", doing: ["tavern"], sleeps: "inn" }],
+  // Ashford: "tavern" is the Ford House, "shop" Haverly's and the auction house.
+  pickpocket: [{ at: "09:00", doing: ["shop", "forest"] }, { at: "14:00", doing: ["forest"] }, { at: "20:00", doing: ["tavern"], sleeps: "inn" }],
+  watchman: [{ at: "07:00", doing: ["forest"] }, { at: "13:00", doing: ["forest"] }, { at: "19:00", doing: ["tavern", "forest"], sleeps: "inn" }],
+  prelate:  [{ at: "06:30", doing: ["forest"] }, { at: "11:00", doing: ["tavern"] }, { at: "16:00", doing: ["forest"], sleeps: "inn" }],
 };
 
 /** When they get up and turn in. Default: up an hour before their first session, in bed when the last one ends. */
@@ -36,6 +42,9 @@ export const HOURS: Partial<Record<Personality, { wakes?: string; beds?: string 
   raider:   { wakes: "09:00" },
   veteran:  { wakes: "05:00", beds: "22:00" },
   scholar:  { wakes: "09:00", beds: "23:30" },
+  pickpocket: { wakes: "08:30", beds: "23:30" },
+  watchman: { wakes: "06:00", beds: "22:30" },
+  prelate:  { wakes: "05:30", beds: "21:00" },
 };
 
 const JITTER_MIN = 30;

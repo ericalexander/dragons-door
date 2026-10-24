@@ -113,7 +113,7 @@ export function templateEntry(f: DayFacts, standings = true): string {
   if (more.length) paras.push(more.join(" "));
 
   const said = f.tavern.filter((t) => t.townsfolk).slice(-2);
-  if (said.length) paras.push(said.map((t) => `${t.town === "ironhold" ? "In Ironhold's Long Hall" : "In the tavern"}, ${t.author} said: "${t.body}"`).join(" "));
+  if (said.length) paras.push(said.map((t) => `${t.town === "ironhold" ? "In Ironhold's Long Hall" : t.town === "ashford" ? "At Ashford's Ford House" : "In the tavern"}, ${t.author} said: "${t.body}"`).join(" "));
 
   if (!paras.length) paras.push(pick(["A quiet day. The forest kept its monsters to itself, and nobody robbed anybody.", "Nothing much happened, which in this town counts as news."]));
   const top = standings ? f.top.slice(0, 3).map((p) => `${p.name} (${p.level})`) : [];
@@ -148,7 +148,7 @@ async function claudeEntry(f: DayFacts, current: boolean): Promise<string | null
     day: `Day ${f.number} (${f.day})`,
     happenings: f.news.filter((n) => n.kind !== "join").map((n) => n.line),
     arrivals: f.news.filter((n) => n.kind === "join").map((n) => n.actor),
-    tavern_posts: f.tavern.map((t) => ({ by: t.author, townsfolk: t.townsfolk, where: t.town === "ironhold" ? "Ironhold's Long Hall" : "Brightwater's tavern", words: t.body })),
+    tavern_posts: f.tavern.map((t) => ({ by: t.author, townsfolk: t.townsfolk, where: t.town === "ironhold" ? "Ironhold's Long Hall" : t.town === "ashford" ? "Ashford's Ford House" : "Brightwater's tavern", words: t.body })),
     ...now,
     red_dragon: f.dragon_alive ? "alive" : "slain, for now",
   };

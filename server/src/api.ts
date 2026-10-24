@@ -281,6 +281,14 @@ function requireTown(ctx: Ctx, what: string, towns: TownId[]): TownId {
   throw new GameError("not_here", towns.includes("brightwater") ? `${what} is back in town; return to town first (it costs nothing)` : `${what} isn't here`, 409);
 }
 
+/** Every town with services: an inn, a healer, a shop, a bank, a tavern and an auction house. */
+const ALL_TOWNS: TownId[] = ["brightwater", "ironhold", "ashford"];
+/** Where a player's masters are: Brightwater's teach everyone; Ironhold's those who fight with blades and bows; Ashford's only the Shadow path. */
+export function trainsAt(p: { class: Player["class"]; path: string }): TownId[] {
+  if (casts(p.class)) return ["brightwater"];
+  return p.path === "shadow" ? ["brightwater", "ironhold", "ashford"] : ["brightwater", "ironhold"];
+}
+
 /** Going out to fight means leaving your room: you're back in the fields and fair game tonight. */
 async function leaveInn(ctx: Ctx) {
   if (ctx.p.location !== "inn") return;
@@ -442,7 +450,7 @@ api.post("/respec", async (c) => {
   const toSpecialized = !body.path;
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireTown(ctx, "the town", toPath === "gift" ? ["brightwater"] : ["brightwater", "ironhold"]);
+    requireTown(ctx, "the town", toPath === "gift" ? ["brightwater"] : ALL_TOWNS);
     await requireNoEncounter(ctx);
     if (ctx.p.role !== "player") { ctx.events.push({ kind: "not_for_you", reason: "townsfolk are who they are" }); return; }
     if (body.path && toPath === ctx.p.path) {
@@ -1116,8 +1124,8 @@ async function die(ctx: Ctx, kind: string, m: Monster) {
 
 api.post("/train", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
-  // Brightwater's masters teach everyone; Ironhold's teach only those who fight with steel.
-  const trainTown = requireTown(ctx, "your master", casts(ctx.p.class) ? ["brightwater"] : ["brightwater", "ironhold"]);
+  // Brightwater's masters teach everyone; Ironhold's teach those who fight with blades and bows, Ashford's only the Shadow path.
+  const trainTown = requireTown(ctx, "your master", trainsAt(ctx.p));
   await requireNoEncounter(ctx);
   const next = expForLevel(ctx.p.level + 1);
   if (next === null) { ctx.events.push({ kind: "max_level" }); return; }
@@ -1129,7 +1137,7 @@ api.post("/train", async (c) => c.json(await withPlayer(c.req.header("authorizat
   }
   await leaveInn(ctx);
   const ms = master(ctx.p.level)!;
-  const known = (trainTown === "ironhold" ? lore().ironMasters : lore().masters)[ms.level];
+  const known = (trainTown === "ironhold" ? lore().ironMasters : trainTown === "ashford" ? lore().ashMasters : lore().masters)[ms.level];
   const m: Monster = { name: known?.name || ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 };
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'master',$2)", [ctx.p.id, m]);
   ctx.events.push({ kind: "master_challenge", master: m, about: known?.about ?? null, level: ctx.p.level + 1 });
@@ -1157,7 +1165,7 @@ api.post("/healer", async (c) => {
   const body = z.object({ hp: z.union([z.literal("all"), z.number().int().positive()]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireTown(ctx, "the healer", ["brightwater", "ironhold"]);
+    requireTown(ctx, "the healer", ALL_TOWNS);
     await requireNoEncounter(ctx);
     const missing = ctx.p.max_hp - ctx.p.hp;
     const want = Math.min(missing, body.hp === "all" ? missing : body.hp);
@@ -1174,7 +1182,7 @@ api.post("/buy", async (c) => {
   const body = z.object({ kind: z.enum(["weapon", "armor", "bag"]), id: z.number().int(), keep_old: z.boolean().optional(), confirm: z.boolean().optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    const shopTown = requireTown(ctx, "the shop", ["brightwater", "ironhold"]);
+    const shopTown = requireTown(ctx, "the shop", ALL_TOWNS);
     await requireNoEncounter(ctx);
     // Gold changes hands only on a confirmed call: without confirm this returns a quote and does nothing.
     // Plugins from before buy quotes (0.15.1) and townsfolk go straight through, trading in as before.
@@ -1244,7 +1252,7 @@ api.post("/bank", async (c) => {
   const body = z.object({ op: z.enum(["deposit", "withdraw"]), amount: z.union([z.literal("all"), z.number().int().positive()]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireTown(ctx, "the bank", ["brightwater", "ironhold"]);
+    requireTown(ctx, "the bank", ALL_TOWNS);
     await requireNoEncounter(ctx);
     if (ctx.t.bank_tx >= GAME.bankTxPerDay) { ctx.events.push({ kind: "bank_closed", reason: "daily transaction limit" }); return; }
     const from = body.op === "deposit" ? ctx.p.gold : ctx.p.bank;
@@ -1259,14 +1267,14 @@ api.post("/bank", async (c) => {
 
 api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
-    const innTown = requireTown(ctx, "a bed for the night", ["brightwater", "ironhold"]);
+    const innTown = requireTown(ctx, "a bed for the night", ALL_TOWNS);
   await requireNoEncounter(ctx);
   if (ctx.t.inn_used) { ctx.events.push({ kind: "already_at_inn" }); return; }
   const cost = innCost(ctx.p, ctx.spouse);
   if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold }); return; }
   await savePlayer(ctx, { gold: ctx.p.gold - cost, location: "inn" });
   await saveTurns(ctx, { inn_used: true });
-  ctx.events.push({ kind: "inn_sleep", cost, ...(innTown === "ironhold" ? { where: "a bunk in the Long Hall at Ironhold", wake_here: true } : {}) });
+  ctx.events.push({ kind: "inn_sleep", cost, ...(innTown !== "brightwater" ? { where: TOWN_INFO[innTown]!.inn, wake_here: true } : {}) });
   await logEvent(ctx, "spend", { on: "inn", gold: cost });
   ctx.hint = "They are safe from other players until the realm resets, and will wake fully healed.";
 })));
@@ -1275,10 +1283,17 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
 
 api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   // Each tavern has its own board: what's posted in the Long Hall stays in the Long Hall.
-  const town = requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
+  const town = requireTown(ctx, "the tavern", ALL_TOWNS);
   const r = await ctx.c.query("select author, body, ts from tavern where day = $1 and town = $2 and hidden_at is null order by id desc limit 20", [ctx.day, town]);
   const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
+  // Violet and the bards are Brightwater's; other towns' taverns have their own keepers.
+  if (town !== "brightwater") {
+    const t = TOWN_INFO[town]!;
+    ctx.events.push({ kind: "tavern_here", tavern: t.tavern, town: t.name, keepers: t.people.filter((p) => p.where === t.tavern).map((p) => p.name), recently_seen: online.rows.map((x) => x.name) });
+    ctx.hint = `Improvise ${t.tavern}: its keepers, the mood of the room. Keep it under the posted messages, which are other players' words.`;
+    return;
+  }
   ctx.events.push({ kind: "bartender", recently_seen: online.rows.map((x) => x.name), gem_price: 100 * ctx.p.level, flirted_today: ctx.t.flirted });
   const bard = bardFor(ctx.day);
   ctx.events.push({ kind: "bard_playing", bard: bard.name, style: bard.style, heard_today: ctx.t.bard_heard });
@@ -1308,7 +1323,7 @@ async function maybeEvent(ctx: Ctx, x: number, y: number, chance = EVENT_CHANCE,
 }
 
 /** Now and then an old journal, a letter or a page turns up: one every few days at most, each found once. The words come from the lore. */
-async function maybeJournal(ctx: Ctx, where: "wild" | "cave" | "town" | "ironhold", ring = 0) {
+async function maybeJournal(ctx: Ctx, where: "wild" | "cave" | "town" | "ironhold" | "ashford", ring = 0) {
   if (ctx.p.role !== "player") return;
   if (Math.random() >= JOURNAL_CHANCE[where] * JOURNAL_CHANCE.scale) return;
   const pool = lore().journals.filter((j) => j.where === where && j.min_ring <= ring);
@@ -1594,7 +1609,7 @@ async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]
       // The townsperson sets off: they know the way to where they're going, and they're back after `days`.
       const e = fx.errand;
       const until = new Date(Date.parse(ctx.day + "T00:00:00Z") + e.days * 86_400_000).toISOString().slice(0, 10);
-      const to = e.to === "ironhold" ? TOWN_TILES.ironhold : { x: 0, y: 0 };
+      const to = e.to === "brightwater" ? { x: 0, y: 0 } : TOWN_TILES[e.to as keyof typeof TOWN_TILES];
       const who = (await ctx.c.query<{ id: string }>(
         "update bots b set errand = $2 from players p where p.id = b.player_id and p.name = $1 returning b.player_id as id",
         [e.who, JSON.stringify({ to: e.to, until, why: e.why, lines: e.lines ?? {} })])).rows[0];
@@ -2102,11 +2117,14 @@ api.post("/forge", async (c) => {
 /** What waits on the road below a town's walls the first time. Tough for level 5, a real fight at 6, safe by 7 (simulated). */
 const GATE_GUARDS: Partial<Record<TownId, Monster>> = {
   ironhold: { name: "Old Grudge", level: 7, hp: 360, max_hp: 360, str: 70, def: 27, gold: 12000, exp: 9000 },
+  ashford: { name: "Nan Silt", level: 7, hp: 340, max_hp: 340, str: 68, def: 26, gold: 11000, exp: 8500 },
   brightwater: { name: "Grey Hob", level: 7, hp: 360, max_hp: 360, str: 70, def: 27, gold: 12000, exp: 9000 },
 };
 const GATE_LINES: Partial<Record<TownId, { note: string; hint: string }>> = {
   ironhold: { note: "the road to the gate runs under a broken bridge, and something lives there; it won't let anyone through who hasn't beaten it, and there's no running",
     hint: "A set piece: they've reached the road below the town's walls, and Old Grudge, the troll under the broken bridge, comes up out of the gully. No running, no way round. Make it big, then the fight menu without (R)un." },
+  ashford: { note: "the south road comes down to the river Ash at a wide stone ford below the town, and something has taken a toll at the crossing since before the walls went up; it won't let anyone cross who hasn't beaten it, and there's no running",
+    hint: "A set piece: Ashford's roofs and the Lamphouse tower are across the river, and Nan Silt, the river hag who keeps the ford, rises out of the shallows wanting her toll, riddling about it. No running, no way round. Make it big, then the fight menu without (R)un." },
   brightwater: { note: "the old north road into Brightwater crosses a toll-bridge nobody has kept since the Siege, and something keeps it now; it won't let a stranger by until they've beaten it, and there's no running",
     hint: "A set piece: Brightwater's roofs are in sight, and Grey Hob, the hobgoblin who keeps the old toll-bridge on the north road, steps out to collect. No running, no way round. Make it big, then the fight menu without (R)un." },
 };
@@ -2145,9 +2163,10 @@ async function townView(ctx: Ctx, id: TownId) {
     people: town.people.map((p) => ({ ...p, ...looksOf(p.name) })),
     townsfolk_here: folk.map((f) => ({ name: f.name, class: f.class, level: f.level, ...(f.mind?.goal ? { on_mind: goalLabel(f.name, f.personality, f.mind.goal) } : {}), ...looksOf(f.name) })),
     players_here: players,
-    services: { healer: "Jessamy Crane, in the Long Hall", inn: "a bunk in the Long Hall (wake up here)", board: "the Long Hall's own board; Brightwater's tavern has its own", bank: "Mabry's strongbox, the same accounts as Brightwater's bank",
-      weaponry: `${town.buyer}'s weaponry, at the forge`, armory: "Tobin Harrow's armory: armor and bags", forge: `${town.buyer}'s forge`, auction: `${town.auctioneer}'s auction house, on the same board as Brightwater's`, sell: `${town.buyer} buys gear` },
-    masters: casts(ctx.p.class) ? "the training yard teaches only those who fight with steel; magic is taught in Brightwater" : "the training yard: masters for those who fight with steel",
+    tavern: town.tavern, services: town.services,
+    masters: town.trains === "shadow"
+      ? (ctx.p.path === "shadow" ? "the Undercroft: masters for those on the Shadow path" : "the Undercroft teaches only those on the Shadow path; Brightwater's masters teach everyone")
+      : (casts(ctx.p.class) ? "the training yard teaches only those who fight with steel; magic is taught in Brightwater" : "the training yard: masters for those who fight with steel"),
   };
 }
 
@@ -2155,7 +2174,7 @@ async function townView(ctx: Ctx, id: TownId) {
 async function arriveInTown(ctx: Ctx, t: Tile) {
   const id = townAt(t.x, t.y)!;
   ctx.events.push(await townView(ctx, id));
-  await maybeJournal(ctx, "ironhold");
+  await maybeJournal(ctx, id === "ashford" ? "ashford" : "ironhold");
   ctx.hint = `They're inside ${t.name}'s walls. Describe it from \`blurb\` and who's about, then its menu. There's no hunting inside the walls.`;
 }
 
@@ -2164,7 +2183,7 @@ api.get("/town", async (c) => c.json(await withPlayer(c.req.header("authorizatio
   const here = townAt(ctx.p.pos_x, ctx.p.pos_y);
   if (!here || here === "brightwater") { ctx.events.push({ kind: "no_town_here", note: here === "brightwater" ? "this is Brightwater; use square" : "there's no town here" }); return; }
   ctx.events.push(await townView(ctx, here));
-  await maybeJournal(ctx, "ironhold");
+  await maybeJournal(ctx, here === "ashford" ? "ashford" : "ironhold");
 }, { weather: true })));
 
 /** Facts behind a rumor, straight from the realm. Null when there's nothing to tell. */
@@ -2475,7 +2494,7 @@ const CROWD: Record<string, { mult: number; room: string }> = {
  */
 api.post("/perform", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
-  const town = requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
+  const town = requireTown(ctx, "the tavern", ALL_TOWNS);
   await requireNoEncounter(ctx);
   if (ctx.p.class !== "bard") { ctx.events.push({ kind: "not_for_you", reason: "only bards play for the room" }); return; }
   if (ctx.t.performed) { ctx.events.push({ kind: "performed_already" }); return; }
@@ -2494,8 +2513,8 @@ api.post("/perform", async (c) => c.json(await withPlayer(c.req.header("authoriz
     "select kind, actor, target, detail from news order by id desc limit 15");
   const headline = n.rowCount ? n.rows[roll(n.rowCount - 1)] : null;
   ctx.events.push({
-    kind: "performed", form: "Sonnet", instrument: weaponName(ctx.p.class, ctx.p.weapon_id), tavern: town === "ironhold" ? "the Long Hall" : "the tavern",
-    town: town === "ironhold" ? "Ironhold" : "Brightwater", time_of_day: tod, room: crowd.room, tips, ...(won ? { charm: 1 } : {}), headline,
+    kind: "performed", form: "Sonnet", instrument: weaponName(ctx.p.class, ctx.p.weapon_id), tavern: town === "brightwater" ? "the tavern" : TOWN_INFO[town]!.tavern,
+    town: town === "brightwater" ? "Brightwater" : TOWN_INFO[town]!.name, time_of_day: tod, room: crowd.room, tips, ...(won ? { charm: 1 } : {}), headline,
     reception: luck > 1.15 ? "they want another" : luck < 0.85 ? "polite" : "warm",
   });
   await logEvent(ctx, "perform", { tips, tod, tier: ctx.p.weapon_id });
@@ -2505,7 +2524,7 @@ api.post("/perform", async (c) => c.json(await withPlayer(c.req.header("authoriz
 api.post("/tavern", async (c) => {
   const body = z.object({ body: z.string().trim().min(1).max(280).transform(cleanText).pipe(z.string().min(1)) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-    const town = requireTown(ctx, "the tavern", ["brightwater", "ironhold"]);
+    const town = requireTown(ctx, "the tavern", ALL_TOWNS);
     if (!seasoned(ctx, "post in the tavern")) return;
     if (ctx.t.tavern_posts >= GAME.tavernPostsPerDay) { ctx.events.push({ kind: "tavern_quiet", reason: "you've said enough for one day" }); return; }
     await ctx.c.query("insert into tavern (day, author, body, town) values ($1,$2,$3,$4)", [ctx.day, ctx.p.name, body.body, town]);
@@ -2622,14 +2641,14 @@ api.post("/sell", async (c) => {
   const body = z.object({ id: z.number().int() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    const sellTown = requireTown(ctx, "someone to sell to", ["brightwater", "ironhold"]);
+    const sellTown = requireTown(ctx, "someone to sell to", ALL_TOWNS);
     await requireNoEncounter(ctx);
     const row = await ownRow(ctx, body.id);
     const gold = Bag.sellPrice(row.slot, row.item_id, row.rarity);
     await ctx.c.query("delete from inventory where id = $1", [row.id]);
     if (!ctx.p.is_test) await toStorehouse(ctx.c, [row], sellTown);
     await savePlayer(ctx, { gold: ctx.p.gold + gold });
-    ctx.events.push({ kind: "sold", item: Bag.item(row.slot, row.item_id, row.rarity).name, gold, ...(sellTown === "ironhold" ? { to: "Brannagh Steel" } : {}) });
+    ctx.events.push({ kind: "sold", item: Bag.item(row.slot, row.item_id, row.rarity).name, gold, ...(sellTown !== "brightwater" ? { to: TOWN_INFO[sellTown]!.buyer } : {}) });
     if (row.slot === "quest") await questItemGone(ctx, row.item_id, "sold");
   }));
 });
@@ -2672,7 +2691,7 @@ api.post("/mail", async (c) => {
       requireAlive(ctx);
       await requireNoEncounter(ctx);
       // The courier works from a town, any town.
-      const fromTown = requireTown(ctx, "the courier", ["brightwater", "ironhold"]) as TownId;
+      const fromTown = requireTown(ctx, "the courier", ALL_TOWNS) as TownId;
       if (ctx.p.level < GIFT_MIN_LEVEL) { ctx.events.push({ kind: "too_new", what: "send gifts", needed_level: GIFT_MIN_LEVEL }); return; }
       if (to.role === "player" && to.is_test !== ctx.p.is_test) { ctx.events.push({ kind: "gift_refused", reason: "test characters and real ones can't send each other gifts" }); return; }
       const sentToday = (await ctx.c.query<{ gold: string; items: string }>(
@@ -3035,7 +3054,7 @@ export async function settleAuctions(c: Client, day: string): Promise<string[]> 
     }
   }
   // The house's own lots, from each town's storeroom: one lot per kind of item, at full shop worth, and only while players there are quiet.
-  for (const [town, keeper] of [["brightwater", "Cass Marrow"], ["ironhold", "Mabry Locke"]] as const) {
+  for (const [town, keeper] of [["brightwater", "Cass Marrow"], ["ironhold", "Mabry Locke"], ["ashford", "Ysolde Fairweather"]] as const) {
     const quiet = Number((await c.query<{ n: string }>(
       "select count(*)::text as n from auctions a join players s on s.id = a.seller_id where a.status = 'open' and a.town = $1 and s.role <> 'npc' and not s.is_test", [town])).rows[0].n) < AUCTION.playerQuiet;
     const house = (await c.query<{ id: string }>("select id from players where name = $1", [keeper])).rows[0];
@@ -3085,7 +3104,7 @@ async function lotFor(ctx: Ctx, id: number): Promise<ARow> {
   if (!r) throw new GameError("no_such_lot", "there's no lot with that number");
   return r;
 }
-const atTheHouse = (ctx: Ctx): TownId => { requireAlive(ctx); return requireTown(ctx, "the auction house", ["brightwater", "ironhold"]); };
+const atTheHouse = (ctx: Ctx): TownId => { requireAlive(ctx); return requireTown(ctx, "the auction house", ALL_TOWNS); };
 
 /** The board: what's up for sale, your own lots and bids, and anything waiting for you. */
 api.get("/auction", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
@@ -3099,7 +3118,7 @@ api.get("/auction", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const waiting = Number((await ctx.c.query<{ n: string }>(
     "select count(*)::text as n from auctions where not collected and ((status = 'sold' and high_bidder = $1) or (status in ('expired','cancelled') and seller_id = $1))", [ctx.p.id])).rows[0].n);
   ctx.events.push({
-    kind: "auction_house", keeper: town === "ironhold" ? "Mabry Locke" : "Cass Marrow", town: TOWNS[town as Town] ?? town, connected: "one board for every town's house; lots elsewhere are delivered here when you collect", listings: board.map((r) => listingView(ctx, r)), your_lots: mine.map((r) => listingView(ctx, r)),
+    kind: "auction_house", keeper: town === "brightwater" ? "Cass Marrow" : TOWN_INFO[town]!.auctioneer, town: TOWNS[town as Town] ?? town, connected: "one board for every town's house; lots elsewhere are delivered here when you collect", listings: board.map((r) => listingView(ctx, r)), your_lots: mine.map((r) => listingView(ctx, r)),
     waiting_for_you: waiting, purse: ctx.p.gold, bank: ctx.p.bank,
     rules: { days: `${AUCTION.minDays}-${AUCTION.maxDays}`, listing_fee: `${Math.round(AUCTION.feeShare * 100)}% of the minimum bid, at least ${AUCTION.feeMin} gold`, house_cut: `${Math.round(AUCTION.cut * 100)}% of the sale`, max_lots: AUCTION.maxOpen, bids_from: "bank first, then purse; outbid gold comes back to your bank" },
   });
@@ -3221,7 +3240,7 @@ api.post("/challenge", async (c) => {
   const body = z.object({ name: z.string().min(1) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireTown(ctx, "the fields outside town", ["brightwater", "ironhold"]);
+    requireTown(ctx, "the fields outside town", ALL_TOWNS);
     await requireNoEncounter(ctx);
     if (ctx.t.player_fights <= 0) { ctx.events.push({ kind: "no_player_fights_left" }); return; }
     if (!seasoned(ctx, "attack another player")) return;

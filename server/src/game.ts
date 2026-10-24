@@ -344,12 +344,15 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
       return w;
     }
     // Inside another town's walls: its own services, no hunting; walking out still costs a turn.
-    if (townAt(p.pos_x, p.pos_y) === "ironhold") {
-      w.unshift("town", "healer", "auction", "forge", "shop", "bank", "tavern", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []), ...(t.player_fights > 0 ? ["challenge"] : []));
+    const town = townAt(p.pos_x, p.pos_y);
+    if (town && town !== "brightwater") {
+      w.unshift("town", "healer", "auction", ...(town === "ironhold" ? ["forge"] : []), "shop", "bank", "tavern", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []), ...(t.player_fights > 0 ? ["challenge"] : []));
       const nextLvl = expForLevel(p.level + 1);
       if (p.class === "bard" && !t.performed) w.push("perform");
+      // Ironhold's masters teach blades and bows; Ashford's only the Shadow path.
+      const teachesYou = !casts(p.class) && (town !== "ashford" || p.path === "shadow");
       if (needsSpec(p)) w.unshift("specialize");
-      else if (!casts(p.class) && nextLvl !== null && p.exp >= nextLvl) w.unshift("train");
+      else if (teachesYou && nextLvl !== null && p.exp >= nextLvl) w.unshift("train");
       return w;
     }
     if (t.forest_fights > 0) w.unshift("forest", "move");

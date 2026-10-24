@@ -1,3 +1,4 @@
+import type { TownId } from "./world.js";
 /**
  * Side quests: short chains of situations that play out over a few days.
  *
@@ -27,7 +28,7 @@ export type QEffect =
   /** A townsperson goes to live in another town for a few days, because of what the player did. `lines` are
    *  things they (or the people they're with) might say in that town's tavern meanwhile. Keep them vague:
    *  the tavern board is public, and nobody's secret should land on it. */
-  | { errand: { who: string; to: "brightwater" | "ironhold"; days: number; why: string; lines?: Record<string, string[]> } };
+  | { errand: { who: string; to: TownId; days: number; why: string; lines?: Record<string, string[]> } };
 
 export interface QChoice { id: string; label: string; cost?: number; effects: QEffect[]; then?: string; end?: string;
   /** A line for the news when this choice is made. {name} is the player. */

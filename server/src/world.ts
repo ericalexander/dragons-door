@@ -61,7 +61,7 @@ const ADJECTIVES = ["Whispering", "Ashen", "Crooked", "Grey", "Weeping", "Old", 
 const CAVE_NAMES = ["Hollow", "Grotto", "Deeps", "Cave", "Warren"];
 
 /** Towns out in the world, by tile. Brightwater is the centre; the others sit where the land put them. */
-export const TOWN_TILES = { ironhold: { x: -4, y: -11, name: "Ironhold" } } as const;
+export const TOWN_TILES = { ironhold: { x: -4, y: -11, name: "Ironhold" }, ashford: { x: 4, y: 10, name: "Ashford" } } as const;
 export type TownId = "brightwater" | keyof typeof TOWN_TILES;
 /** How far the gentle land around a town out in the world reaches. */
 export const POCKET = 4;

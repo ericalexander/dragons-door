@@ -13,7 +13,7 @@ import type pg from "pg";
 import { pool } from "./db.js";
 import { QUESTS, type QuestDef } from "./quests.js";
 
-export interface Journal { key: string; title: string; text: string; where: "wild" | "cave" | "town" | "ironhold"; author: string | null; min_ring: number }
+export interface Journal { key: string; title: string; text: string; where: "wild" | "cave" | "town" | "ironhold" | "ashford"; author: string | null; min_ring: number }
 export interface Lore {
   /** What anyone in town knows about the realm. Safe for the narrator, letters and the public Chronicle. */
   world: string;
@@ -21,12 +21,14 @@ export interface Lore {
   masters: Record<number, { name: string; about: string }>;
   /** Ironhold's training yard: masters for those who fight with steel. */
   ironMasters: Record<number, { name: string; about: string }>;
+  /** Ashford's Undercroft: masters for the Shadow path. */
+  ashMasters: Record<number, { name: string; about: string }>;
   journals: Journal[];
   /** How people look, which anyone would see, and for a few, how something they live with shapes how they move or talk. */
   looks: Record<string, { look: string; manner?: string }>;
 }
 
-const EMPTY: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, journals: [], looks: {} };
+const EMPTY: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, ashMasters: {}, journals: [], looks: {} };
 const TTL = 5 * 60_000;
 let current: Lore = EMPTY;
 let loadedAt = 0;
@@ -43,14 +45,14 @@ export async function loadLore(force = false): Promise<Lore> {
     loadedAt = Date.now();
     return current;
   }
-  const next: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, journals: [], looks: {} };
+  const next: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, ashMasters: {}, journals: [], looks: {} };
   const person = (name: string) => (next.people[name] ??= { pieces: [], mentions: [] });
   for (const r of rows) {
     if (r.kind === "world") next.world = r.body;
     else if (r.kind === "person" && r.subject) person(r.subject).pieces[r.piece ?? 0] = r.body;
     else if (r.kind === "mention" && r.subject) person(r.subject).mentions.push(r.body);
     else if (r.kind === "look" && r.subject) next.looks[r.subject] = { look: r.body, ...((r.data as { manner?: string }).manner ? { manner: (r.data as { manner: string }).manner } : {}) };
-    else if (r.kind === "master" && r.piece) ((r.data as { town?: string }).town === "ironhold" ? next.ironMasters : next.masters)[r.piece] = { name: r.subject ?? "", about: r.body };
+    else if (r.kind === "master" && r.piece) ((r.data as { town?: string }).town === "ironhold" ? next.ironMasters : (r.data as { town?: string }).town === "ashford" ? next.ashMasters : next.masters)[r.piece] = { name: r.subject ?? "", about: r.body };
     else if (r.kind === "journal") {
       const d = r.data as { where?: Journal["where"]; author?: string | null; min_ring?: number };
       next.journals.push({ key: r.key, title: r.subject ?? "", text: r.body, where: d.where ?? "wild", author: d.author ?? null, min_ring: d.min_ring ?? 0 });
@@ -90,4 +92,4 @@ export async function heardOf(c: pg.PoolClient | pg.Pool, playerId: string, name
 export const PAST_CHANCE = Number(process.env.DRAGONS_DOOR_PAST_CHANCE ?? 0.5);
 /** Days between journal finds, at least. */
 export const JOURNAL_EVERY_DAYS = Number(process.env.DRAGONS_DOOR_JOURNAL_DAYS ?? 3);
-export const JOURNAL_CHANCE = { wild: 0.05, cave: 0.06, town: 0.04, ironhold: 0.08, scale: Number(process.env.DRAGONS_DOOR_JOURNAL_SCALE ?? 1) };
+export const JOURNAL_CHANCE = { wild: 0.05, cave: 0.06, town: 0.04, ironhold: 0.08, ashford: 0.08, scale: Number(process.env.DRAGONS_DOOR_JOURNAL_SCALE ?? 1) };
