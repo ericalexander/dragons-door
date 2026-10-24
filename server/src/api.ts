@@ -2229,7 +2229,7 @@ async function recall(ctx: Ctx, whoId: string, name: string) {
     "select gold, gems, slot, item_id, rarity, sent_day::text from gifts where from_player = $1 and to_player = $2 and state = 'kept' order by id desc limit 3", [ctx.p.id, whoId])).rows;
   const mine = (await ctx.c.query<{ quest: string; status: string; outcome: string | null }>(
     "select quest, status, outcome from quests where player_id = $1 and status in ('active', 'done')", [ctx.p.id])).rows;
-  const quests = mine.map((q) => ({ q, def: questById(q.quest) })).filter(({ def }) => def?.start_on?.talk.includes(name))
+  const quests = mine.map((q) => ({ q, def: questById(q.quest) })).filter(({ def }) => def && (def.start_on?.talk.includes(name) || def.steps.some((st) => st.on && "talk" in st.on && Array.isArray(st.on.talk) && st.on.talk.includes(name))))
     .map(({ q, def }) => ({ quest: def!.title, ...(q.status === "done" ? { how_it_ended: q.outcome } : { still_going: true }) }));
   if (!m && !gifts.length) return null;
   return {

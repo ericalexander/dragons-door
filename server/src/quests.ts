@@ -77,15 +77,15 @@ export const QUESTS: QuestDef[] = [
         id: "found",
         know: "You found a tarnished silver ring in the wild, with a worn crest inside the band. You don't know whose it is.",
         on: { talk: "townsfolk", chance: 0.6 },
-        cue: "Gossip: a noblewoman from Ashford, Lady Ysolde, lost a family ring on the road and has been asking after it. She's expected through town in a day or two.",
+        cue: "Gossip: Ysolde Fairweather, who runs the auction house down in Ashford and comes of an old Ashford family, lost a family ring on the road and has been asking after it. She's expected through town in a day or two, on her way to see Cass Marrow.",
         then: "heard",
       },
       {
         id: "heard",
-        know: "The ring is Lady Ysolde's, a noblewoman from Ashford. She's expected through town soon, asking after it.",
-        on: { meet: "Lady Ysolde" },
+        know: "The ring is Ysolde Fairweather's, a family heirloom; she runs Ashford's auction house. She's expected through town soon, asking after it.",
+        on: { meet: "Ysolde Fairweather" },
         after_days: 1,
-        cue: "Lady Ysolde, travel-worn and anxious, is in the square asking everyone about a ring. She recognizes the crest the moment she sees it.",
+        cue: "Ysolde Fairweather, travel-worn and anxious, spectacles pushed up into her silver curls, is in the square asking everyone about a ring. She recognizes the crest the moment she sees it.",
         choices: [
           { id: "return", label: "Give it back", effects: [{ take_item: true }, { gold: 40 }, { charm: 2 }, { trinket: 10 }], end: "returned" },
           { id: "reward", label: "Ask what it's worth to her", effects: [{ take_item: true }, { gold: 90 }, { charm: -1 }], end: "haggled" },
@@ -93,7 +93,7 @@ export const QUESTS: QuestDef[] = [
         ],
       },
     ],
-    expired: { found: "The crest inside the ring means nothing to anyone now. It's just an old ring.", heard: "Lady Ysolde gave up and went home to Ashford without her ring.", default: "The trail went cold." },
+    expired: { found: "The crest inside the ring means nothing to anyone now. It's just an old ring.", heard: "Ysolde Fairweather gave up and went home to Ashford without her ring.", default: "The trail went cold." },
   },
   {
     id: "grimwald_boot",
