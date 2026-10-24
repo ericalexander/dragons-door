@@ -254,7 +254,11 @@ export const register: Register = on => {
         {section('Today', <Text>Turns {c.forest_fights} · PvP {c.player_fights} · bag {c.bag_used}/{c.bag_capacity}</Text>)}
         {section('Gear', <Text>{c.weapon}</Text>, <Text>{c.armor}</Text>)}
         {section('Where', <Text>{where}</Text>, <Text dimColor>{ground}{c.time_of_day ? ` · ${c.time_of_day}` : ''}</Text>,
-          ...(g.map.length > 0 ? [<Box flexDirection="column" marginTop={1}>{g.map.map(line => <Text mono>{line}</Text>)}</Box>] : []))}
+          ...(g.map.length > 0 ? [<Box flexDirection="column" marginTop={1}>{g.map.map(line => (
+            // You (@) stand out in bold and the accent colour; towns (T) and caves (O) in bold.
+            <Text mono>{line.split(/([@TO])/).filter(Boolean).map(part =>
+              part === '@' ? <Text mono bold color="claude">@</Text> : part === 'T' || part === 'O' ? <Text mono bold>{part}</Text> : part)}</Text>
+          ))}</Box>] : []))}
         {waiting.length > 0 && section('Waiting', ...waiting.map(t => <Text>{t}</Text>))}
         {(c.quests?.length ?? 0) > 0 && section('Quests', ...c.quests!.map(q => <Text>{q.title}{q.days_left !== undefined ? <Text dimColor> · {q.days_left} days</Text> : null}</Text>))}
         {g.online.length > 0 && section('In the realm now', <Text>{g.online.map(x => `● ${x}`).join('  ')}</Text>)}

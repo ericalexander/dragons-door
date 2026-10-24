@@ -233,3 +233,16 @@ test('chat keeps arriving when the mod thinks the tab is closed but it is on scr
   expect((await ui.find({ type: 'Text', text: /Yawn/ }))?.text).toBe('Eric: Yawn')
   await ui.unmount()
 })
+
+test('on the map, you and the towns and caves are drawn bold', async ($, on) => {
+  const opened = { n: 0 }
+  engine(on, () => JSON.stringify({ game: LABEL, events: [{ kind: 'surroundings', map: ['% T %', '. @ O'] }], state, actions: [] }), opened)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const row = await ui.find({ type: 'Text', text: /^\. @ O$/ })
+  expect(row?.text).toBe('. @ O')
+  const marks = (await ui.findAll({ type: 'Text' })).filter(t => t.props?.bold && /^[@TO]$/.test(t.text ?? '')).map(t => t.text)
+  expect(marks).toEqual(['T', '@', 'O'])
+  await ui.unmount()
+})
