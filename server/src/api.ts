@@ -9,7 +9,7 @@ import {
 } from "./game.js";
 import * as Bag from "./bag.js";
 import { TOWNS as TOWN_INFO, homeOf } from "./towns.js";
-import { VOTE_MIN_LEVEL, openPolls, type Poll } from "./polls.js";
+import { VOTE_MIN_LEVEL, openPolls, tally, type Poll } from "./polls.js";
 import { boosted, forgeCost, MAX_RARITY, rarity, RARITY, withRarity } from "./rarity.js";
 import { AUCTION, TOWNS, bidCeiling, houseCut, listingFee, nextBid, priceProblem, worth, type ListSlot, type Town } from "./auctions.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
@@ -1318,12 +1318,15 @@ api.get("/public/polls", async (c) => {
     const canVote = Number((await db.query<{ n: string }>("select count(*)::text n from players where role = 'player' and not is_test and level >= $1", [VOTE_MIN_LEVEL])).rows[0].n);
     const folkIn = (await db.query<{ home: string; n: string }>("select b.home, count(*)::text n from bots b join players p on p.id = b.player_id group by b.home")).rows;
     const folkFor = (town: string | null) => folkIn.filter((f) => !town || f.home === town).reduce((a, f) => a + Number(f.n), 0);
+    const counts = (await db.query<{ poll_id: string; choice: string; townsfolk: boolean; n: string }>("select poll_id::text, choice, townsfolk, count(*)::text n from poll_votes group by 1, 2, 3")).rows;
     const folkVoted = (await db.query<{ poll_id: string; n: string }>("select poll_id::text, count(*)::text n from poll_votes where townsfolk group by poll_id")).rows;
     const said = (await db.query<{ poll_id: string; name: string; why: string }>(
       "select v.poll_id::text, pl.name, v.why from poll_votes v join players pl on pl.id = v.player_id where v.townsfolk and v.why is not null order by v.day, pl.name")).rows;
     return rows.map((p) => ({
       id: p.id, town: p.town, question: p.question, about: p.about, ...(p.art ? { art: p.art } : {}), options: p.options.map((o) => ({ id: o.id, label: o.label })), opens: p.opens, last_day: p.closes,
       status: p.status, voters: Number(p.voters), can_vote: canVote,
+      // Running count, shown live like an election night: adventurers decide, townsfolk break a tie.
+      tally: p.status === "closed" && p.result ? p.result : tally(p, counts.filter((v) => Number(v.poll_id) === p.id).flatMap((v) => Array(Number(v.n)).fill({ choice: v.choice, townsfolk: v.townsfolk }))),
       townsfolk_voted: Number(folkVoted.find((f) => Number(f.poll_id) === p.id)?.n ?? 0), townsfolk: folkFor(p.town), ...(p.status === "closed" ? { result: p.result } : {}),
       townsfolk_said: said.filter((x) => Number(x.poll_id) === p.id).map((x) => ({ name: x.name, said: x.why })),
     }));

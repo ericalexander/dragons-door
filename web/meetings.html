@@ -71,15 +71,20 @@
     .entry { font-size: 18px; }
     h2 { font-size: 30px; }
   }
-  .opts { margin-top: 20px; }
-  .turnout { display: grid; gap: 4px; margin: 10px 0 0; max-width: 520px; }
-  .turn { display: grid; grid-template-columns: 7.5em 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
-  .turn .track { height: 8px; border: 1px solid var(--rule); background: var(--paper-hi, transparent); }
-  .turn .fill { display: block; height: 100%; background: var(--wax); }
-  .turn .n { font-family: var(--mono, monospace); font-size: 13px; color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .opt { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--rule); padding: 4px 0; }
-  .opt.win { font-weight: 700; color: var(--wax); }
-  .opt .n { font-family: var(--mono, monospace); font-size: 14px; color: var(--ink-faint); white-space: nowrap; }
+  .results { margin-top: 20px; display: grid; gap: 14px; }
+  .res-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .res-name { font-weight: 700; }
+  .res-n { font-family: var(--mono, monospace); font-size: 14px; color: var(--ink-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .res-n b { color: var(--ink); font-size: 16px; }
+  .res.lead .res-name, .res.lead .res-n b { color: var(--wax); }
+  .res-bar { display: flex; height: 16px; margin-top: 4px; border: 1px solid var(--rule); background: var(--paper-hi, transparent); }
+  .seg.p { background: var(--wax); }
+  .seg.f { background: var(--wax); opacity: .35; }
+  .res-sub { font-size: 13px; color: var(--ink-faint); margin-top: 2px; }
+  .reported { font-family: var(--mono, monospace); font-size: 13px; color: var(--ink-soft); margin: 2px 0 0; border-top: 1px solid var(--rule); padding-top: 8px; }
+  .key { font-size: 13px; color: var(--ink-faint); margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  .key .sw { display: inline-block; width: 12px; height: 12px; background: var(--wax); vertical-align: -1px; margin-right: 2px; }
+  .key .sw.f { opacity: .35; }
   .said { margin: 10px 0 0; padding: 0; list-style: none; }
   .said li { margin: 6px 0; font-style: italic; }
   .said li b { font-style: normal; }
@@ -127,8 +132,27 @@
     shrine: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 220" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"> <path d="M8 196 C 70 150, 120 128, 182 124 C 246 120, 300 146, 352 192" stroke-width="2"/> <path d="M30 204 C 90 176, 150 166, 210 170 C 260 173, 300 186, 340 206" stroke-width="1.2" opacity=".55"/> <path d="M138 216 C 150 196, 168 168, 180 132" stroke-width="1.2" stroke-dasharray="3 5" opacity=".7"/> <path d="M152 128 L152 84 L212 84 L212 128" stroke-width="2"/> <path d="M144 86 L182 54 L220 86" stroke-width="2.2"/> <path d="M146 88 L182 57 L218 88" stroke-width="1" opacity=".6"/> <path d="M158 76 L206 76 M166 68 L198 68 M174 61 L190 61" stroke-width="1" opacity=".6"/> <path d="M182 52 C 176 46, 178 40, 182 34 C 186 40, 188 46, 182 52 Z" stroke-width="1.4"/> <path d="M182 49 C 180 46, 181 43, 182 41" stroke-width="1" opacity=".6"/> <path d="M152 100 L162 100 M200 96 L212 96 M152 116 L166 116 M196 112 L212 112 M170 124 L180 124" stroke-width="1" opacity=".5"/> <path d="M174 128 L174 108 Q182 98 190 108 L190 128" stroke-width="1.6"/> <rect x="196" y="92" width="10" height="12" rx="1" stroke-width="1.4"/> <circle cx="201" cy="98" r="9" fill="var(--glow, #d9a85a)" stroke="none" opacity=".35"/> <circle cx="201" cy="98" r="2.6" fill="var(--glow, #d9a85a)" stroke="none"/> <path d="M92 158 l3 -7 l3 7 M100 156 l2 -5 l2 5 M260 152 l3 -7 l3 7 M268 154 l2 -5 l2 5 M226 132 l2 -6 l2 6 M132 134 l2 -6 l2 6" stroke-width="1" opacity=".7"/> <path d="M84 52 q6 -6 12 0 q6 -6 12 0 M262 38 q4 -4 8 0 q4 -4 8 0" stroke-width="1.2" opacity=".7"/> </svg> `,
   };
   const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
-  const bar = (label, a, b) => `<div class="turn"><span>${label}</span><span class="track"><span class="fill" style="width:${pct(a, b)}%"></span></span><span class="n">${a} of ${b} · ${pct(a, b)}%</span></div>`;
-  const turnout = (m) => `<div class="turnout">${bar("Adventurers", Number(m.voters), Number(m.can_vote || 0))}${bar("Townsfolk", Number(m.townsfolk_voted || 0), Number(m.townsfolk || 0))}</div>`;
+  const fmtShort = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  // Election-night results: one bar per choice, adventurers' votes solid and the townsfolk's lighter beside them.
+  function results(m) {
+    const t = m.tally || { players: {}, townsfolk: {} }, closed = m.status === "closed";
+    const P = (id) => Number(t.players?.[id] || 0), F = (id) => Number(t.townsfolk?.[id] || 0);
+    const total = m.options.reduce((n, o) => n + P(o.id) + F(o.id), 0);
+    const anyVotes = total > 0;
+    const rows = m.options.map((o) => {
+      const p = P(o.id), f = F(o.id), all = p + f, lead = anyVotes && t.winner === o.id;
+      return `<div class="res${lead ? " lead" : ""}">
+        <div class="res-top"><span class="res-name">${lead ? (closed ? "✓ " : "") : ""}${esc(o.label)}</span><span class="res-n"><b>${pct(all, total)}%</b> · ${all} vote${all === 1 ? "" : "s"}</span></div>
+        <div class="res-bar" role="img" aria-label="${esc(o.label)}: ${p} adventurers, ${f} townsfolk"><span class="seg p" style="width:${pct(p, total)}%"></span><span class="seg f" style="width:${pct(f, total)}%"></span></div>
+        <div class="res-sub">${p} adventurer${p === 1 ? "" : "s"} · ${f} townsfolk${lead && !closed ? " · leading" : ""}</div>
+      </div>`;
+    }).join("");
+    const expected = Number(m.can_vote || 0) + Number(m.townsfolk || 0), inNow = Number(m.voters || 0) + Number(m.townsfolk_voted || 0);
+    const note = closed
+      ? `Final · ${inNow} of ${expected} votes cast (${pct(inNow, expected)}%)${t.tie_broken_by_town ? " · the adventurers were split, so the townsfolk settled it" : ""}`
+      : `${pct(inNow, expected)}% reported · ${inNow} of ${expected} expected votes in · polls close at the end of ${fmtShort(m.last_day)}`;
+    return `<div class="results">${rows}<p class="reported">${note}</p><p class="key"><span class="sw p"></span>Adventurers (they decide) <span class="sw f"></span>Townsfolk (they break a tie)</p></div>`;
+  }
   const TOWN = { brightwater: "Brightwater", ironhold: "Ironhold", ashford: "Ashford" };
   fetch(API + "/v1/public/polls").then((r) => r.json()).then((d) => {
     const box = document.getElementById("meetings");
@@ -136,9 +160,8 @@
     box.innerHTML = d.meetings.map((m) => {
       const closed = m.status === "closed", r = m.result || {};
       const where = m.town ? TOWN[m.town] || m.town : "The whole realm";
-      const opts = m.options.map((o) => `<div class="opt${closed && r.winner === o.id ? " win" : ""}"><span>${esc(o.label)}</span>${closed ? `<span class="n">${Number(r.players?.[o.id] || 0)} adventurers · ${Number(r.townsfolk?.[o.id] || 0)} townsfolk</span>` : ""}</div>`).join("");
       const said = m.townsfolk_said.length ? `<ul class="said">${m.townsfolk_said.slice(0, 6).map((s) => `<li><b>${esc(s.name)}:</b> “${esc(s.said)}”</li>`).join("")}</ul>` : "";
-      return `<section class="day"><div class="status">${esc(where)} · ${closed ? "decided" : `open until the end of ${esc(fmt(m.last_day))}`} </div>${turnout(m)}${m.art && ART[m.art] ? `<figure class="art" aria-hidden="true">${ART[m.art]}</figure>` : ""}<h2>${esc(m.question)}</h2><div class="entry">${m.about ? `<p>${esc(m.about)}</p>` : ""}<div class="opts">${opts}</div>${said}${closed && r.tie_broken_by_town ? '<p class="quiet">The adventurers were split; the townsfolk settled it.</p>' : ""}</div></section>`;
+      return `<section class="day"><div class="status">${esc(where)} · ${closed ? "decided" : `open until the end of ${esc(fmt(m.last_day))}`} </div>${m.art && ART[m.art] ? `<figure class="art" aria-hidden="true">${ART[m.art]}</figure>` : ""}<h2>${esc(m.question)}</h2><div class="entry">${m.about ? `<p>${esc(m.about)}</p>` : ""}${results(m)}${said}</div></section>`;
     }).join("");
   }).catch(() => { document.getElementById("meetings").innerHTML = '<p class="quiet">The meetings aren\'t answering right now. They\'ll be back.</p>'; });
 </script>
