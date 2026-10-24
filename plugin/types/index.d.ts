@@ -5,7 +5,7 @@ export type Character = {
   forest_fights: number; player_fights: number; specials: number; mana?: number; mana_max?: number;
   weapon: string; armor: string; alive: boolean; in_encounter: boolean;
   bag_used: number; bag_capacity: number; unread_mail: number; unread_news: number; gifts_waiting?: number;
-  time_of_day?: string; place: { name: string; terrain: string; level: number } | null; cave_depth?: number | null;
+  time_of_day?: string; place: { name: string; terrain: string; level: number; x?: number; y?: number } | null; cave_depth?: number | null;
   quests?: { title: string; days_left?: number; doing?: string }[];
 };
 export type Game = {
@@ -15,8 +15,10 @@ export type Game = {
   isShown: boolean;
   character: Character | null;
   actions: string[];
-  /** The last map the player looked at, as drawn. */
+  /** The map around the player, as the realm draws it: fetched by the pane whenever they move. */
   map: string[];
+  /** Where that map was drawn ("x,y", or "town"), so it's fetched again only after a move. */
+  mapAt: string;
   /** Who the last rankings said was in the realm now. */
   online: string[];
   /** When the state last changed, ms since the epoch. */

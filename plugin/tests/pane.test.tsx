@@ -99,3 +99,39 @@ test('each game result tells the narrator the pane has the numbers, once the pan
   const other = await $.tool.call({ tool: 'Bash', command: 'ls' })
   expect('context' in other && other.context?.some(t => t.includes('side pane'))).toBeFalsy()
 })
+
+test('after a move the pane fetches the map itself, once per place', async ($, on) => {
+  const opened = { n: 0 }, maps = { n: 0 }
+  let where = { ...state.place, x: 1, y: 1 }
+  engine(on, () => JSON.stringify({ game: LABEL, events: [], state: { ...state, place: where }, actions: [] }), opened)
+  on('mcp.connect', () => ({ value: { isConnected: true, server: 'plugin:dragons-door:dragons-door' } }))
+  on('mcp.call', (_, e) => {
+    maps.n++
+    expect(e.tool).toBe('map')
+    return { value: { content: [{ type: 'text', text: JSON.stringify({ game: LABEL, events: [{ kind: 'map', map: [`row ${maps.n}`, '  @'] }] }) }], isError: false } }
+  })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  await $.tool.call({ tool: TOOL }) // same place: no second fetch
+  expect(maps.n).toBe(1)
+  where = { ...where, x: 2 }
+  await $.tool.call({ tool: TOOL })
+  expect(maps.n).toBe(2)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /^row/ }))?.text).toBe('row 2')
+  await ui.unmount()
+})
+
+test('a run of game calls draws one quiet line; anything else is the engine\'s', async ($, on) => {
+  on('ui.render', ($, e) => { const { Text } = $.ui.resolve(e); return <Text>engine</Text> })
+  const call = (tool: string) => ({ tool, input: {}, isRunning: false, isErrored: false, isInterrupted: false })
+  const group = (calls: ReturnType<typeof call>[]) => ({ plugin: 'dragons-door', component: 'ToolGroup', requestId: 'g', props: { calls, isActive: false, isExpanded: false, isCallsOnly: true } }) as const
+  for (const surface of ['terminal', 'desktop'] as const) {
+    let ui = await $.ui.mount({ ...group([call(TOOL), call('mcp__plugin_dragons-door_dragons-door__map')]), surface })
+    expect((await ui.find({ type: 'Text' }))?.text).toBe('· the realm answers')
+    await ui.unmount()
+    ui = await $.ui.mount({ ...group([call(TOOL), call('Bash')]), surface })
+    expect((await ui.find({ type: 'Text' }))?.text).toBe('engine')
+    await ui.unmount()
+  }
+})

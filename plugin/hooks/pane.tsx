@@ -13,7 +13,7 @@ const PANE = 'dragons-door'
 const TITLE = "Dragon's Door"
 // Change the tag when Game's fields change: it declines what an earlier version stored.
 const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
-  { isPlaying: false, isShown: false, character: null, actions: [], map: [], online: [], at: 0 } as Game, { shape: 'game-2' })
+  { isPlaying: false, isShown: false, character: null, actions: [], map: [], mapAt: '', online: [], at: 0 } as Game, { shape: 'game-3' })
 
 /** A Dragon's Door result, or null: every one starts with the game's label (the plugin's text() adds it). */
 function parse(text: string | undefined): Record<string, unknown> | null {
@@ -35,6 +35,22 @@ const n = (v: number) => v.toLocaleString('en-US')
 const PANE_NOTE = "Dragon's Door: the player can see a side pane with their character, HP, mana or specials, gold, turns, place, map, what's waiting and what they can do, drawn from the game's own state. While it's showing, leave the status line out of your replies (the menu of hotkeys stays). Everything else in the narrator's rules still holds."
 
 const RESULT_NOTE = "The Dragon's Door side pane is showing the player's numbers right now. Don't print the status line in this reply; give the menu only."
+
+/** The game's tools, as the engine names them: mcp__plugin_dragons-door_<server>__<tool>. */
+const OURS = /^mcp__plugin_dragons-door_/
+
+/** Ask the realm for the map where the player stands, through the plugin's own MCP server. */
+async function refreshMap($: EngineInterface, at: string) {
+  try {
+    const server = await $.mcp.connect('dragons-door')
+    if (!server.isConnected) return
+    const res = await $.mcp.call(server.server, 'map', {})
+    const block = res.content?.find((b: { type: string }) => b.type === 'text') as { text?: string } | undefined
+    const r = parse(block?.text)
+    const m = (Array.isArray(r?.events) ? (r!.events as Ev[]) : []).find(x => x.kind === 'map')?.map
+    if (Array.isArray(m)) await update($, game, g => ({ ...g, map: (m as string[]).slice(0, 15), mapAt: at }))
+  } catch { /* the map can wait for the next move */ }
+}
 
 /** Open the pane, and remember whether a surface is drawing it. */
 async function show($: EngineInterface) {
@@ -73,6 +89,11 @@ export const register: Register = on => {
       at: Date.now(),
     }))
     if (first) await show($)
+    // Moved? Fetch the map around them (a read, straight from the plugin's own server; the narrator never sees it).
+    const here = (r.state as Character | undefined)?.place
+    const at = here ? `${here.x},${here.y}` : 'town'
+    if (r.state && !Array.isArray(map) && at !== (await read($, game)).mapAt) await refreshMap($, at)
+    else if (Array.isArray(map)) await update($, game, g => ({ ...g, mapAt: at }))
     // Right beside the result, where the narrator reads it, not just in the system prompt: the pane has the numbers.
     if (ran.deny === undefined && (await read($, game)).isShown) return { ...ran, context: [...(ran.context ?? []), RESULT_NOTE] }
     return ran
@@ -89,6 +110,14 @@ export const register: Register = on => {
     const g = await read($, game)
     if (!g.isPlaying || !g.isShown) return r
     return { sections: [...r.sections, { id: 'dragons-door:pane', scope: 'session', text: PANE_NOTE }] }
+  }).catch(($, e, next) => next(e))
+
+  // A run of nothing but game calls draws one quiet line in place of "Called plugin:dragons-door…" (ctrl+o still shows them all).
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    const p = e.props
+    if (p.isExpanded || p.isCallsOnly !== true || p.calls.length === 0 || !p.calls.every(c => OURS.test(c.tool))) return next(e)
+    const { Text } = $.ui.resolve(e)
+    return <Text dimColor>{p.calls.some(c => c.isRunning) ? '· the realm stirs…' : '· the realm answers'}</Text>
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -131,7 +160,7 @@ export const register: Register = on => {
         {section('Today', <Text>Turns {c.forest_fights} · PvP {c.player_fights} · bag {c.bag_used}/{c.bag_capacity}</Text>)}
         {section('Gear', <Text>{c.weapon}</Text>, <Text>{c.armor}</Text>)}
         {section('Where', <Text>{where}</Text>, <Text dimColor>{ground}{c.time_of_day ? ` · ${c.time_of_day}` : ''}</Text>,
-          ...(g.map.length > 0 && c.place ? [<Box flexDirection="column" marginTop={1}>{g.map.map(line => <Text mono>{line}</Text>)}</Box>] : []))}
+          ...(g.map.length > 0 ? [<Box flexDirection="column" marginTop={1}>{g.map.map(line => <Text mono>{line}</Text>)}</Box>] : []))}
         {waiting.length > 0 && section('Waiting', ...waiting.map(t => <Text>{t}</Text>))}
         {(c.quests?.length ?? 0) > 0 && section('Quests', ...c.quests!.map(q => <Text>{q.title}{q.days_left !== undefined ? <Text dimColor> · {q.days_left} days</Text> : null}</Text>))}
         {g.online.length > 0 && section('In the realm now', <Text>{g.online.map(x => `● ${x}`).join('  ')}</Text>)}
