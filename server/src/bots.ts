@@ -432,7 +432,13 @@ async function yesterday(b: Bot): Promise<NewsEvent[]> {
   const news = await b.get("/news?day=yesterday");
   return isErr(news) ? [] : (news.events.filter((e) => e.kind === "news") as NewsEvent[]);
 }
-const say = async (b: Bot, line: string) => { await b.post("/tavern", { body: line.slice(0, 280) }); };
+/** Say something in the tavern, unless they've already said exactly that lately: nobody repeats themselves word for word on the board. */
+const say = async (b: Bot, line: string) => {
+  const body = line.slice(0, 280);
+  const said = await pool.query("select 1 from tavern where author = $1 and body = $2 and ts > now() - interval '3 days' limit 1", [b.name, body]);
+  if (said.rowCount) { b.log.push("had nothing new to say"); return; }
+  await b.post("/tavern", { body });
+};
 
 async function prayers(b: Bot) {
   // Brother Ansel: a word for the dead, or a proverb nobody asked for.
