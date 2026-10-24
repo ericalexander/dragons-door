@@ -3,9 +3,8 @@
  * Dragon's Door MCP server. Each tool is a thin call to the realm API; all rules live on the server.
  * The narrator skill turns the returned events into prose. This file never decides outcomes.
  */
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+import { McpServer } from "./mcp.js";
+import { z } from "./z.js";
 import { addCharacters, allCharacters, loadConfig, otherCharacters, saveConfig, switchCharacter } from "./config.js";
 import { codeHash, newCode, seal, unseal } from "./share.js";
 import { clientInfo, VERSION } from "./version.js";
@@ -134,6 +133,7 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
         case "unhide_chat": return text(await call("POST", "/v1/admin/hide_chat", { id: a.id, hidden: false }));
         case "chronicle": return text(await call("POST", "/v1/admin/chronicle", { day: a.day }));
       }
+      return text({ error: "unknown_op" });
     });
 }
 
@@ -322,5 +322,4 @@ server.tool("install_statusline", "Add news and mail indicators (⚔ N, ✉ N) t
     catch (e) { return text({ error: "statusline_failed", message: (e as Error).message }); }
   });
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+await server.connect();
