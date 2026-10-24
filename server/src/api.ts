@@ -54,7 +54,7 @@ interface Ctx {
 }
 
 /** Authenticate, lock the player row, roll the day if needed, run the handler, build the envelope. */
-async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Promise<void>, opts: { quiet?: boolean; weather?: boolean } = {}): Promise<Envelope> {
+async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Promise<void>, opts: { quiet?: boolean; weather?: boolean; surroundings?: boolean } = {}): Promise<Envelope> {
   const key = authHeader?.replace(/^Bearer\s+/i, "").trim();
   if (!key) throw new GameError("unauthorized", "missing api key", 401);
   await loadLore();
@@ -106,8 +106,17 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
       await noticeMail(ctx);
       await expireQuests(ctx);
     }
+    const startedAt = `${ctx.p.pos_x},${ctx.p.pos_y},${ctx.p.cave_depth}`;
     await fn(ctx);
     await c.query("update players set last_seen = now() where id = $1", [ctx.p.id]);
+    // For the side pane: when the player moved (or asked for their status), the map around them comes along,
+    // so the pane never has to ask for it. Plugins from before the pane (0.18.6) don't get it.
+    if (ctx.p.role === "player" && info?.plugin && !older(info.plugin, "0.18.6") && !ctx.events.some((x) => x.kind === "map")
+        && (opts.surroundings || startedAt !== `${ctx.p.pos_x},${ctx.p.pos_y},${ctx.p.cave_depth}`)) {
+      const seen = new Set([...(await exploredSet(ctx)), ...(await heardSet(ctx)).keys()]);
+      const [x, y] = inWild(ctx.p) ? [ctx.p.pos_x!, ctx.p.pos_y!] : [0, 0];
+      ctx.events.push({ kind: "surroundings", for: "the side pane; don't print it", map: renderMap(x, y, seen) });
+    }
     const enc = await c.query("select 1 from encounters where player_id = $1", [ctx.p.id]);
     const inEnc = enc.rowCount! > 0;
     const bagUsed = await Bag.used(c, ctx.p.id);
@@ -731,7 +740,7 @@ api.get("/public/auctions", async (c) => {
 
 // ---------- read-only ----------
 
-api.get("/status", async (c) => c.json(await withPlayer(c.req.header("authorization"), async () => {}, { weather: true })));
+api.get("/status", async (c) => c.json(await withPlayer(c.req.header("authorization"), async () => {}, { weather: true, surroundings: true })));
 
 // Weather on or off for this player. Nothing about their location is kept either way.
 api.post("/weather", async (c) => {

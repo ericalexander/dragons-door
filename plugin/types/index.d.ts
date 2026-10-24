@@ -15,10 +15,8 @@ export type Game = {
   isShown: boolean;
   character: Character | null;
   actions: string[];
-  /** The map around the player, as the realm draws it: fetched by the pane whenever they move. */
+  /** The map around the player, as the realm draws it: it comes with every move and status. */
   map: string[];
-  /** Where that map was drawn ("x,y", or "town"), so it's fetched again only after a move. */
-  mapAt: string;
   /** Who the last rankings said was in the realm now. */
   online: string[];
   /** When the state last changed, ms since the epoch. */

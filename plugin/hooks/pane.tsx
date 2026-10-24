@@ -13,7 +13,7 @@ const PANE = 'dragons-door'
 const TITLE = "Dragon's Door"
 // Change the tag when Game's fields change: it declines what an earlier version stored.
 const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
-  { isPlaying: false, isShown: false, character: null, actions: [], map: [], mapAt: '', online: [], at: 0 } as Game, { shape: 'game-3' })
+  { isPlaying: false, isShown: false, character: null, actions: [], map: [], online: [], at: 0 } as Game, { shape: 'game-4' })
 
 /** A Dragon's Door result, or null: every one starts with the game's label (the plugin's text() adds it). */
 function parse(text: string | undefined): Record<string, unknown> | null {
@@ -32,32 +32,10 @@ const bar = (have: number, max: number, width: number) => {
 }
 const n = (v: number) => v.toLocaleString('en-US')
 
-const PANE_NOTE = "Dragon's Door: the player can see a side pane with their character, HP, mana or specials, gold, turns, place, map, what's waiting and what they can do, drawn from the game's own state. While it's showing, leave the status line out of your replies (the menu of hotkeys stays). Everything else in the narrator's rules still holds."
-
 const RESULT_NOTE = "The Dragon's Door side pane is showing the player's numbers right now. Don't print the status line in this reply; give the menu only."
 
 /** The game's tools, as the engine names them: mcp__plugin_dragons-door_<server>__<tool>. */
 const OURS = /^mcp__plugin_dragons-door_/
-
-/** Ask the realm for the map where the player stands, through the plugin's own MCP server. */
-async function refreshMap($: EngineInterface, at: string, server: string) {
-  // The server's name as the tool call spelled it (plugin_dragons-door_dragons-door), which $.mcp.call takes;
-  // failing that, whatever the session runs this plugin's server under.
-  const names = [server, 'plugin:dragons-door:dragons-door']
-  try { const c = await $.mcp.connect('dragons-door'); if (c.isConnected && !names.includes(c.server)) names.push(c.server) } catch { /* use the first */ }
-  for (const name of names) {
-    try {
-      const res = await $.mcp.call(name, 'map', {})
-      const block = res.content?.find((b: { type: string }) => b.type === 'text') as { text?: string } | undefined
-      const r = parse(block?.text)
-      const m = (Array.isArray(r?.events) ? (r!.events as Ev[]) : []).find(x => x.kind === 'map')?.map
-      if (Array.isArray(m)) { await update($, game, g => ({ ...g, map: (m as string[]).slice(0, 15), mapAt: at })); return }
-      $.ui.log(`dragons-door pane: map from ${name} had no map (${(block?.text ?? '').slice(0, 120)})`, { to: 'debug' })
-    } catch (err) {
-      $.ui.log(`dragons-door pane: map from ${name} failed: ${(err as Error)?.message ?? err}`, { to: 'debug' })
-    }
-  }
-}
 
 /** Open the pane, and remember whether a surface is drawing it. */
 async function show($: EngineInterface) {
@@ -83,7 +61,8 @@ export const register: Register = on => {
     const r = parse(ran.text)
     if (!r) return ran
     const events = (Array.isArray(r.events) ? r.events : []) as Ev[]
-    const map = events.find(x => x.kind === 'map')?.map
+    // The realm sends the map with every move and status (surroundings), and when they look at it (map).
+    const map = (events.find(x => x.kind === 'map') ?? events.find(x => x.kind === 'surroundings'))?.map
     const ranks = events.find(x => x.kind === 'rankings')?.players
     const first = !(await read($, game)).isPlaying
     await update($, game, g => ({
@@ -96,11 +75,6 @@ export const register: Register = on => {
       at: Date.now(),
     }))
     if (first) await show($)
-    // Moved? Fetch the map around them (a read, straight from the plugin's own server; the narrator never sees it).
-    const here = (r.state as Character | undefined)?.place
-    const at = here ? `${here.x},${here.y}` : 'town'
-    if (r.state && !Array.isArray(map) && at !== (await read($, game)).mapAt) await refreshMap($, at, e.tool.replace(/^mcp__/, '').replace(/__[^_].*$/, ''))
-    else if (Array.isArray(map)) await update($, game, g => ({ ...g, mapAt: at }))
     // Right beside the result, where the narrator reads it, not just in the system prompt: the pane has the numbers.
     if (ran.deny === undefined && (await read($, game)).isShown) return { ...ran, context: [...(ran.context ?? []), RESULT_NOTE] }
     return ran
@@ -110,14 +84,6 @@ export const register: Register = on => {
     if (e.id === PANE) await update($, game, g => ({ ...g, isShown: false }))
     return next(e)
   })
-
-  // While the pane is up it carries the numbers, so the narrator can leave the status line out of its replies.
-  on('prompt.compose', async ($, e, next) => {
-    const r = await next(e)
-    const g = await read($, game)
-    if (!g.isPlaying || !g.isShown) return r
-    return { sections: [...r.sections, { id: 'dragons-door:pane', scope: 'session', text: PANE_NOTE }] }
-  }).catch(($, e, next) => next(e))
 
   // A run of nothing but game calls draws one quiet line in place of "Called plugin:dragons-door…" (ctrl+o still shows them all).
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {

@@ -75,19 +75,6 @@ test("another plugin's JSON that isn't the game's is left alone", async ($, on) 
   expect(opened.n).toBe(0)
 })
 
-test('while the pane is up the narrator is told to leave the status line out, and not before', async ($, on) => {
-  const opened = { n: 0 }
-  engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [] }), opened)
-  on('prompt.compose', () => ({ sections: [{ id: 'base', scope: 'session', text: 'base' }] }))
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const COMPOSE = { model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: { name: 'default', isKeepingCodingInstructions: true }, traits: [], sections: [] } as const
-  const before = await $.prompt.compose(COMPOSE)
-  expect(before.sections.some(s => s.id === 'dragons-door:pane')).toBe(false)
-  await $.tool.call({ tool: TOOL })
-  const during = await $.prompt.compose(COMPOSE)
-  expect(during.sections.some(s => s.id === 'dragons-door:pane')).toBe(true)
-})
-
 test('each game result tells the narrator the pane has the numbers, once the pane is up', async ($, on) => {
   const opened = { n: 0 }
   let reply = JSON.stringify({ game: LABEL, events: [], state, actions: [] })
@@ -98,29 +85,6 @@ test('each game result tells the narrator the pane has the numbers, once the pan
   expect('context' in r && r.context?.some(t => t.includes('side pane'))).toBe(true)
   const other = await $.tool.call({ tool: 'Bash', command: 'ls' })
   expect('context' in other && other.context?.some(t => t.includes('side pane'))).toBeFalsy()
-})
-
-test('after a move the pane fetches the map itself, once per place', async ($, on) => {
-  const opened = { n: 0 }, maps = { n: 0 }
-  let where = { ...state.place, x: 1, y: 1 }
-  engine(on, () => JSON.stringify({ game: LABEL, events: [], state: { ...state, place: where }, actions: [] }), opened)
-  on('mcp.connect', () => ({ value: { isConnected: true, server: 'plugin:dragons-door:dragons-door' } }))
-  on('mcp.call', (_, e) => {
-    maps.n++
-    expect(e.tool).toBe('map')
-    expect(e.server).toBe('plugin_dragons-door_dragons-door')
-    return { value: { content: [{ type: 'text', text: JSON.stringify({ game: LABEL, events: [{ kind: 'map', map: [`row ${maps.n}`, '  @'] }] }) }], isError: false } }
-  })
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.tool.call({ tool: TOOL })
-  await $.tool.call({ tool: TOOL }) // same place: no second fetch
-  expect(maps.n).toBe(1)
-  where = { ...where, x: 2 }
-  await $.tool.call({ tool: TOOL })
-  expect(maps.n).toBe(2)
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /^row/ }))?.text).toBe('row 2')
-  await ui.unmount()
 })
 
 test('a run of game calls draws one quiet line; anything else is the engine\'s', async ($, on) => {
@@ -135,4 +99,20 @@ test('a run of game calls draws one quiet line; anything else is the engine\'s',
     expect((await ui.find({ type: 'Text' }))?.text).toBe('engine')
     await ui.unmount()
   }
+})
+
+test('the map comes with a move, and a map the player asks for replaces it', async ($, on) => {
+  const opened = { n: 0 }
+  let reply = JSON.stringify({ game: LABEL, events: [{ kind: 'arrived' }, { kind: 'surroundings', map: ['  ?', '? @ ?'] }], state, actions: [] })
+  engine(on, () => reply, opened)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /\? @ \?/ }))?.text).toBe('? @ ?')
+  await ui.unmount()
+  reply = JSON.stringify({ game: LABEL, events: [{ kind: 'map', map: ['T @'] }], state, actions: [] })
+  await $.tool.call({ tool: TOOL })
+  ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /T @/ }))?.text).toBe('T @')
+  await ui.unmount()
 })
