@@ -217,7 +217,7 @@ export const register: Register = on => {
         {waiting.length > 0 && section('Waiting', ...waiting.map(t => <Text>{t}</Text>))}
         {(c.quests?.length ?? 0) > 0 && section('Quests', ...c.quests!.map(q => <Text>{q.title}{q.days_left !== undefined ? <Text dimColor> · {q.days_left} days</Text> : null}</Text>))}
         {g.online.length > 0 && section('In the realm now', <Text>{g.online.map(x => `● ${x}`).join('  ')}</Text>)}
-        {section(ch.roomName ? `Chat · ${ch.roomName}` : 'Chat',
+        {section(ch.roomName ? `Player chat · ${ch.roomName}` : 'Player chat',
           ...(ch.here.length ? [<Text dimColor>here: {ch.here.slice(0, 8).join(', ')}{ch.here.length > 8 ? ` +${ch.here.length - 8}` : ''}</Text>] : []),
           ...(ch.lines.length === 0 ? [<Text dimColor>Quiet. Say something.</Text>] : ch.lines.slice(-room).map(l => {
             const when = ago(l.at, now)
