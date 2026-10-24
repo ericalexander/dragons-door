@@ -10,15 +10,16 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 import type { Character, Chat, ChatLine, Game } from '../types'
 
 const PANE = 'dragons-door'
-const TITLE = 'Status'
+const TITLE = '⚔ Status'
 const CHAT_PANE = 'dragons-door-chat'
-const CHAT_TITLE = 'Player chat'
+const CHAT_TITLE = '✉ Player chat'
+const chatTitle = (unread: number) => unread > 0 ? `${CHAT_TITLE} · ${unread} new` : CHAT_TITLE
 // Change the tag when Game's fields change: it declines what an earlier version stored.
 const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
   { isPlaying: false, isShown: false, character: null, actions: [], map: [], online: [], at: 0 } as Game, { shape: 'game-4' })
 
 const chat = atom({ plugin: 'dragons-door', key: 'chat' } as const,
-  { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '', isOpen: false } as Chat, { shape: 'chat-3' })
+  { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '', isOpen: false, unread: 0, seen: { status: false, chat: false } } as Chat, { shape: 'chat-4' })
 /** How often the pane asks the realm for new chat while it's showing. */
 const CHAT_EVERY_MS = 5000
 
@@ -67,11 +68,32 @@ async function pollChat($: EngineInterface) {
   const res = await $.http.fetch(`${cred.url}/v1/chat?since=${fresh ? 0 : before.lastId}`, { headers: { authorization: `Bearer ${cred.key}` } })
   if (!res.ok) { await update($, chat, c => ({ ...c, note: CHAT_NOTE[errorOf(res.text)] ?? c.note })); return }
   const r = JSON.parse(res.text) as { room: string; room_name: string; here: string[]; messages: ChatLine[]; last_id: number }
+  // Lines from others that arrive while the chat tab is behind Status count as new, on its tab's title.
+  const shown = await isShowing($, CHAT_PANE)
+  const incoming = r.messages.filter(m => !m.mine && !before.lines.some(x => x.id === m.id)).length
   await update($, chat, c => {
     const moved = fresh || c.room !== r.room
     const lines = [...(moved ? [] : c.lines), ...r.messages.filter(m => moved || !c.lines.some(x => x.id === m.id))].slice(-40)
-    return { ...c, room: r.room, roomName: r.room_name, here: r.here, lines, lastId: Math.max(r.last_id, moved ? 0 : c.lastId), who: cred.key.slice(-8) }
+    return { ...c, room: r.room, roomName: r.room_name, here: r.here, lines, lastId: Math.max(r.last_id, moved ? 0 : c.lastId), who: cred.key.slice(-8),
+      unread: shown || fresh ? 0 : c.unread + incoming }
   })
+  const after = await read($, chat)
+  if (after.unread !== before.unread) await $.ui.open({ id: CHAT_PANE, title: chatTitle(after.unread) })
+}
+
+/** Every few seconds: note which tab is in front (looked at; chat in front clears its count), then fetch chat. */
+async function tick($: EngineInterface) {
+  const g = await read($, game)
+  if (!g.isPlaying) return
+  let panes: readonly { id: string; isShown: boolean }[] = []
+  try { panes = await $.ui.panes() } catch { /* fetch anyway */ }
+  const front = panes.find(p => p.isShown)?.id
+  if (front === PANE) await saw($, 'status')
+  if (front === CHAT_PANE) {
+    await saw($, 'chat')
+    if ((await read($, chat)).unread > 0) { await update($, chat, x => ({ ...x, unread: 0 })); await $.ui.open({ id: CHAT_PANE, title: chatTitle(0) }) }
+  }
+  await pollChat($)
 }
 
 /** Send a line: "@Name words" whispers to Name; anything else goes to the room. */
@@ -87,6 +109,21 @@ async function say($: EngineInterface, text: string) {
   if (!res.ok) { await update($, chat, c => ({ ...c, note: CHAT_NOTE[errorOf(res.text)] ?? "That didn't go through." })); return }
   await update($, chat, c => ({ ...c, draft: '', note: '' }))
   await pollChat($)
+}
+
+/** Whether the surface is showing this pane now (not a tab behind another). */
+const isShowing = async ($: EngineInterface, id: string) => {
+  try { return (await $.ui.panes()).find(p => p.id === id)?.isShown ?? false } catch { return false }
+}
+
+/** Mark a tab as looked at; once both have been, ever, the hint at the top goes for good. */
+async function saw($: EngineInterface, tab: 'status' | 'chat') {
+  const c = await read($, chat)
+  if (c.seen[tab]) return
+  const kept = ((await $.store.get('tabs-seen').catch(() => null)) ?? {}) as { status?: boolean; chat?: boolean }
+  const seen = { status: Boolean(kept.status || c.seen.status || tab === 'status'), chat: Boolean(kept.chat || c.seen.chat || tab === 'chat') }
+  await $.store.set('tabs-seen', seen).catch(() => undefined)
+  await update($, chat, x => ({ ...x, seen }))
 }
 
 /** A Dragon's Door result, or null: every one starts with the game's label (the plugin's text() adds it). */
@@ -123,8 +160,11 @@ async function show($: EngineInterface) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'door-pane', description: "Show the Dragon's Door pane" })
+    // Tabs the player has already looked at, in any session: the hint stays gone.
+    const kept = ((await $.store.get('tabs-seen').catch(() => null)) ?? {}) as { status?: boolean; chat?: boolean }
+    await update($, chat, c => ({ ...c, seen: { status: Boolean(kept.status), chat: Boolean(kept.chat) } }))
     // The chat feed: only does anything while the player is in the realm and the pane is showing.
-    $.clock.every(CHAT_EVERY_MS, () => { void pollChat($).catch(() => undefined) })
+    $.clock.every(CHAT_EVERY_MS, () => { void tick($).catch(() => undefined) })
     return next(e)
   })
 
@@ -176,8 +216,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const g = await read($, game)
-    // Drawing means a surface shows it: from here on the narrator leaves the status line out.
-    if (g.isPlaying && !g.isShown) await update($, game, x => ({ ...x, isShown: true }))
+    const hintStatus = !(await read($, chat)).seen.chat
     const c = g.character
     const cols = e.props?.bodyColumns ?? e.viewport?.columns ?? 36
     const w = Math.max(8, Math.min(14, cols - 20))
@@ -200,6 +239,7 @@ export const register: Register = on => {
     const ground = c.place ? `${c.place.terrain}, level ${c.place.level}` : 'in town'
     return (
       <Box flexDirection="column" paddingX={1}>
+        {hintStatus && <Text dimColor>Tabs: ⚔ Status | ✉ Player chat · click one, or ctrl+x tab</Text>}
         <Text bold color="claude">{c.name}</Text>
         <Text dimColor>{c.class}, level {c.level}{c.path ? ` · ${c.path}` : ''}</Text>
         {!c.alive && <Text color="error" bold>Dead until the new day</Text>}
@@ -228,12 +268,13 @@ export const register: Register = on => {
     const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : null
     const g = await read($, game)
     const ch = await read($, chat)
-    if (g.isPlaying && !ch.isOpen) await update($, chat, x => ({ ...x, isOpen: true }))
+    const hintChat = !ch.seen.status
     const now = await $.clock.now()
     const room = Math.max(4, (e.props?.scroll?.bodyRows ?? 24) - 6)
     if (!g.isPlaying) return <Box paddingX={1}><Text dimColor>Enter the realm to chat with whoever's there.</Text></Box>
     return (
       <Box flexDirection="column" paddingX={1}>
+        {hintChat && <Text dimColor>Tabs: ⚔ Status | ✉ Player chat · click one, or ctrl+x tab</Text>}
         <Text bold color="claude">{ch.roomName || 'Player chat'}</Text>
         <Text dimColor>{ch.here.length ? `here: ${ch.here.slice(0, 12).join(', ')}${ch.here.length > 12 ? ` +${ch.here.length - 12}` : ''}` : 'Nobody else here right now.'}</Text>
         <Box flexDirection="column" marginTop={1}>

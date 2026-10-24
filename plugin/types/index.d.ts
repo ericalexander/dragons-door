@@ -36,6 +36,10 @@ export type Chat = {
   draft: string;
   /** Whether the Player chat pane is open: chat is only fetched while it is. */
   isOpen: boolean;
+  /** Lines from others that arrived while the chat tab was behind the Status tab. */
+  unread: number;
+  /** Which tabs the player has looked at, ever (kept across sessions): the hint goes once they've seen both. */
+  seen: { status: boolean; chat: boolean };
 };
 
 declare module 'claude-code' {

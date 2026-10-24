@@ -18,13 +18,21 @@ const state = {
   quests: [{ title: "Grimwald's Other Boot", days_left: 6 }],
 }
 
+/** Which pane the stand-in engine says it's showing, and every title the mod has opened a pane with. */
+const showing = { id: 'dragons-door' }
+const opens: { id: string; title: string }[] = []
+
 /** Stands for the engine: answers every tool call with the given text, and counts the pane opening. */
 function engine(on: Parameters<TestBody>[1], reply: () => string, opened: { n: number }) {
+  showing.id = 'dragons-door'
+  on('ui.panes', () => ({ value: ['dragons-door', 'dragons-door-chat'].map(id => ({ id, title: id, isShown: id === showing.id, isFocused: false, isPlaced: true })) }))
+  mock.store(on)
   on('command.register', () => ({ value: { command: 'door-pane' } }))
-  on('ui.open', (_, e) => { if (e.id === 'dragons-door') opened.n++; return { value: { isPlaced: true } } })
+  opens.length = 0
+  on('ui.open', (_, e) => { if (e.id === 'dragons-door') opened.n++; opens.push({ id: e.id, title: e.title ?? '' }); return { value: { isPlaced: true } } })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', () => ({ result: {}, text: reply() }))
-  mock.clock(on, { now: Date.parse('2026-10-24T12:00:00Z') })
+  return mock.clock(on, { now: Date.parse('2026-10-24T12:00:00Z') })
 }
 
 test("a session that isn't playing never sees the pane", async ($, on) => {
@@ -139,6 +147,7 @@ test('chat: say a line and whisper one, straight to the realm, and see them in t
   const opened = { n: 0 }, sent: { body: unknown }[] = []
   engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [] }), opened)
   realm(on, sent)
+  showing.id = 'dragons-door-chat'
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: TOOL })
   const ui = await $.ui.mount({ ...CHAT, surface: 'terminal' })
@@ -166,13 +175,41 @@ test('two panes, Status and Player chat, open together; the status pane has no c
   const titles: string[] = []
   on('command.register', () => ({ value: { command: 'door-pane' } }))
   on('ui.open', (_, e) => { titles.push(e.title ?? e.id); return { value: { isPlaced: true } } })
+  on('ui.panes', () => ({ value: [] }))
+  mock.store(on)
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', () => ({ result: {}, text: JSON.stringify({ game: LABEL, events: [], state, actions: [] }) }))
   mock.clock(on, { now: Date.parse('2026-10-24T12:00:00Z') })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: TOOL })
-  expect(titles).toEqual(['Status', 'Player chat'])
+  expect(titles).toEqual(['⚔ Status', '✉ Player chat'])
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /Quiet|whisper/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('new lines while the chat tab is behind Status show on its title; bringing it to the front clears them; the hint goes once both are seen', async ($, on) => {
+  const opened = { n: 0 }
+  const clock = engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [] }), opened)
+  let next: { id: number; from: string; body: string; mine: boolean }[] = []
+  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/eric' : undefined }))
+  on('fs.read', () => ({ value: JSON.stringify({ api_key: 'door_test_key_1234' }) }))
+  on('http.fetch', () => ({ value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ room: 'brightwater', room_name: 'Brightwater', here: [], messages: next, last_id: next.at(-1)?.id ?? 0 }) } }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL }) // opens both tabs, Status in front
+  await clock.advance(5000)
+  let ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /^Tabs:/ }))?.text).toContain('ctrl+x tab')
+  await ui.unmount()
+  next = [{ id: 50, from: 'Pip', body: 'Race you to the gate', mine: false }]
+  await clock.advance(5000)
+  expect(opens.filter(o => o.id === 'dragons-door-chat').at(-1)?.title).toBe('✉ Player chat · 1 new')
+  showing.id = 'dragons-door-chat'
+  next = []
+  await clock.advance(5000)
+  expect(opens.filter(o => o.id === 'dragons-door-chat').at(-1)?.title).toBe('✉ Player chat')
+  ui = await $.ui.mount({ ...CHAT, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^Tabs:/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: /Race you/ }))?.text).toBe('Pip: Race you to the gate')
   await ui.unmount()
 })
