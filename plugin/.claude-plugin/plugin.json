@@ -1,6 +1,6 @@
 {
   "name": "dragons-door",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Dragon's Door: an old-school BBS door game, played inside Claude Code. Fight in the forest, raid other players, read the morning news.",
   "author": {
     "name": "Eric Alexander"
@@ -13,5 +13,6 @@
   ],
   "license": "MIT",
   "homepage": "https://dragonsdoor.gg",
-  "repository": "https://github.com/ericalexander/dragons-door"
+  "repository": "https://github.com/ericalexander/dragons-door",
+  "types": "./types/index.d.ts"
 }

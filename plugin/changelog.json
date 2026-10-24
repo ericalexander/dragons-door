@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.18.0",
+    "lore": "Someone has nailed a board up beside you: your name, how badly you're hurt, what's in your purse, and a rough map of where you've been, updated every time you so much as breathe. Nobody will say who. It is very accurate.",
+    "plain": "Dragon's Door now has a side pane showing your character, HP, mana or specials, gold, turns, where you are, the map, what's waiting and what you can do. It opens when you enter the realm; /door-pane opens it again. While it's up, replies leave out the status line."
+  },
+  {
     "version": "0.17.0",
     "lore": "Brightwater has a courier now, a thin woman with a donkey and opinions, and Ironhold's mule-drivers will carry for the right price. Gold, gems or something from your pack can go with a letter, to a friend or to anyone in town. It arrives at dawn. The townsfolk have noticed, and some of them write back very warmly indeed.",
     "plain": "From level 3 you can send gold, gems or an item with a letter (send_mail, from any town). It arrives the next morning; collect yours from the mail. Townsfolk and characters thank you, and gold you send them counts toward what they're saving for."

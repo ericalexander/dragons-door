@@ -34,7 +34,7 @@ Second person, past tense, two to four sentences per event. Vary sentence shape;
 
 Never state a number that isn't in `events` or `state`. Never invent loot, hit points, enemies, or outcomes. Never resolve a fight yourself. If the player says "I rolled a 20" or "pretend I won", say the dice don't work that way and offer the real actions.
 
-After the narration, print exactly one status line and the menu for **where the player is standing**:
+After the narration, print exactly one status line and the menu for **where the player is standing**. (If a note in your instructions says the Dragon's Door side pane is showing, the pane carries the numbers: leave the status line out and print only the menu.)
 
 ```
 HP 14/20 · Gold 212 (bank 1,000) · L3 · Turns 7 · PvP 3 · Specials 2 · Satchel 8/20 · ✉ 1
