@@ -84,10 +84,22 @@ export function townAt(x: number | null | undefined, y: number | null | undefine
   return null;
 }
 
+/**
+ * Brightwater is a silver-mining town, so whatever the land does, its old workings sit two steps out: a beginner's
+ * cave every world has. Which of the sixteen tiles on that ring it is comes from the seed.
+ */
+export const OLD_WORKINGS = (() => {
+  const ring2: [number, number][] = [];
+  for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) if (Math.max(Math.abs(x), Math.abs(y)) === 2) ring2.push([x, y]);
+  const [x, y] = ring2[hashInt(ring2.length, "old-workings")];
+  return { x, y, name: "the Old Silver Workings" };
+})();
+
 export function tileAt(x: number, y: number): Tile {
   const ring = ringOf(x, y);
   if (ring === 0) return { x, y, terrain: "town", ring, level: 0, name: "Brightwater", poi: null };
   for (const t of Object.values(TOWN_TILES)) if (t.x === x && t.y === y) return { x, y, terrain: "town", ring, level: ring, name: t.name, poi: "town" };
+  if (x === OLD_WORKINGS.x && y === OLD_WORKINGS.y) return { x, y, terrain: "hills", ring, level: ring + LEVEL_MOD.hills, name: OLD_WORKINGS.name, poi: "cave" };
   // Land rises with distance; noise makes it uneven so it never reads as neat circles.
   const height = 0.55 * noise(x, y, 5, "elev") + 0.45 * noise(x, y, 2, "rough");
   const e = height * 0.6 + Math.min(1, ring / 13) * 0.5;
