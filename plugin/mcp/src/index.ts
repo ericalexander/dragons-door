@@ -14,6 +14,28 @@ import { clientInfo, VERSION } from "./version.js";
 import { installStatusline, noteUnread, refreshInstalledScript, uninstallStatusline } from "./statusline.js";
 
 const server = new McpServer({ name: "dragons-door", version: VERSION });
+
+/**
+ * Every tool's annotations, attached as it registers: a title, and whether it only looks (readOnlyHint, so
+ * permission modes can let it run unasked, as the side pane's own map fetch needs) or can't be undone.
+ * Looking includes marking things seen (news, mail). Everything here talks to the realm's server.
+ */
+const LOOKS = new Set(["status", "news", "rankings", "map", "journal", "library", "specializations", "workshop", "town", "forge",
+  "auction", "shop", "bag", "tavern", "mail", "square", "weather"]);
+const FINAL = new Set(["drop", "sell", "respec", "admin", "characters"]);
+const TITLES: Record<string, string> = { send_mail: "Send a letter", collect_gifts: "Collect gifts", learn_spell: "Learn a spell or buy an instrument",
+  tavern_post: "Post on the tavern board", square_talk: "Talk in the square", install_statusline: "Install the status line",
+  workshop_order: "Order from the workshop", forge_order: "Order from the forge", auction_act: "Bid, buy or list at auction" };
+const titleOf = (name: string) => TITLES[name] ?? name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+{
+  const register = server.tool.bind(server) as (...a: unknown[]) => { update: (u: { annotations: Record<string, unknown> }) => void };
+  (server as unknown as { tool: (...a: unknown[]) => unknown }).tool = (...a: unknown[]) => {
+    const reg = register(...a);
+    const name = String(a[0]);
+    reg.update({ annotations: { title: `Dragon's Door: ${titleOf(name)}`, readOnlyHint: LOOKS.has(name), destructiveHint: FINAL.has(name), idempotentHint: LOOKS.has(name), openWorldHint: true } });
+    return reg;
+  };
+}
 void refreshInstalledScript();
 
 async function call(method: "GET" | "POST", path: string, body?: unknown) {

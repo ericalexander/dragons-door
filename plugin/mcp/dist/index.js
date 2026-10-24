@@ -21812,6 +21812,47 @@ async function refreshInstalledScript() {
 
 // src/index.ts
 var server = new McpServer({ name: "dragons-door", version: VERSION });
+var LOOKS = /* @__PURE__ */ new Set([
+  "status",
+  "news",
+  "rankings",
+  "map",
+  "journal",
+  "library",
+  "specializations",
+  "workshop",
+  "town",
+  "forge",
+  "auction",
+  "shop",
+  "bag",
+  "tavern",
+  "mail",
+  "square",
+  "weather"
+]);
+var FINAL = /* @__PURE__ */ new Set(["drop", "sell", "respec", "admin", "characters"]);
+var TITLES = {
+  send_mail: "Send a letter",
+  collect_gifts: "Collect gifts",
+  learn_spell: "Learn a spell or buy an instrument",
+  tavern_post: "Post on the tavern board",
+  square_talk: "Talk in the square",
+  install_statusline: "Install the status line",
+  workshop_order: "Order from the workshop",
+  forge_order: "Order from the forge",
+  auction_act: "Bid, buy or list at auction"
+};
+var titleOf = (name) => TITLES[name] ?? name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+{
+  const register = server.tool.bind(server);
+  server.tool = (...a) => {
+    const reg = register(...a);
+    const name = String(a[0]);
+    reg.update({ annotations: { title: `Dragon's Door: ${titleOf(name)}`, readOnlyHint: LOOKS.has(name), destructiveHint: FINAL.has(name), idempotentHint: LOOKS.has(name), openWorldHint: true } });
+    return reg;
+  };
+}
 void refreshInstalledScript();
 async function call(method, path, body) {
   const cfg = await loadConfig();
