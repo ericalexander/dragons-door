@@ -2819,9 +2819,9 @@ api.get("/chat", async (c) => {
     : [...(await pool.query<Row>(`${sel} and $2::bigint = 0 and c.to_player is null and c.room = $4 order by c.id desc limit 20`, [me.id, 0, me.is_test, room])).rows,
        ...(await pool.query<Row>(`${sel} and $2::bigint = 0 and $4::text is not null and (c.to_player = $1 or (c.from_player = $1 and c.to_player is not null)) order by c.id desc limit 20`, [me.id, 0, me.is_test, room])).rows]
       .sort((a, b) => Number(a.id) - Number(b.id));
-  // Who else is in the room now: anyone who did something in the last fifteen minutes, in the same town or on the road.
+  // Who else is in the room now: players (townsfolk don't chat) who did something in the last fifteen minutes, in the same town or on the road.
   const here = (await pool.query<{ name: string; pos_x: number | null; pos_y: number | null }>(
-    `select name, pos_x, pos_y from players where role <> 'npc' and is_test = $2 and banned_at is null
+    `select name, pos_x, pos_y from players where role = 'player' and is_test = $2 and banned_at is null
        and last_seen > now() - interval '15 minutes' and id <> $1 order by last_seen desc limit 60`, [me.id, me.is_test])).rows
     .filter((x) => chatRoom(x).room === room).slice(0, 20).map((x) => x.name);
   return c.json({
