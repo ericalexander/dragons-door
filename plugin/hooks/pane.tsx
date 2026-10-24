@@ -5,7 +5,7 @@
  * aren't playing. It only reads: nothing here changes the game.
  */
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import type { Character, Game } from '../types'
 
@@ -25,16 +25,6 @@ function parse(text: string | undefined): Record<string, unknown> | null {
 }
 
 type Ev = { kind?: string; map?: unknown; players?: unknown }
-
-/** What the menu's actions mean, in a word or two; the narrator gives the keys. */
-const ACTION: Record<string, string> = {
-  explore: 'Explore', forest: 'Hunt', move: 'Walk on', return: 'Return to town', map: 'Map', town: 'Town', tavern: 'Tavern',
-  healer: 'Healer', shop: 'Smith', bank: 'Bank', auction: 'Auction house', workshop: 'Workshop', library: 'Library', chapel: 'Chapel',
-  inn: 'Inn', bard: 'Listen to the bard', flirt: 'Flirt', challenge: 'Challenge', train: 'Train', dragon: 'The dragon', specialize: 'Specialize',
-  perform: 'Play a set', instruments: "Dunstan's instruments", descend: 'Go down', deeper: 'Deeper', climb: 'Climb out', mine: 'Mine',
-  take: 'Take it', event: 'Look closer', 'fight attack': 'Attack', 'fight special': 'Special', 'fight heal': 'Pray', 'fight staff': 'Staff', 'fight run': 'Run',
-}
-const SKIP = new Set(['status', 'news', 'rankings', 'mail', 'bag', 'equip ground'])
 
 const bar = (have: number, max: number, width: number) => {
   const full = max > 0 ? Math.max(0, Math.min(width, Math.round((have / max) * width))) : 0
@@ -100,51 +90,47 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const g = await read($, game)
+    // Drawing means a surface shows it: from here on the narrator leaves the status line out.
+    if (g.isPlaying && !g.isShown) await update($, game, x => ({ ...x, isShown: true }))
     const c = g.character
-    const cols = e.viewport?.columns ?? 32
-    const w = Math.max(8, Math.min(20, cols - 18))
-    if (!c) return <Box><Text dimColor>Enter the realm to see your character here.</Text></Box>
-    const heading = (t: string) => <Text bold color="claude">{t}</Text>
+    const cols = e.props?.bodyColumns ?? e.viewport?.columns ?? 36
+    const w = Math.max(8, Math.min(14, cols - 20))
+    if (!c) return <Box paddingX={1}><Text dimColor>Enter the realm to see your character here.</Text></Box>
+    const label = (t: string) => <Text dimColor bold>{t.toUpperCase()}</Text>
+    const section = (t: string, ...rows: RenderChildren[]) => <Box flexDirection="column" marginTop={1}>{label(t)}{rows}</Box>
+    const meter = (name: string, have: number, max: number, color: string) => (
+      <Box flexDirection="row" gap={1}>
+        <Text>{name.padEnd(4)}</Text>
+        <Text mono color={color}>{bar(have, max, w)}</Text>
+        <Text>{have}/{max}</Text>
+      </Box>
+    )
     const mana = c.mana_max !== undefined
     const waiting: string[] = []
     if (c.unread_mail) waiting.push(`${c.unread_mail} letter${c.unread_mail > 1 ? 's' : ''}`)
     if (c.gifts_waiting) waiting.push(`${c.gifts_waiting} gift${c.gifts_waiting > 1 ? 's' : ''} from the courier`)
-    if (c.unread_news) waiting.push(`${c.unread_news} news`)
-    const can = g.actions.filter(a => !SKIP.has(a)).map(a => ACTION[a] ?? a)
-    const where = c.place
-      ? `${c.place.name}${c.cave_depth ? `, ${c.cave_depth} down` : ''} · ${c.place.terrain}, level ${c.place.level}`
-      : 'Brightwater'
+    if (c.unread_news) waiting.push(`news (${c.unread_news})`)
+    const where = c.place ? `${c.place.name}${c.cave_depth ? `, ${c.cave_depth} down` : ''}` : 'Brightwater'
+    const ground = c.place ? `${c.place.terrain}, level ${c.place.level}` : 'in town'
     return (
-      <Box flexDirection="column" gap="sm">
-        <Box flexDirection="column">
-          {heading(`${c.name}`)}
-          <Text dimColor>{c.class}, level {c.level}{c.path ? ` · ${c.path}` : ''}</Text>
-          <Text><Text mono color={c.hp * 4 < c.max_hp ? 'error' : 'success'}>{bar(c.hp, c.max_hp, w)}</Text> HP {c.hp}/{c.max_hp}</Text>
-          {mana
-            ? <Text><Text mono color="suggestion">{bar(c.mana ?? 0, c.mana_max ?? 0, w)}</Text> Mana {c.mana}/{c.mana_max}</Text>
-            : <Text>Specials {c.specials}</Text>}
-          {c.exp_next !== null && <Text dimColor>Exp {n(c.exp)} / {n(c.exp_next)}</Text>}
-          <Text>Gold {n(c.gold)} · bank {n(c.bank)}{c.gems ? ` · gems ${c.gems}` : ''}</Text>
-          <Text>Turns {c.forest_fights} · PvP {c.player_fights} · bag {c.bag_used}/{c.bag_capacity}</Text>
-          <Text dimColor>{c.weapon} · {c.armor}</Text>
-        </Box>
-        <Box flexDirection="column">
-          {heading('Where')}
-          <Text>{where}</Text>
-          {c.time_of_day && <Text dimColor>{c.time_of_day}</Text>}
-          {g.map.length > 0 && g.map.map(line => <Text mono>{line}</Text>)}
-        </Box>
-        {!c.alive && <Text color="error">Dead until the new day.</Text>}
+      <Box flexDirection="column" paddingX={1}>
+        <Text bold color="claude">{c.name}</Text>
+        <Text dimColor>{c.class}, level {c.level}{c.path ? ` · ${c.path}` : ''}</Text>
+        {!c.alive && <Text color="error" bold>Dead until the new day</Text>}
         {c.in_encounter && <Text color="warning" bold>In a fight</Text>}
-        {waiting.length > 0 && <Box flexDirection="column">{heading('Waiting')}{waiting.map(t => <Text>{t}</Text>)}</Box>}
-        {(c.quests?.length ?? 0) > 0 && (
-          <Box flexDirection="column">
-            {heading('Quests')}
-            {c.quests!.map(q => <Text>{q.title}{q.days_left !== undefined ? <Text dimColor> · {q.days_left}d</Text> : null}</Text>)}
-          </Box>
-        )}
-        {can.length > 0 && <Box flexDirection="column">{heading('You can')}<Text>{can.join(' · ')}</Text></Box>}
-        {g.online.length > 0 && <Box flexDirection="column">{heading('In the realm now')}<Text>{g.online.map(x => `● ${x}`).join('  ')}</Text></Box>}
+        <Box flexDirection="column" marginTop={1}>
+          {meter('HP', c.hp, c.max_hp, c.hp * 4 < c.max_hp ? 'error' : 'success')}
+          {mana ? meter('Mana', c.mana ?? 0, c.mana_max ?? 0, 'suggestion') : <Text>{'Spec'.padEnd(4)} {c.specials} left</Text>}
+          {c.exp_next !== null && <Text dimColor>{'Exp'.padEnd(4)} {n(c.exp)} / {n(c.exp_next)}</Text>}
+        </Box>
+        {section('Purse', <Text>Gold {n(c.gold)} · bank {n(c.bank)}{c.gems ? ` · gems ${c.gems}` : ''}</Text>)}
+        {section('Today', <Text>Turns {c.forest_fights} · PvP {c.player_fights} · bag {c.bag_used}/{c.bag_capacity}</Text>)}
+        {section('Gear', <Text>{c.weapon}</Text>, <Text>{c.armor}</Text>)}
+        {section('Where', <Text>{where}</Text>, <Text dimColor>{ground}{c.time_of_day ? ` · ${c.time_of_day}` : ''}</Text>,
+          ...(g.map.length > 0 && c.place ? [<Box flexDirection="column" marginTop={1}>{g.map.map(line => <Text mono>{line}</Text>)}</Box>] : []))}
+        {waiting.length > 0 && section('Waiting', ...waiting.map(t => <Text>{t}</Text>))}
+        {(c.quests?.length ?? 0) > 0 && section('Quests', ...c.quests!.map(q => <Text>{q.title}{q.days_left !== undefined ? <Text dimColor> · {q.days_left} days</Text> : null}</Text>))}
+        {g.online.length > 0 && section('In the realm now', <Text>{g.online.map(x => `● ${x}`).join('  ')}</Text>)}
       </Box>
     )
   })

@@ -54,13 +54,14 @@ test('a game result opens the pane and draws the character, on every surface', a
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect((await ui.find({ type: 'Text', text: /^Ossian Vale$/ }))?.text).toBe('Ossian Vale')
-    expect((await ui.find({ type: 'Text', text: /HP 56\/92/ }))?.text).toContain('HP 56/92')
-    expect((await ui.find({ type: 'Text', text: /Mana 17\/45/ }))?.text).toContain('Mana 17/45')
-    expect((await ui.find({ type: 'Text', text: /Wren's Wood/ }))?.text).toContain('forest, level 1')
+    expect((await ui.find({ type: 'Text', text: /^56\/92$/ }))?.text).toBe('56/92')
+    expect((await ui.find({ type: 'Text', text: /^17\/45$/ }))?.text).toBe('17/45')
+    expect((await ui.find({ type: 'Text', text: /Wren's Wood/ }))?.text).toBe("the Wren's Wood")
+    expect((await ui.find({ type: 'Text', text: /forest, level 1/ }))?.text).toBe('forest, level 1 · afternoon')
     expect((await ui.find({ type: 'Text', text: /\? @/ }))?.text).toBe('      ? @')
     expect((await ui.find({ type: 'Text', text: /courier/ }))?.text).toBe('1 gift from the courier')
     expect((await ui.find({ type: 'Text', text: /Boot/ }))?.text).toContain("Grimwald's Other Boot")
-    expect((await ui.find({ type: 'Text', text: /Hunt/ }))?.text).toBe('Hunt')
+    expect(await ui.find({ type: 'Text', text: /Hunt/ })).toBeUndefined()
     expect((await ui.find({ type: 'Text', text: /Hilde/ }))?.text).toBe('● Hilde')
     await ui.unmount()
   }
