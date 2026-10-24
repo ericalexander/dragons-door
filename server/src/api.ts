@@ -1310,14 +1310,14 @@ api.post("/vote", async (c) => {
 /** Town meetings for the website: open ones (question, choices, how many have voted) and settled ones with their results. */
 api.get("/public/polls", async (c) => {
   const out = await tx(async (db) => {
-    const rows = (await db.query<Poll & { voters: string }>(
-      `select p.id::int, p.town, p.question, p.about, p.options, p.opens::text, p.closes::text, p.status, p.result,
+    const rows = (await db.query<Poll & { voters: string; art: string | null }>(
+      `select p.id::int, p.town, p.question, p.about, p.options, p.opens::text, p.closes::text, p.status, p.result, p.art,
               (select count(*) from poll_votes v where v.poll_id = p.id and not v.townsfolk)::text as voters
        from polls p order by p.status = 'open' desc, p.closes desc limit 30`)).rows;
     const said = (await db.query<{ poll_id: string; name: string; why: string }>(
       "select v.poll_id::text, pl.name, v.why from poll_votes v join players pl on pl.id = v.player_id where v.townsfolk and v.why is not null order by v.day, pl.name")).rows;
     return rows.map((p) => ({
-      id: p.id, town: p.town, question: p.question, about: p.about, options: p.options.map((o) => ({ id: o.id, label: o.label })), opens: p.opens, last_day: p.closes,
+      id: p.id, town: p.town, question: p.question, about: p.about, ...(p.art ? { art: p.art } : {}), options: p.options.map((o) => ({ id: o.id, label: o.label })), opens: p.opens, last_day: p.closes,
       status: p.status, voters: Number(p.voters), ...(p.status === "closed" ? { result: p.result } : {}),
       townsfolk_said: said.filter((x) => Number(x.poll_id) === p.id).map((x) => ({ name: x.name, said: x.why })),
     }));

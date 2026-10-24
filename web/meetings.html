@@ -77,6 +77,8 @@
   .said { margin: 10px 0 0; padding: 0; list-style: none; }
   .said li { margin: 6px 0; font-style: italic; }
   .said li b { font-style: normal; }
+  .art { color: var(--ink-soft); margin: 4px 0 2px; max-width: 420px; }
+  .art svg { display: block; width: 100%; height: auto; --glow: var(--pane-gold, #d9a85a); }
   .status { font-family: var(--mono, monospace); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
 </style>
 </head>
@@ -114,6 +116,10 @@
   const API = "https://api.dragonsdoor.gg";
   const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   const fmt = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
+  // Pencil sketches of what a meeting is about, by the meeting's art key.
+  const ART = {
+    shrine: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 220" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"> <path d="M8 196 C 70 150, 120 128, 182 124 C 246 120, 300 146, 352 192" stroke-width="2"/> <path d="M30 204 C 90 176, 150 166, 210 170 C 260 173, 300 186, 340 206" stroke-width="1.2" opacity=".55"/> <path d="M138 216 C 150 196, 168 168, 180 132" stroke-width="1.2" stroke-dasharray="3 5" opacity=".7"/> <path d="M152 128 L152 84 L212 84 L212 128" stroke-width="2"/> <path d="M144 86 L182 54 L220 86" stroke-width="2.2"/> <path d="M146 88 L182 57 L218 88" stroke-width="1" opacity=".6"/> <path d="M158 76 L206 76 M166 68 L198 68 M174 61 L190 61" stroke-width="1" opacity=".6"/> <path d="M182 52 C 176 46, 178 40, 182 34 C 186 40, 188 46, 182 52 Z" stroke-width="1.4"/> <path d="M182 49 C 180 46, 181 43, 182 41" stroke-width="1" opacity=".6"/> <path d="M152 100 L162 100 M200 96 L212 96 M152 116 L166 116 M196 112 L212 112 M170 124 L180 124" stroke-width="1" opacity=".5"/> <path d="M174 128 L174 108 Q182 98 190 108 L190 128" stroke-width="1.6"/> <rect x="196" y="92" width="10" height="12" rx="1" stroke-width="1.4"/> <circle cx="201" cy="98" r="9" fill="var(--glow, #d9a85a)" stroke="none" opacity=".35"/> <circle cx="201" cy="98" r="2.6" fill="var(--glow, #d9a85a)" stroke="none"/> <path d="M92 158 l3 -7 l3 7 M100 156 l2 -5 l2 5 M260 152 l3 -7 l3 7 M268 154 l2 -5 l2 5 M226 132 l2 -6 l2 6 M132 134 l2 -6 l2 6" stroke-width="1" opacity=".7"/> <path d="M84 52 q6 -6 12 0 q6 -6 12 0 M262 38 q4 -4 8 0 q4 -4 8 0" stroke-width="1.2" opacity=".7"/> </svg> `,
+  };
   const TOWN = { brightwater: "Brightwater", ironhold: "Ironhold", ashford: "Ashford" };
   fetch(API + "/v1/public/polls").then((r) => r.json()).then((d) => {
     const box = document.getElementById("meetings");
@@ -123,7 +129,7 @@
       const where = m.town ? TOWN[m.town] || m.town : "The whole realm";
       const opts = m.options.map((o) => `<div class="opt${closed && r.winner === o.id ? " win" : ""}"><span>${esc(o.label)}</span>${closed ? `<span class="n">${Number(r.players?.[o.id] || 0)} adventurers · ${Number(r.townsfolk?.[o.id] || 0)} townsfolk</span>` : ""}</div>`).join("");
       const said = m.townsfolk_said.length ? `<ul class="said">${m.townsfolk_said.slice(0, 6).map((s) => `<li><b>${esc(s.name)}:</b> “${esc(s.said)}”</li>`).join("")}</ul>` : "";
-      return `<section class="day"><div class="status">${esc(where)} · ${closed ? "decided" : `open until the end of ${esc(fmt(m.last_day))}`} · ${Number(m.voters)} adventurer${m.voters === 1 ? "" : "s"} voted</div><h2>${esc(m.question)}</h2><div class="entry">${m.about ? `<p>${esc(m.about)}</p>` : ""}${opts}${said}${closed && r.tie_broken_by_town ? '<p class="quiet">The adventurers were split; the townsfolk settled it.</p>' : ""}</div></section>`;
+      return `<section class="day"><div class="status">${esc(where)} · ${closed ? "decided" : `open until the end of ${esc(fmt(m.last_day))}`} · ${Number(m.voters)} adventurer${m.voters === 1 ? "" : "s"} voted</div>${m.art && ART[m.art] ? `<figure class="art" aria-hidden="true">${ART[m.art]}</figure>` : ""}<h2>${esc(m.question)}</h2><div class="entry">${m.about ? `<p>${esc(m.about)}</p>` : ""}${opts}${said}${closed && r.tie_broken_by_town ? '<p class="quiet">The adventurers were split; the townsfolk settled it.</p>' : ""}</div></section>`;
     }).join("");
   }).catch(() => { document.getElementById("meetings").innerHTML = '<p class="quiet">The meetings aren\'t answering right now. They\'ll be back.</p>'; });
 </script>
