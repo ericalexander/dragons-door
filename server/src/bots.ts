@@ -19,6 +19,7 @@ import { pool, tx } from "./db.js";
 import { catchUp, writeEntry } from "./chronicle.js";
 import { answerLetters } from "./letters.js";
 import { settleGifts } from "./gifts.js";
+import { settlePolls } from "./polls.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { realmDay, realmSettings } from "./day.js";
@@ -1190,6 +1191,9 @@ bots.on(["GET", "POST"], "/bots/run", async (c) => {
   // The courier's morning round: townsfolk take their gifts, and a week's unclaimed ones go home.
   let gifts: string[] = [];
   try { gifts = await tx(async (cl) => settleGifts(cl, realmDay((await realmSettings(cl)).resetHourUtc, when))); } catch (e) { gifts = [`error: ${(e as Error).message}`]; }
+  // Town meetings: close the ones that are over, and let the townsfolk have their say in the rest.
+  let meetings: string[] = [];
+  try { meetings = await tx(async (cl) => settlePolls(cl, realmDay((await realmSettings(cl)).resetHourUtc, when))); } catch (e) { meetings = [`error: ${(e as Error).message}`]; }
   const out = await runBots(when);
   // Yesterday's chronicle, once the day is over. Never lets a failure stop the townsfolk.
   let chronicle: string[] = [];
@@ -1197,5 +1201,5 @@ bots.on(["GET", "POST"], "/bots/run", async (c) => {
   // Townsfolk and characters answer their mail.
   let letters: string[] = [];
   try { letters = await answerLetters(when); } catch (e) { letters = [`error: ${(e as Error).message}`]; }
-  return c.json({ ...out, auctions, gifts, chronicle, letters });
+  return c.json({ ...out, auctions, gifts, meetings, chronicle, letters });
 });

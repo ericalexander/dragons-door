@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Town Meetings · Dragon's Door</title>
+<meta name="description" content="The questions the towns of Dragon's Door are deciding, how the townsfolk feel about them, and what was decided.">
+<meta property="og:title" content="The Chronicle of Dragon's Door">
+<meta property="og:description" content="What happened in the realm, day by day.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23efe4c9'/><path d='M4 15V7a4 4 0 0 1 8 0v8' fill='none' stroke='%232a1c10' stroke-width='1.5'/><circle cx='7' cy='11' r='1' fill='%238f2a1c'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #efe4c9;
+    --paper-hi: #f7efdc;
+    --ink: #2a1c10;
+    --ink-soft: #4a3322;
+    --ink-faint: #6b4a2e;
+    --rule: #b89c70;
+    --wax: #8f2a1c;
+    --wax-dark: #5c1a10;
+    --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --prose: "Alegreya", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--wax); text-decoration: underline; text-underline-offset: 3px; }
+  a:hover, a:focus-visible { color: var(--wax-dark); }
+  :focus-visible { outline: 2px solid var(--wax); outline-offset: 3px; }
+  ::selection { background: var(--ink); color: var(--paper-hi); }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+  .kicker { font-size: 14px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+
+  header.mast { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 22px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+  .mast .name { font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .mast .name a { color: var(--ink); text-decoration: none; }
+  .mast nav { display: flex; gap: 26px; flex-wrap: wrap; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+  .mast nav a { color: var(--ink); text-decoration: none; }
+  .mast nav a:hover, .mast nav a[aria-current] { text-decoration: underline; }
+
+  .head { padding-top: 56px; padding-bottom: 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; border-bottom: 2px solid var(--ink); }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(48px, 7vw, 72px); line-height: .95; margin: 0; }
+  .sub { margin: 0; font-size: 19px; color: var(--ink-soft); }
+
+  .pages { max-width: 72ch; margin: 0 auto; padding: 8px 24px 48px; }
+  section.day { padding: 36px 0 8px; border-bottom: 1px solid var(--rule); }
+  section.day:last-child { border-bottom: 0; }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0 0 4px; }
+  h2 .date { display: block; font-family: var(--body); font-weight: 500; font-size: 14px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); margin-top: 6px; }
+  .entry { font-family: var(--prose); font-size: 19px; line-height: 1.6; color: var(--ink); }
+  .entry p { margin: 14px 0 0; }
+  .entry p:first-child { margin-top: 16px; }
+  .draft { background: var(--paper-hi); border: 1px solid var(--rule); padding: 20px 24px 24px; margin-top: 36px; }
+  .draft h2 { font-size: 28px; }
+  .draft .note { font-family: var(--body); font-size: 15px; color: var(--ink-faint); font-style: italic; margin: 6px 0 0; }
+  .draft .entry p:first-child::first-letter { font-size: 1em; float: none; padding: 0; color: inherit; }
+  .quiet { color: var(--ink-faint); margin: 24px 0 0; }
+
+  footer { border-top: 2px solid var(--ink); }
+  footer .wrap { padding-top: 24px; padding-bottom: 32px; font-size: 14px; color: var(--ink-faint); }
+  footer p { margin: 0; max-width: 90ch; }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .head { padding-top: 40px; }
+    .entry { font-size: 18px; }
+    h2 { font-size: 30px; }
+  }
+  .opt { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--rule); padding: 4px 0; }
+  .opt.win { font-weight: 700; color: var(--wax); }
+  .opt .n { font-family: var(--mono, monospace); font-size: 14px; color: var(--ink-faint); white-space: nowrap; }
+  .said { margin: 10px 0 0; padding: 0; list-style: none; }
+  .said li { margin: 6px 0; font-style: italic; }
+  .said li b { font-style: normal; }
+  .status { font-family: var(--mono, monospace); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+</style>
+</head>
+<body>
+
+<header class="mast wrap">
+  <div class="name"><a href="/">Dragon's Door</a></div>
+  <nav aria-label="Site">
+    <a href="/#fromrealm">News</a>
+    <a href="/chronicle">Chronicle</a>
+    <a href="/auction">Auction House</a>
+    <a href="/meetings" aria-current="page">Meetings</a>
+    <a href="/#fromrealm">Rankings</a>
+    <a href="https://github.com/ericalexander/dragons-door">Source</a>
+  </nav>
+</header>
+
+<div class="head wrap">
+  <div class="kicker">Every voice counts</div>
+  <h1>Town Meetings</h1>
+  <p class="sub">The questions the towns are deciding. Adventurers vote in the game; the townsfolk have their say in the tavern. The adventurers' votes decide, and the townsfolk settle a tie.</p>
+</div>
+
+<main class="pages">
+  <div id="meetings"><p class="quiet">Fetching the meetings…</p></div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Results here shape what happens next in the realm. <a href="/">Play Dragon's Door</a> in Claude Code.</p>
+  </div>
+</footer>
+
+<script>
+  const API = "https://api.dragonsdoor.gg";
+  const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  const fmt = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
+  const TOWN = { brightwater: "Brightwater", ironhold: "Ironhold", ashford: "Ashford" };
+  fetch(API + "/v1/public/polls").then((r) => r.json()).then((d) => {
+    const box = document.getElementById("meetings");
+    if (!d.meetings.length) { box.innerHTML = '<p class="quiet">No meetings have been called yet.</p>'; return; }
+    box.innerHTML = d.meetings.map((m) => {
+      const closed = m.status === "closed", r = m.result || {};
+      const where = m.town ? TOWN[m.town] || m.town : "The whole realm";
+      const opts = m.options.map((o) => `<div class="opt${closed && r.winner === o.id ? " win" : ""}"><span>${esc(o.label)}</span>${closed ? `<span class="n">${Number(r.players?.[o.id] || 0)} adventurers · ${Number(r.townsfolk?.[o.id] || 0)} townsfolk</span>` : ""}</div>`).join("");
+      const said = m.townsfolk_said.length ? `<ul class="said">${m.townsfolk_said.slice(0, 6).map((s) => `<li><b>${esc(s.name)}:</b> “${esc(s.said)}”</li>`).join("")}</ul>` : "";
+      return `<section class="day"><div class="status">${esc(where)} · ${closed ? "decided" : `open until the end of ${esc(fmt(m.last_day))}`} · ${Number(m.voters)} adventurer${m.voters === 1 ? "" : "s"} voted</div><h2>${esc(m.question)}</h2><div class="entry">${m.about ? `<p>${esc(m.about)}</p>` : ""}${opts}${said}${closed && r.tie_broken_by_town ? '<p class="quiet">The adventurers were split; the townsfolk settled it.</p>' : ""}</div></section>`;
+    }).join("");
+  }).catch(() => { document.getElementById("meetings").innerHTML = '<p class="quiet">The meetings aren\'t answering right now. They\'ll be back.</p>'; });
+</script>
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>
+  /* PostHog: where visitors come from (city and region), which pages they read. Anonymous: no profiles, no session recording. */
+  !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+  posthog.init("phc_J1rAmysu72Vfoxzo0cwd0Xb7CSfIbLoQmcERFGYMsAj", { api_host: "https://us.i.posthog.com", person_profiles: "identified_only", disable_session_recording: true, autocapture: false, capture_pageview: true, capture_pageleave: true });
+  posthog.register({ site: "dragons-door" });
+</script>
+</body>
+</html>

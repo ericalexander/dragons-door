@@ -9,6 +9,7 @@ import {
 } from "./game.js";
 import * as Bag from "./bag.js";
 import { TOWNS as TOWN_INFO, homeOf } from "./towns.js";
+import { VOTE_MIN_LEVEL, openPolls, type Poll } from "./polls.js";
 import { boosted, forgeCost, MAX_RARITY, rarity, RARITY, withRarity } from "./rarity.js";
 import { AUCTION, TOWNS, bidCeiling, houseCut, listingFee, nextBid, priceProblem, worth, type ListSlot, type Town } from "./auctions.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
@@ -811,6 +812,8 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
     case "gate_won": return `${n.actor} fought past ${n.detail.monster} on the road and walked into ${n.detail.place}.`;
     case "discovery": return n.detail.poi === "town" ? `${n.actor} made it to ${n.detail.place}, the hillfort few in Brightwater have ever seen, past Old Grudge on the road below the walls.` : `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;
     case "join": return `${n.actor} has entered the realm.`;
+    case "meeting_called": return `${n.detail.where ?? "The town"} meets on a question: ${n.detail.question} Every voice counts until ${n.detail.closes_on ?? "the meeting closes"}.`;
+    case "meeting_result": return `${n.detail.town ? (n.detail.town === "brightwater" ? "Brightwater" : n.detail.town === "ironhold" ? "Ironhold" : "Ashford") : "The realm"} has decided: ${n.detail.winner}. (${n.detail.question})${n.detail.tie_broken_by_town ? " The adventurers were split; the townsfolk settled it." : ""}`;
     case "pvp_kill": return `${n.actor} slew ${n.target} in the fields and took ${n.detail.gold} gold.`;
     case "pvp_survived": return `${n.target} fought off an attack from ${n.actor}.`;
     case "forest_death": return `${n.actor} was killed in the forest by a ${n.detail.monster}.`;
@@ -1280,6 +1283,47 @@ api.post("/inn", async (c) => c.json(await withPlayer(c.req.header("authorizatio
   await logEvent(ctx, "spend", { on: "inn", gold: cost });
   ctx.hint = "They are safe from other players until the realm resets, and will wake fully healed.";
 })));
+
+// ---------- town meetings ----------
+
+/** Cast a vote in a town meeting: once, from level 2, while standing in that town (a realm-wide meeting, in any town). */
+api.post("/vote", async (c) => {
+  const body = z.object({ poll: z.number().int(), choice: z.string().trim().min(1).max(40) }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    const here = requireTown(ctx, "the town meeting", ALL_TOWNS);
+    const p = (await openPolls(ctx.c, ctx.day, here)).find((x) => x.id === body.poll);
+    if (!p) { ctx.events.push({ kind: "no_such_meeting", note: "there's no meeting on that here, or it has closed" }); return; }
+    if (ctx.p.is_test || ctx.p.role !== "player") { ctx.events.push({ kind: "not_for_you", reason: "only the realm's adventurers vote" }); return; }
+    if (ctx.p.level < VOTE_MIN_LEVEL) { ctx.events.push({ kind: "too_new", what: "vote", needed_level: VOTE_MIN_LEVEL }); return; }
+    const o = p.options.find((x) => x.id === body.choice || x.label.toLowerCase() === body.choice.toLowerCase());
+    if (!o) { ctx.events.push({ kind: "no_such_choice", choices: p.options.map((x) => ({ id: x.id, label: x.label })) }); return; }
+    const r = await ctx.c.query("insert into poll_votes (poll_id, player_id, choice, townsfolk, day) values ($1,$2,$3,false,$4) on conflict do nothing returning 1", [p.id, ctx.p.id, o.id, ctx.day]);
+    if (!r.rowCount) { const was = (await ctx.c.query<{ choice: string }>("select choice from poll_votes where poll_id = $1 and player_id = $2", [p.id, ctx.p.id])).rows[0]; ctx.events.push({ kind: "already_voted", your_vote: p.options.find((x) => x.id === was?.choice)?.label ?? was?.choice }); return; }
+    ctx.events.push({ kind: "voted", question: p.question, choice: o.label, last_day: p.closes });
+    await logEvent(ctx, "vote", { poll: p.id });
+  }));
+});
+
+/** Town meetings for the website: open ones (question, choices, how many have voted) and settled ones with their results. */
+api.get("/public/polls", async (c) => {
+  const out = await tx(async (db) => {
+    const rows = (await db.query<Poll & { voters: string }>(
+      `select p.id::int, p.town, p.question, p.about, p.options, p.opens::text, p.closes::text, p.status, p.result,
+              (select count(*) from poll_votes v where v.poll_id = p.id and not v.townsfolk)::text as voters
+       from polls p order by p.status = 'open' desc, p.closes desc limit 30`)).rows;
+    const said = (await db.query<{ poll_id: string; name: string; why: string }>(
+      "select v.poll_id::text, pl.name, v.why from poll_votes v join players pl on pl.id = v.player_id where v.townsfolk and v.why is not null order by v.day, pl.name")).rows;
+    return rows.map((p) => ({
+      id: p.id, town: p.town, question: p.question, about: p.about, options: p.options.map((o) => ({ id: o.id, label: o.label })), opens: p.opens, last_day: p.closes,
+      status: p.status, voters: Number(p.voters), ...(p.status === "closed" ? { result: p.result } : {}),
+      townsfolk_said: said.filter((x) => Number(x.poll_id) === p.id).map((x) => ({ name: x.name, said: x.why })),
+    }));
+  });
+  c.header("access-control-allow-origin", "*");
+  c.header("cache-control", "public, max-age=60, s-maxage=60, stale-while-revalidate=60");
+  return c.json({ meetings: out });
+});
 
 // ---------- tavern ----------
 
@@ -2031,6 +2075,7 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
     visitor: v ? { name: v.name, description: v.description, talked_today: ctx.t.visitor_talked } : null,
     ...(lore().world ? { realm: lore().world } : {}),
   });
+  await meetingsHere(ctx, "brightwater");
   await maybeJournal(ctx, "town");
 }, { weather: true })));
 
@@ -2153,6 +2198,17 @@ async function startGateFight(ctx: Ctx, town: TownId) {
   ctx.hint = GATE_LINES[town]!.hint;
 }
 
+/** Any town meeting open here: the question, its choices, whether this player has voted, and how many players have. Votes stay secret until it closes. */
+async function meetingsHere(ctx: Ctx, town: TownId) {
+  const polls = await openPolls(ctx.c, ctx.day, town);
+  for (const p of polls) {
+    const mine = (await ctx.c.query<{ choice: string }>("select choice from poll_votes where poll_id = $1 and player_id = $2", [p.id, ctx.p.id])).rows[0];
+    const n = (await ctx.c.query<{ n: string }>("select count(*)::text n from poll_votes where poll_id = $1 and not townsfolk", [p.id])).rows[0].n;
+    ctx.events.push({ kind: "town_meeting", id: p.id, question: p.question, about: p.about, options: p.options.map((o) => ({ id: o.id, label: o.label })),
+      last_day: p.closes, players_voted: Number(n), ...(mine ? { your_vote: mine.choice } : {}), ...(ctx.p.level < VOTE_MIN_LEVEL ? { can_vote_from_level: VOTE_MIN_LEVEL } : {}) });
+  }
+}
+
 /** What's in a town away from Brightwater, and who's about: its fixed characters, the townsfolk who live there, players seen lately. */
 async function townView(ctx: Ctx, id: TownId) {
   const town = TOWN_INFO[id]!;
@@ -2179,6 +2235,7 @@ async function townView(ctx: Ctx, id: TownId) {
 async function arriveInTown(ctx: Ctx, t: Tile) {
   const id = townAt(t.x, t.y)!;
   ctx.events.push(await townView(ctx, id));
+  await meetingsHere(ctx, id);
   await maybeJournal(ctx, id === "ashford" ? "ashford" : "ironhold");
   ctx.hint = `They're inside ${t.name}'s walls. Describe it from \`blurb\` and who's about, then its menu. There's no hunting inside the walls.`;
 }
@@ -2188,6 +2245,7 @@ api.get("/town", async (c) => c.json(await withPlayer(c.req.header("authorizatio
   const here = townAt(ctx.p.pos_x, ctx.p.pos_y);
   if (!here || here === "brightwater") { ctx.events.push({ kind: "no_town_here", note: here === "brightwater" ? "this is Brightwater; use square" : "there's no town here" }); return; }
   ctx.events.push(await townView(ctx, here));
+  await meetingsHere(ctx, here);
   await maybeJournal(ctx, here === "ashford" ? "ashford" : "ironhold");
 }, { weather: true })));
 
