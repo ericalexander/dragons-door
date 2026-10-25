@@ -139,7 +139,7 @@ function realm(on: Parameters<TestBody>[1], sent: { body: unknown }[]) {
     expect(e.init?.headers?.authorization).toBe('Bearer door_test_key_1234')
     if (e.init?.method === 'POST') { sent.push({ body: JSON.parse(e.init.body ?? '{}') }); return { value: { status: 200, ok: true, headers: {}, text: '{"ok":true,"id":9}' } } }
     const lines = sent.map((s, i) => ({ id: i + 1, from: 'Ossian Vale', body: (s.body as { body: string }).body, mine: true, ...((s.body as { to?: string }).to ? { whisper: true, to: (s.body as { to: string }).to } : {}) }))
-    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ room: 'brightwater', room_name: 'Brightwater', here: ['Hilde'], messages: [{ id: 0, from: 'Hilde', body: 'Keep it in the bank.', mine: false, at: '2000-01-01T00:00:00Z' }, ...lines], last_id: lines.length }) } }
+    return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ room: 'brightwater', room_name: 'Brightwater', here: ['Hilde'], online: ['Hilde', 'Rowan'], messages: [{ id: 0, from: 'Hilde', body: 'Keep it in the bank.', mine: false, at: '2000-01-01T00:00:00Z' }, ...lines], last_id: lines.length }) } }
   })
 }
 
@@ -157,6 +157,20 @@ test('chat: say a line and whisper one, straight to the realm, and see them in t
   expect((await ui.find({ type: 'Text', text: /Keep it in the bank/ }))?.text).toMatch(/^Hilde: Keep it in the bank\. · \d+d ago$/)
   expect((await ui.find({ type: 'Text', text: /locket/ }))?.text).toBe('→ Old Tam: the locket?')
   expect((await ui.find({ type: 'Text', text: /^here:/ }))?.text).toBe('here: Hilde')
+  await ui.unmount()
+})
+
+test("who's in the realm comes with the chat poll, no rankings needed", async ($, on) => {
+  const opened = { n: 0 }, sent: { body: unknown }[] = []
+  engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [] }), opened)
+  realm(on, sent)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL })
+  const chatUi = await $.ui.mount({ ...CHAT, surface: 'terminal' })
+  await chatUi.input({ key: 'say', text: 'evening' })
+  await chatUi.unmount()
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /Rowan/ }))?.text).toBe('● Hilde  ● Rowan')
   await ui.unmount()
 })
 

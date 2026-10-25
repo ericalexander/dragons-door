@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.23.0",
+    "lore": "The town criers have started calling meetings in the square, and for once they want to hear from you. And if you've already wandered the realm as a stranger on the website, the clerk at the gate has kept your name in the register: give him your code and you can pick up where you left off.",
+    "plain": "Vote in town meetings (ask the narrator about any meeting, from level 2). If you tried the game on dragonsdoor.gg/try, say \"claim my character\" with your code to keep that character. The side pane's \"In the realm now\" list now fills in by itself."
+  },
+  {
     "version": "0.21.0",
     "lore": "Far down the south road, where it crosses the river Ash, the realm's oldest town has opened its gates to you: a herald on the Exchange steps, a counting house that holds half the realm's debts, and a cellar where the quick and quiet learn their trade. Mind the ford. Something there still collects a toll.",
     "plain": "Ashford, the third town, is open, a long walk down the south road from Brightwater. New Shadow characters start there, its Undercroft trains the Shadow path, and it has its own tavern, healer, bank, shop and auction house. The first time you walk in, you'll have to get past the ford."

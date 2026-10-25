@@ -67,7 +67,9 @@ async function pollChat($: EngineInterface) {
   const fresh = before.who !== cred.key.slice(-8)
   const res = await $.http.fetch(`${cred.url}/v1/chat?since=${fresh ? 0 : before.lastId}`, { headers: { authorization: `Bearer ${cred.key}` } })
   if (!res.ok) { await update($, chat, c => ({ ...c, note: CHAT_NOTE[errorOf(res.text)] ?? c.note })); return }
-  const r = JSON.parse(res.text) as { room: string; room_name: string; here: string[]; messages: ChatLine[]; last_id: number }
+  const r = JSON.parse(res.text) as { room: string; room_name: string; here: string[]; online?: string[]; messages: ChatLine[]; last_id: number }
+  // Who's in the realm rides along with chat, so the Status tab's list stays fresh without asking for the rankings.
+  if (Array.isArray(r.online)) { const online = r.online.slice(0, 12); await update($, game, x => ({ ...x, online })) }
   // Lines from others that arrive while the chat tab is behind Status count as new, on its tab's title.
   const shown = await isShowing($, CHAT_PANE)
   const incoming = r.messages.filter(m => !m.mine && !before.lines.some(x => x.id === m.id)).length

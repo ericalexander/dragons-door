@@ -629,7 +629,7 @@ var titleOf = (name) => TITLES[name] ?? name.replace(/_/g, " ").replace(/^./, (c
 void refreshInstalledScript();
 async function call(method, path, body) {
   const cfg = await loadConfig();
-  if (!cfg.api_key && path !== "/v1/register") {
+  if (!cfg.api_key && path !== "/v1/register" && path !== "/v1/trial/claim") {
     return { error: "not_registered", message: "No character yet. Call `register` with a name and a path (steel, shadow or gift)." };
   }
   const res = await fetch(cfg.api_url + path, {
@@ -656,6 +656,19 @@ server.tool(
     const r = await call("POST", "/v1/register", { name, path, invite: invite ?? process.env.DRAGONS_DOOR_INVITE ?? process.env.LORD_INVITE });
     if (r.api_key) {
       await saveConfig({ ...cfg, api_key: r.api_key, name: r.name });
+      delete r.api_key;
+    }
+    return text(r);
+  }
+);
+server.tool(
+  "claim",
+  "Claim a character the player started in the trial on the game's website (dragonsdoor.gg/try), with the code the page gave them (DOOR- and twelve letters and digits). It becomes their real character on this machine, carrying on from where the trial left off, and the active one; any character already on this machine is kept.",
+  { code: z.string().min(8).max(40) },
+  async ({ code }) => {
+    const r = await call("POST", "/v1/trial/claim", { code });
+    if (r.api_key && r.name) {
+      await switchCharacter(r.name, r.api_key);
       delete r.api_key;
     }
     return text(r);
@@ -985,6 +998,12 @@ server.tool(
     said: z.string().max(300).optional().describe(`What the player says or asks them this time, in a few plain words from their side ("asked about Edda", "said they're saving for plate"), so the person remembers it next time. Only what the player actually said; leave it out for a plain hello.`)
   },
   async ({ to, said }) => text(await call("POST", "/v1/talk", { to, ...said ? { said } : {} }))
+);
+server.tool(
+  "vote",
+  "Vote in a town meeting (a town_meeting event, from square or town): pick a choice by its id or label. Once per meeting, from level 2, in the town that's meeting (a realm-wide meeting, in any town). The result is announced in the news when it closes.",
+  { poll: z.number().int(), choice: z.string().min(1).max(40) },
+  async ({ poll, choice }) => text(await call("POST", "/v1/vote", { poll, choice }))
 );
 server.tool("square_talk", "Talk to the day's visitor in the town square. Once a day. Returns a rumor built on real realm facts and sometimes a small gift.", {}, async () => text(await call("POST", "/v1/square/talk")));
 server.tool("bard", "Ask tonight's bard in the tavern for a song. Once a day. A different bard plays on different days; the song sometimes brings a small gift. The result is material for a song; you write and print four lines of lyrics.", {}, async () => text(await call("POST", "/v1/bard")));
