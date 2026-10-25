@@ -35,7 +35,7 @@
   .mast .name a { color: var(--ink); text-decoration: none; }
   .mast nav { display: flex; gap: 26px; flex-wrap: wrap; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
   .mast nav a { color: var(--ink); text-decoration: none; }
-  .mast nav a:hover { text-decoration: underline; }
+  .mast nav a:hover, .mast nav a[aria-current] { text-decoration: underline; }
 
   .intro { padding-top: 44px; padding-bottom: 22px; display: flex; flex-direction: column; gap: 10px; }
   .intro h1 { font-size: 64px; line-height: 1; }
@@ -117,6 +117,8 @@
     .term .bar, .term form { padding-left: 14px; padding-right: 14px; }
     .after { grid-template-columns: 1fr; gap: 8px; }
   }
+  /* Masthead on phones: the same on every page. */
+  @media (max-width: 640px) { header.mast .name { font-size: 22px; } header.mast nav { gap: 10px 16px; font-size: 14px; } }
 </style>
 </head>
 <body>
@@ -124,11 +126,13 @@
 <header class="mast wrap">
   <div class="name"><a href="/">Dragon's Door</a></div>
   <nav aria-label="Site">
-    <a href="/try">Try it</a>
+    <a href="/try" aria-current="page">Try it</a>
     <a href="/chronicle">Chronicle</a>
     <a href="/auction">Auction House</a>
     <a href="/meetings">Meetings</a>
+    <a href="/#fromrealm">Rankings</a>
     <a href="/#enter">Install</a>
+    <a href="https://github.com/ericalexander/dragons-door">Source</a>
   </nav>
 </header>
 

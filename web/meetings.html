@@ -98,6 +98,8 @@
   .art { color: var(--ink-soft); margin: 8px auto 4px; max-width: 300px; }
   .art svg { display: block; width: 100%; height: auto; --glow: var(--pane-gold, #d9a85a); }
   .status { font-family: var(--mono, monospace); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+  /* Masthead on phones: the same on every page. */
+  @media (max-width: 640px) { header.mast .name { font-size: 22px; } header.mast nav { gap: 10px 16px; font-size: 14px; } }
 </style>
 </head>
 <body>
@@ -105,11 +107,12 @@
 <header class="mast wrap">
   <div class="name"><a href="/">Dragon's Door</a></div>
   <nav aria-label="Site">
-    <a href="/#fromrealm">News</a>
+    <a href="/try">Try it</a>
     <a href="/chronicle">Chronicle</a>
     <a href="/auction">Auction House</a>
     <a href="/meetings" aria-current="page">Meetings</a>
     <a href="/#fromrealm">Rankings</a>
+    <a href="/#enter">Install</a>
     <a href="https://github.com/ericalexander/dragons-door">Source</a>
   </nav>
 </header>

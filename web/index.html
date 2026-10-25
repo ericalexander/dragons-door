@@ -58,9 +58,10 @@
     border-bottom: 2px solid var(--ink);
   }
   .mast .name { font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .mast .name a { color: var(--ink); text-decoration: none; }
   .mast nav { display: flex; gap: 26px; flex-wrap: wrap; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
   .mast nav a { color: var(--ink); text-decoration: none; }
-  .mast nav a:hover { text-decoration: underline; }
+  .mast nav a:hover, .mast nav a[aria-current] { text-decoration: underline; }
 
   /* ── Notice ───────────────────────────────────────────────── */
   .notice { padding-top: 64px; padding-bottom: 48px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 22px; }
@@ -168,19 +169,21 @@
     .realm { grid-template-columns: 1fr; }
     .pane { padding: 20px 18px; }
   }
+  /* Masthead on phones: the same on every page. */
+  @media (max-width: 640px) { header.mast .name { font-size: 22px; } header.mast nav { gap: 10px 16px; font-size: 14px; } }
 </style>
 </head>
 <body>
 
 <header class="mast wrap">
-  <div class="name">Dragon's Door</div>
+  <div class="name"><a href="/">Dragon's Door</a></div>
   <nav aria-label="Site">
     <a href="/try">Try it</a>
-    <a href="#changes">Changes</a>
     <a href="/chronicle">Chronicle</a>
     <a href="/auction">Auction House</a>
     <a href="/meetings">Meetings</a>
     <a href="#fromrealm">Rankings</a>
+    <a href="#enter">Install</a>
     <a href="https://github.com/ericalexander/dragons-door">Source</a>
   </nav>
 </header>
