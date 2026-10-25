@@ -3008,8 +3008,11 @@ api.get("/chat", async (c) => {
     `select name, pos_x, pos_y from players where role = 'player' and is_test = $2 and banned_at is null
        and last_seen > now() - interval '15 minutes' and id <> $1 order by last_seen desc limit 60`, [me.id, me.is_test])).rows
     .filter((x) => chatRoom(x).room === room).slice(0, 20).map((x) => x.name);
+  // Everyone in the realm now, wherever they are (the same list the rankings mark online), for the side pane.
+  const online = (await pool.query<{ name: string }>(
+    "select name from players where role <> 'npc' and not is_test and banned_at is null and last_seen > now() - interval '15 minutes' order by level desc, exp desc limit 12")).rows.map((x) => x.name);
   return c.json({
-    room, room_name: name, you: me.name, here,
+    room, room_name: name, you: me.name, here, online,
     messages: rows.map((m) => ({ id: Number(m.id), from: m.from_name, body: m.body, at: m.created_at,
       ...(m.to_name ? { whisper: true, to: m.to_name, mine: m.from_id === me.id } : { mine: m.from_id === me.id }) })),
     last_id: rows.length ? Number(rows[rows.length - 1].id) : since,
