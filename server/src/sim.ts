@@ -7,8 +7,8 @@
 import { GAME, armor, weapon, expForLevel, master, levelGains, manaMax, manaRules, type Player, type Monster } from "./game.js";
 import { bardFor, pickGift } from "./bards.js";
 import { visitorFor, pickVisitorGift } from "./square.js";
-import { charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
-import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
+import { charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor, weddingChance } from "./romance.js";
+import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 import { boosted, forgeCost, rarity as rarityOf, RARITY } from "./rarity.js";
 import { FINDS_PER_PERSON, SWINGS_PER_DAY, GEM_SELL, ORES, PICKAXE_COST, TRINKETS, canMake, caveLevel, swing, trinket } from "./caves.js";
 
@@ -78,6 +78,20 @@ for (const c of Object.values(GAME.classes)) { c.strPerLevel = Math.round(c.strP
 
 // The daily extras a real player gets: a flirt, a bard's song, a word with the visitor. EXTRAS=0 turns them off.
 const EXTRAS = process.env.EXTRAS !== "0";
+// LUCK=bag: rare rolls (drops, weddings) come from bags of marbles, as on the live server (luck.ts); default: plain dice.
+const BAGS = process.env.LUCK === "bag";
+const bags = new Map<string, { size: number; left: number; reds: number }>();
+function bagDraw(kind: string, p: number): boolean {
+  if (p <= 0) return false; if (p >= 1) return true;
+  const want = Math.max(1, Math.min(1000, Math.round(1 / p)));
+  let b = bags.get(kind);
+  if (!b || b.left <= 0) b = { size: want, left: want, reds: 1 };
+  else if (b.size !== want) b = { size: want, left: Math.max(b.reds, Math.round((b.left / b.size) * want)), reds: b.reds };
+  const hit = b.reds > 0 && Math.floor(Math.random() * b.left) < b.reds;
+  b.left -= 1; if (hit) b.reds -= 1;
+  bags.set(kind, b.left <= 0 ? { size: want, left: want, reds: 1 } : b);
+  return hit;
+}
 // ROMANCE=1: charm discounts and luck, plus the chosen suitor's marriage perk. SUITOR picks who the player courts.
 const ROMANCE = process.env.ROMANCE === "1";
 const SUITOR = process.env.SUITOR ?? "Violet";
@@ -104,7 +118,8 @@ function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
   if (p.spouse === SUITOR) p.charm += 1;
   else {
     const s = suitor(SUITOR)!;
-    const f = flirtOutcome(p.charm, ROMANCE ? s.coy : 0);
+    const coy = ROMANCE ? s.coy : 0;
+    const f = flirtOutcome(p.charm, coy, BAGS ? bagDraw("wed", weddingChance(p.charm, coy)) : undefined);
     p.charm += f.delta;
     if (f.outcome === "married") { p.spouse = ROMANCE ? SUITOR : "Violet"; CHARM.married++; CHARM.marriedDay += day; }
   }
@@ -238,6 +253,7 @@ function shop(p: SimPlayer) {
 }
 
 function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; killedDragon: boolean; level?: number } {
+  bags.clear();
   // Specializations that aren't a path's beginner class play as the beginner until level 5 (BASE=1 skips that).
   const { PATHS, SPECIALIZE_AT } = PATHS_MOD;
   const begin = process.env.BASE === "1" ? cls : PATHS[pathOfClass(cls)].base;
@@ -337,7 +353,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       if (res === "won") {
         p.gold += m.gold; p.exp += p.class === "mage" ? Math.round(m.exp * MAGE.expb) : m.exp;
         if (p.class === "mage" && MAGE.regen > 0) p.hp = Math.min(p.max_hp, p.hp + Math.round(p.max_hp * MAGE.regen));
-        const drop = rollDrop(m.level ?? p.level, p.class);
+        const drop = rollDrop(m.level ?? p.level, p.class, BAGS ? bagDraw("drop", dropChance(p.class)) : undefined);
         if (drop) {
           // careful player: wear it if it's better and sell the old piece, otherwise sell the drop (half price)
           DROPS.n++;
@@ -387,7 +403,7 @@ const runs = Array.from({ length: trials }, () => simulate(cls));
 const done = runs.filter((r) => r.killedDragon).map((r) => r.days).sort((a, b) => a - b);
 const q = (f: number) => done[Math.min(done.length - 1, Math.floor(done.length * f))];
 console.log(`${cls}: ${done.length}/${trials} killed the dragon within a year`);
-if (done.length) console.log(`  days  min ${done[0]}  p25 ${q(0.25)}  median ${q(0.5)}  p75 ${q(0.75)}  max ${done[done.length - 1]}`);
+if (done.length) console.log(`  days  min ${done[0]}  p10 ${q(0.1)}  p25 ${q(0.25)}  median ${q(0.5)}  p75 ${q(0.75)}  p90 ${q(0.9)}  max ${done[done.length - 1]}`);
 console.log(`  deaths along the way: avg ${(runs.reduce((a, r) => a + r.deaths, 0) / trials).toFixed(1)}`);
 const stuck = runs.filter((r) => !r.killedDragon).map((r) => r.level ?? 0);
 if (stuck.length) console.log(`  non-finishers ended at level: avg ${(stuck.reduce((a, b) => a + b, 0) / stuck.length).toFixed(1)}`);
