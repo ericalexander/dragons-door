@@ -189,15 +189,18 @@ function brief(s: Record<string, unknown> | undefined) {
 }
 
 /** One thing the visitor said: let the narrator play it out (a few game calls at most) and tell it. */
-async function narrate(key: string, history: Msg[], said: string, notes: string): Promise<{ text: string; state: Record<string, unknown> | null; usage: Usage }> {
+type Told = { text: string; state: Record<string, unknown> | null; usage: Usage; tools: string[]; kinds: string[]; stop: string; failed: number };
+async function narrate(key: string, history: Msg[], said: string, notes: string): Promise<Told> {
   const messages: Msg[] = [...history, { role: "user", content: `[trial: ${notes}]\n${said}` }];
   const usage: Usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   let state: Record<string, unknown> | null = null;
+  const tools: string[] = [], kinds: string[] = [];
+  let failed = 0;
   const add = (u: Usage) => { for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] = (usage[k] ?? 0) + (u[k] ?? 0); };
   const textOf = (c: Block[]) => c.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n");
   for (let calls = 0; ; ) {
     const r = await model(messages, { noTools: calls >= MAX_CALLS });
-    if (!r) return { text: "", state, usage };
+    if (!r) return { text: "", state, usage, tools, kinds, stop: "error", failed };
     add(r.usage);
     const uses = r.content.filter((b): b is Extract<Block, { type: "tool_use" }> => b.type === "tool_use");
     if (r.stop_reason === "tool_use" && uses.length > 0) {
@@ -210,6 +213,9 @@ async function narrate(key: string, history: Msg[], said: string, notes: string)
         const out = !tool ? { error: "not_on_the_trial", message: "that isn't open on the trial" } : calls > MAX_CALLS ? { error: "enough", message: "tell the player what's happened so far" } : await play(key, tool, u.input);
         const st = (out as { state?: Record<string, unknown> }).state;
         if (st) state = st;
+        tools.push(u.name);
+        if ((out as { error?: string }).error) failed++;
+        for (const e of ((out as { events?: { kind?: string }[] }).events ?? [])) if (e?.kind) kinds.push(e.kind);
         results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(out).slice(0, RESULT_MAX) });
       }
       messages.push({ role: "user", content: results });
@@ -226,7 +232,7 @@ async function narrate(key: string, history: Msg[], said: string, notes: string)
       stop = r2.stop_reason;
     }
     if (stop !== "end_turn") console.error("trial narrator stopped:", stop, "calls", calls, "chars", text.length);
-    return { text: text.trim(), state, usage };
+    return { text: text.trim(), state, usage, tools, kinds, stop: stop ?? "unknown", failed };
   }
 }
 
@@ -278,6 +284,7 @@ trial.post("/start", async (c) => {
     }
     await db.query("insert into trials (player_id, addr_hash, expires_at, claim_hash) values ($1, $2, now() + make_interval(hours => $3), $4)", [p.id, addrHash, TRIAL.hours(), hash(normalize(code))]);
     await db.query("insert into trial_usage (day, trials) values ($1, 1) on conflict (day) do update set trials = trial_usage.trials + 1", [today()]);
+    await db.query("insert into trial_log (id, path) values ($1, $2) on conflict do nothing", [p.id, path]);
     return p;
   }).catch((e: Error & { code?: string }) => (e.code === "23505" ? ("taken" as const) : Promise.reject(e)));
   if (made === "taken") return c.json(closed("name_taken", "That name's taken. Try another."), 409);
@@ -319,6 +326,7 @@ trial.post("/claim", async (c) => {
     const p = (await db.query<{ name: string; class: string; level: number; path: string; start_town: string | null }>(
       "update players set api_key_hash = $2, trial = false, is_test = false, last_seen = now() where id = $1 returning name, class, level, path, start_town", [t.player_id, hash(key)])).rows[0];
     await db.query("delete from trials where player_id = $1", [t.player_id]);
+    await db.query("update trial_log set ended = 'claimed', ended_at = now() where id = $1", [t.player_id]);
     const day = realmDay((await realmSettings(db)).resetHourUtc);
     await db.query("insert into news (day, kind, actor) values ($1, 'join', $2)", [day, p.name]);
     return p;
@@ -353,6 +361,7 @@ async function turn(token: string, playerId: string, said: string, opening: bool
     const notes = [`turns left in the trial after this: ${left}`, left === 0 ? "this is the last turn" : "", t.last_state ? `last state: ${JSON.stringify(brief(t.last_state))}` : ""].filter(Boolean).join("; ");
     const r = await narrate(token, t.history, said, notes);
     await addUsage(r.usage, opening ? 0 : 1);
+    await logTurn(playerId, opening ? null : said, r, t.turns + (opening ? 0 : 1)).catch((e) => console.error("trial log:", (e as Error).message));
     const text = r.text || "The narrator loses the thread for a moment. (Something went wrong on our side; try that again.)";
     const history = [...t.history, { role: "user" as const, content: opening ? said : `[trial: ${notes}]\n${said}` }, { role: "assistant" as const, content: text }].slice(-KEEP * 2);
     await pool.query("update trials set turns = turns + $2, history = $3, last_state = coalesce($4, last_state) where player_id = $1",
@@ -363,8 +372,39 @@ async function turn(token: string, playerId: string, said: string, opening: bool
   }
 }
 
+// ---------- the record of how trials go ----------
+
+/** Event kinds worth counting, by what they say about the visit. */
+const COUNT: Record<string, string> = { encounter: "fights", monster_slain: "wins", player_died: "deaths", level_up: "level_ups", arrived: "places", talk: "people", song: "songs",
+  quest_started: "quests", quest_done: "quests_done", journal_found: "journals", loot: "loot", wild_event: "wild_events", master_won: "lost_to_master", fled: "fled" };
+/** The narrator talking about itself, which it shouldn't. */
+const SELF_TALK = /\b(I got ahead|I (described|said|made|was wrong|apologi[sz]e)|let me (check|look|try)|my mistake|I can't actually|as an AI)\b/i;
+
+async function logTurn(playerId: string, said: string | null, r: Told, move: number) {
+  const add: Record<string, number> = {};
+  for (const k of r.kinds) { const c = COUNT[k]; if (c) add[c] = (add[c] ?? 0) + 1; }
+  const used: Record<string, number> = {};
+  for (const t of r.tools) used[t] = (used[t] ?? 0) + 1;
+  const issues: { kind: string; move: number; at: string }[] = [];
+  const at = new Date().toISOString();
+  if (!r.text) issues.push({ kind: "no_reply", move, at });
+  else if (r.stop !== "end_turn") issues.push({ kind: `stopped_${r.stop}`, move, at });
+  if (r.text && SELF_TALK.test(r.text)) issues.push({ kind: "self_talk", move, at });
+  if (r.failed) issues.push({ kind: "refused_calls", move, at });
+  const merge = (col: string, n: string) => `(select coalesce(jsonb_object_agg(k, coalesce((${col}->>k)::int, 0) + coalesce((${n}->>k)::int, 0)), '{}') from jsonb_object_keys(${col} || ${n}) k)`;
+  await pool.query(
+    `update trial_log set moves = $2, last_move_at = case when $3::text is null then last_move_at else now() end,
+       counts = ${merge("counts", "$4::jsonb")}, tools = ${merge("tools", "$5::jsonb")}, issues = issues || $6::jsonb,
+       transcript = coalesce(transcript, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('said', $3::text, 'told', $7::text, 'at', now()))
+     where id = $1`,
+    [playerId, move, said, JSON.stringify(add), JSON.stringify(used), JSON.stringify(issues), r.text.slice(0, 4000)]);
+}
+
 /** The cron's sweep: trial characters past their day are deleted, with everything of theirs. */
 export async function sweepTrials(): Promise<number> {
+  await pool.query("update trial_log set ended = 'expired', ended_at = now() where ended is null and id in (select player_id from trials where expires_at < now())");
   const r = await pool.query("delete from players where trial and (id in (select player_id from trials where expires_at < now()) or (not exists (select 1 from trials where player_id = players.id) and created_at < now() - interval '1 day'))");
+  // What visitors typed is kept 30 days, then only the numbers stay.
+  await pool.query("update trial_log set transcript = null where transcript is not null and started_at < now() - interval '30 days'");
   return r.rowCount ?? 0;
 }
