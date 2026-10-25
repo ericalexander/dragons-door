@@ -8,10 +8,13 @@ import { randomBytes } from "node:crypto";
 
 /** Known only inside this process: the bot runner passes it on its in-process calls. Can't be sent from outside. */
 export const INTERNAL_TOKEN = randomBytes(24).toString("hex");
+/** Likewise, for the website's trial narrator: the only thing allowed to drive a trial character. */
+export const TRIAL_TOKEN = randomBytes(24).toString("hex");
 
 export interface RequestInfo {
   plugin?: string;        // plugin version, e.g. "0.2.8" (older plugins also sent their app, OS and model; those are ignored)
   townsfolk: boolean;     // the bot runner, calling in-process (proved by INTERNAL_TOKEN)
+  trial: boolean;         // the website's trial narrator, calling in-process (proved by TRIAL_TOKEN)
   lat?: number;
   lon?: number;
   tz?: string;
@@ -30,6 +33,7 @@ export function fromHeaders(h: (name: string) => string | undefined): RequestInf
   return {
     plugin: clip(h("x-dragons-door-version"), 20),
     townsfolk: h("x-dragons-door-internal") === INTERNAL_TOKEN,
+    trial: h("x-dragons-door-trial") === TRIAL_TOKEN,
     lat: num(h("x-vercel-ip-latitude")),
     lon: num(h("x-vercel-ip-longitude")),
     tz: clip(h("x-vercel-ip-timezone"), 40),

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Try Dragon's Door</title>
+<meta name="description" content="Try Dragon's Door in your browser: a warrior's first day in Brightwater, with the real realm's townsfolk and news, and a narrator telling it as it goes.">
+<meta property="og:title" content="Try Dragon's Door">
+<meta property="og:description" content="A warrior's first day in Brightwater, in your browser. Nothing you do here sticks; the real thing runs in Claude Code.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23efe4c9'/><path d='M4 15V7a4 4 0 0 1 8 0v8' fill='none' stroke='%232a1c10' stroke-width='1.5'/><circle cx='7' cy='11' r='1' fill='%238f2a1c'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #efe4c9; --paper-hi: #f7efdc; --ink: #2a1c10; --ink-soft: #4a3322; --ink-faint: #6b4a2e; --rule: #b89c70;
+    --wax: #8f2a1c; --wax-dark: #5c1a10;
+    --pane: #1d1510; --pane-fg: #e9dcc0; --pane-dim: #bfae8f; --pane-gold: #d9a85a; --pane-line: #3a2a1e;
+    --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", Georgia, serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--wax); text-decoration: underline; text-underline-offset: 3px; }
+  a:hover, a:focus-visible { color: var(--wax-dark); }
+  :focus-visible { outline: 2px solid var(--wax); outline-offset: 3px; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+  .kicker { font-size: 14px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+  h1, h2 { font-family: var(--display); font-weight: 700; margin: 0; }
+
+  header.mast { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 22px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+  .mast .name { font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .mast .name a { color: var(--ink); text-decoration: none; }
+  .mast nav { display: flex; gap: 26px; flex-wrap: wrap; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+  .mast nav a { color: var(--ink); text-decoration: none; }
+  .mast nav a:hover { text-decoration: underline; }
+
+  .intro { padding-top: 44px; padding-bottom: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .intro h1 { font-size: 64px; line-height: 1; }
+  .intro p { margin: 0; max-width: 66ch; font-size: 19px; color: var(--ink-soft); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 26px; font: inherit; font-weight: 700; letter-spacing: .04em; text-decoration: none; border-radius: 3px; border: 0; cursor: pointer; }
+  .btn.primary { background: var(--wax); color: var(--paper-hi); }
+  .btn.primary:hover { background: var(--wax-dark); color: var(--paper-hi); }
+  .btn.ghost { border: 2px solid var(--ink); color: var(--ink); background: transparent; }
+  .btn.ghost:hover { background: var(--ink); color: var(--paper-hi); }
+
+  /* The terminal */
+  .term { background: var(--pane); color: var(--pane-fg); border-radius: 4px; box-shadow: 0 1px 0 var(--rule), 0 18px 40px -24px rgba(42, 28, 16, .55); font-family: var(--mono); font-size: 15px; line-height: 1.6; display: flex; flex-direction: column; overflow: hidden; }
+  .term .bar { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 18px; border-bottom: 1px solid var(--pane-line); color: var(--pane-dim); font-size: 13px; }
+  .term .bar b { color: var(--pane-gold); font-weight: 500; }
+  .term .bar .left { margin-left: auto; }
+  .term .screen { height: min(62vh, 620px); overflow-y: auto; padding: 18px 18px 8px; scroll-behavior: smooth; }
+  .term .screen p { margin: 0 0 1em; white-space: pre-wrap; overflow-wrap: break-word; }
+  .term .item { white-space: nowrap; }
+  .term.fresh .screen { height: auto; min-height: 200px; }
+  .term .you { color: var(--pane-gold); }
+  .term .note { color: var(--pane-dim); font-style: italic; }
+  .term em { color: #f2e6cc; }
+  .term .key { color: var(--pane-gold); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(217, 168, 90, .35); text-underline-offset: 3px; }
+  .term .key:hover, .term .key:focus-visible { text-decoration-color: var(--pane-gold); }
+  .term .key:disabled { cursor: default; text-decoration: none; }
+  .term .stir { color: var(--pane-dim); }
+  .term .stir::after { content: "▍"; color: var(--pane-gold); animation: blink 1.1s steps(1) infinite; margin-left: 4px; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .term .stir::after { animation: none; } .term .screen { scroll-behavior: auto; } }
+  .term form { display: flex; align-items: center; gap: 10px; padding: 10px 18px 14px; border-top: 1px solid var(--pane-line); }
+  .term form[hidden] { display: none; }
+  .term form label { color: var(--pane-gold); }
+  .term input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--pane-fg); font: inherit; padding: 8px 0; caret-color: var(--pane-gold); }
+  .term input:focus { outline: none; }
+  .term input::placeholder { color: #8c7c62; }
+  .term form:focus-within { box-shadow: inset 0 2px 0 var(--pane-gold); }
+  .term .send { background: transparent; color: var(--pane-gold); border: 1px solid #5a4430; border-radius: 3px; font: inherit; padding: 6px 14px; cursor: pointer; }
+  .term .send:hover { border-color: var(--pane-gold); }
+  .term .gate { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 8px 0; }
+  .term .gate p { margin: 0; max-width: 60ch; }
+
+  .after { padding-top: 28px; padding-bottom: 56px; display: grid; grid-template-columns: 1.3fr 1fr; gap: 32px; align-items: start; }
+  .after h2 { font-size: 34px; line-height: 1.1; margin-bottom: 8px; }
+  .after p { margin: 0 0 12px; max-width: 60ch; }
+  .after .fine { font-size: 14px; color: var(--ink-faint); }
+  .after .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+
+  footer { border-top: 2px solid var(--ink); }
+  footer .wrap { padding-top: 24px; padding-bottom: 32px; display: flex; gap: 22px; flex-wrap: wrap; font-size: 14px; }
+
+  @media (max-width: 760px) {
+    .intro { padding-top: 28px; }
+    .intro h1 { font-size: 46px; }
+    .intro p { font-size: 17px; }
+    .wrap { padding-left: 16px; padding-right: 16px; }
+    .term { font-size: 14px; }
+    .term .screen { height: 60vh; padding: 14px 14px 6px; }
+    .term .bar, .term form { padding-left: 14px; padding-right: 14px; }
+    .after { grid-template-columns: 1fr; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="mast wrap">
+  <div class="name"><a href="/">Dragon's Door</a></div>
+  <nav aria-label="Site">
+    <a href="/try">Try it</a>
+    <a href="/chronicle">Chronicle</a>
+    <a href="/auction">Auction House</a>
+    <a href="/meetings">Meetings</a>
+    <a href="/#enter">Install</a>
+  </nav>
+</header>
+
+<section class="intro wrap">
+  <div class="kicker">At the gate</div>
+  <h1>Try a day.</h1>
+  <p>You'll be a warrior, fresh in Brightwater, in the real realm: its townsfolk, its news, its weather are all live. Nothing you do here sticks, and the day ends after <span id="turns">30</span> moves. Type what you'd do, or press the letters.</p>
+</section>
+
+<section class="wrap" aria-label="The game">
+  <div class="term fresh" id="term">
+    <div class="bar" id="bar" aria-live="polite"><span>Not yet through the gate</span></div>
+    <div class="screen" id="screen" role="log" aria-live="polite">
+      <div class="gate" id="gate">
+        <p>The door's ajar. Beyond it, Brightwater's square, a smith's hammer, and someone arguing about the price of ale.</p>
+        <button class="btn primary" id="start" type="button">Open the gate</button>
+      </div>
+    </div>
+    <form id="say" hidden>
+      <label for="cmd">&gt;</label>
+      <input id="cmd" name="cmd" autocomplete="off" maxlength="300" placeholder="a letter, or what you'd do" enterkeyhint="send">
+      <button class="send" type="submit">Send</button>
+    </form>
+  </div>
+</section>
+
+<section class="after wrap">
+  <div>
+    <h2>The real thing runs in Claude Code.</h2>
+    <p>In the realm proper, your character keeps: the townsfolk remember what you said to them, you wake to news of what everyone else did overnight, and there's mail, a tavern board, an auction house, rivals and a dragon at the end of it.</p>
+    <div class="cta"><a class="btn primary" href="/#enter">Install it</a><a class="btn ghost" href="/chronicle">Read the chronicle</a></div>
+  </div>
+  <div>
+    <p class="fine">On this page, what you type and what the game sends back go to the game's narrator, an AI model from Anthropic, to tell the story. Your trial character and the last few things you said are kept on the game's server for a day and then deleted. It never shows up in the rankings, the news or anywhere other players can see. To keep trials free, the site counts how many each internet address starts in a day, using a scrambled code that can't be turned back into the address. More in the <a href="/privacy">privacy notes</a>.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a href="/">Home</a>
+    <a href="/chronicle">Chronicle</a>
+    <a href="/auction">Auction House</a>
+    <a href="https://github.com/ericalexander/dragons-door">Source on GitHub</a>
+    <a href="/privacy">Privacy</a>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const API = new URLSearchParams(location.search).get("api") || "https://api.dragonsdoor.gg";
+  const KEY = "dd-trial";
+  const $ = (id) => document.getElementById(id);
+  const screen = $("screen"), bar = $("bar"), form = $("say"), cmd = $("cmd"), gate = $("gate");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let s = { token: null, name: null, log: [], state: null, left: null, over: false };
+  let busy = false;
+
+  const load = () => { try { const v = JSON.parse(localStorage.getItem(KEY) || "null"); if (v && v.token) s = v; } catch {} };
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ ...s, log: s.log.slice(-60) })); } catch {} };
+  const forget = () => { try { localStorage.removeItem(KEY); } catch {} };
+
+  const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  // The narrator's plain text: *italics*, and every (X) hotkey a button that sends that letter.
+  const render = (t) => esc(t.replace(/```[a-z]*\n?/g, ""))
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+    .replace(/([A-Za-z']*)\(([A-Za-z0-9])\)([A-Za-z']*)/g, (m, a, k, z) => `<span class="item">${a}<button class="key" type="button" data-k="${k}">(${k})</button>${z}</span>`);
+
+  function line(kind, text, animate) {
+    const p = document.createElement("p");
+    p.className = kind;
+    if (kind === "you") p.textContent = "> " + text;
+    else if (kind === "note") p.textContent = text;
+    else p.innerHTML = render(text);
+    screen.appendChild(p);
+    if (animate && !reduce && kind === "tell") { p.style.opacity = "0"; p.animate([{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], { duration: 260, fill: "forwards" }); }
+    screen.scrollTop = screen.scrollHeight;
+  }
+  function stir(on) {
+    let el = $("stir");
+    if (on && !el) { el = document.createElement("p"); el.id = "stir"; el.className = "stir"; el.textContent = "· the realm stirs"; screen.appendChild(el); screen.scrollTop = screen.scrollHeight; }
+    if (!on && el) el.remove();
+  }
+  function drawBar() {
+    const st = s.state;
+    if (!st) { bar.innerHTML = "<span>Not yet through the gate</span>"; return; }
+    const bits = [
+      `<span><b>${esc(String(st.name ?? s.name ?? ""))}</b> · L${st.level ?? 1} ${esc(String(st.class ?? "warrior"))}</span>`,
+      `<span>HP <b>${st.hp}/${st.max_hp}</b></span>`,
+      `<span>Gold <b>${st.gold}</b></span>`,
+      `<span>Turns <b>${st.forest_fights}</b></span>`,
+      `<span>${esc(String(st.where ?? "Brightwater"))}</span>`,
+    ];
+    if (s.left !== null) bits.push(`<span class="left">${s.over ? "Trial over" : `Moves left <b>${s.left}</b>`}</span>`);
+    bar.innerHTML = bits.join("");
+  }
+  function lockKeys() { screen.querySelectorAll(".key").forEach((b) => { b.disabled = true; }); }
+
+  async function call(path, body) {
+    const res = await fetch(API + "/v1/trial" + path, { method: "POST", headers: { "content-type": "application/json", ...(s.token ? { authorization: "Bearer " + s.token } : {}) }, body: JSON.stringify(body || {}) });
+    const j = await res.json().catch(() => ({ error: "bad_response", message: "The realm didn't answer properly. Try again in a moment." }));
+    return j;
+  }
+  function take(r) {
+    if (r.text) { lockKeys(); line("tell", r.text, true); s.log.push(["tell", r.text]); }
+    if (r.state) s.state = r.state;
+    if (typeof r.turns_left === "number") s.left = r.turns_left;
+    if (r.error) {
+      line("note", r.message || "Something went wrong."); s.log.push(["note", r.message || ""]);
+      if (["trial_over", "trial_done"].includes(r.error)) end();
+    } else if (s.left === 0) end();
+    drawBar(); save();
+  }
+  function end() {
+    s.over = true; form.hidden = true; lockKeys();
+    const p = document.createElement("p"); p.className = "gate";
+    p.innerHTML = 'That\'s the trial. <a href="/#enter">Install the real thing</a>, or <button class="key" type="button" id="again">(start another)</button>.';
+    screen.appendChild(p); screen.scrollTop = screen.scrollHeight;
+    $("again").addEventListener("click", () => { forget(); location.reload(); });
+  }
+
+  async function start() {
+    if (busy) return; busy = true;
+    $("start").disabled = true;
+    stir(true);
+    const r = await call("/start").catch(() => ({ error: "offline", message: "Couldn't reach the realm. Check your connection and try again." }));
+    stir(false); busy = false;
+    if (r.error) { $("start").disabled = false; line("note", r.message || "The gate won't open just now."); return; }
+    gate.remove(); $("term").classList.remove("fresh");
+    s = { token: r.token, name: r.name, log: [], state: null, left: null, over: false };
+    form.hidden = false;
+    take(r);
+    cmd.focus();
+  }
+  async function say(text) {
+    text = text.trim();
+    if (!text || busy || s.over) return;
+    busy = true; cmd.value = "";
+    line("you", text); s.log.push(["you", text]);
+    stir(true);
+    const r = await call("/say", { text }).catch(() => ({ error: "offline", message: "Couldn't reach the realm. Try that again." }));
+    stir(false); busy = false;
+    take(r);
+    if (!s.over) cmd.focus({ preventScroll: true });
+  }
+
+  $("start").addEventListener("click", start);
+  form.addEventListener("submit", (e) => { e.preventDefault(); say(cmd.value); });
+  screen.addEventListener("click", (e) => { const b = e.target.closest(".key[data-k]"); if (b && !b.disabled) say(b.dataset.k); });
+
+  // Coming back to the page mid-trial picks up where it left off.
+  load();
+  if (s.token) {
+    gate.remove(); $("term").classList.remove("fresh");
+    for (const [k, t] of s.log) line(k, t, false);
+    lockKeys();
+    const keys = [...screen.querySelectorAll("p.tell")].pop();
+    if (keys) keys.querySelectorAll(".key").forEach((b) => { b.disabled = false; });
+    drawBar();
+    if (s.over) end(); else form.hidden = false;
+  }
+  fetch(API + "/v1/trial").then((r) => r.json()).then((d) => {
+    if (d.turns) $("turns").textContent = d.turns;
+    if (!d.open && !s.token) { $("start").disabled = true; line("note", "The gate's shut for today: the trial has had all the visitors it can. Come back tomorrow, or install the game."); }
+  }).catch(() => {});
+})();
+</script>
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>
+  /* PostHog: where visitors come from (city and region), which pages they read. Anonymous: no profiles, no session recording. */
+  !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+  posthog.init("phc_J1rAmysu72Vfoxzo0cwd0Xb7CSfIbLoQmcERFGYMsAj", { api_host: "https://us.i.posthog.com", person_profiles: "identified_only", disable_session_recording: true, autocapture: false, capture_pageview: true, capture_pageleave: true });
+  posthog.register({ site: "dragons-door" });
+</script>
+</body>
+</html>
