@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://www.dragonsdoor.gg/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://www.dragonsdoor.gg/try</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://www.dragonsdoor.gg/chronicle</loc><changefreq>daily</changefreq><priority>0.7</priority></url>
+  <url><loc>https://www.dragonsdoor.gg/meetings</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://www.dragonsdoor.gg/auction</loc><changefreq>daily</changefreq><priority>0.5</priority></url>
+  <url><loc>https://www.dragonsdoor.gg/privacy</loc><changefreq>monthly</changefreq><priority>0.2</priority></url>
+</urlset>
