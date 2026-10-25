@@ -71,3 +71,33 @@ export function priceProblem(slot: ListSlot, id: number, qty: number, minBid: nu
 export const bidCeiling = (slot: ListSlot, id: number, qty: number, r = 0) => Math.max(10, worth(slot, id, r).value * qty * AUCTION.ceiling);
 
 export const sellFraction = GAME.sellFraction;
+
+
+/**
+ * What the market says about one kind of item, from the last week of sales: the going price for one, how many
+ * sold, which way it's moving, how many are up now, and how the last lot went. Townsfolk price from this, and the
+ * board shows it.
+ */
+export interface Market { unit: number | null; sales: number; trend: "up" | "down" | "steady" | null; on_board: number; last: "sold_at_buy_now" | "sold" | "expired" | null; unsold_run: number }
+type Q = { query: <R extends object = Record<string, unknown>>(sql: string, args?: unknown[]) => Promise<{ rows: R[] }> };
+export async function marketFor(c: Q, slot: string, itemId: number, rarity = 0): Promise<Market> {
+  const sold = (await c.query<{ unit: string }>(
+    `select (a.high_bid::numeric / a.qty)::text as unit from auctions a left join players s on s.id = a.seller_id
+     where a.status = 'sold' and a.slot = $1 and a.item_id = $2 and a.rarity = $3 and a.settled_at > now() - interval '7 days' and s.is_test is not true
+     order by a.settled_at`, [slot, itemId, rarity])).rows.map((r) => Number(r.unit));
+  const open = (await c.query<{ n: string }>("select count(*)::text n from auctions where status = 'open' and slot = $1 and item_id = $2 and rarity = $3", [slot, itemId, rarity])).rows[0];
+  const recentLots = (await c.query<{ status: string; high_bid: number | null; buy_now: number | null }>(
+    "select status, high_bid, buy_now from auctions where status in ('sold', 'expired') and slot = $1 and item_id = $2 and rarity = $3 order by settled_at desc nulls last, id desc limit 6", [slot, itemId, rarity])).rows;
+  const lastRow = recentLots[0];
+  let unsold_run = 0;
+  for (const r of recentLots) { if (r.status !== "expired") break; unsold_run++; }
+  const unit = sold.length ? Math.round(sold.reduce((a, b) => a + b, 0) / sold.length) : null;
+  let trend: Market["trend"] = null;
+  if (sold.length >= 3) {
+    const recent = sold.slice(-2), before = sold.slice(0, -2);
+    const r = recent.reduce((a, b) => a + b, 0) / recent.length, b = before.reduce((a, x) => a + x, 0) / before.length;
+    trend = r > b * 1.05 ? "up" : r < b * 0.95 ? "down" : "steady";
+  }
+  const last = !lastRow ? null : lastRow.status === "expired" ? "expired" : lastRow.buy_now !== null && lastRow.high_bid === lastRow.buy_now ? "sold_at_buy_now" : "sold";
+  return { unit, sales: sold.length, trend, on_board: Number(open?.n ?? 0), last, unsold_run };
+}

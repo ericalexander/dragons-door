@@ -1,8 +1,10 @@
 // Builds the atlas data: every tile within R of Brightwater, from the same generator the game uses, plus play activity.
 import { readFileSync, writeFileSync } from "node:fs";
-const { tileAt, TOWN_TILES, POCKET } = await import("../../server/src/world.js");
+const { tileAt, TOWN_TILES, POCKET, setPlaces } = await import("../../server/src/world.js");
 const dir = process.argv[2] ?? new URL(".", import.meta.url).pathname;
 const R = 18;
+// Hand-placed places (the shrine and the like) live in the private lore; put them in places.json (gitignored) to draw them.
+try { setPlaces(JSON.parse(readFileSync(`${dir}/places.json`, "utf8"))); } catch { /* none */ }
 const TER = ["town", "meadow", "forest", "marsh", "hills", "crags"];
 const names: string[] = []; const nameIx = new Map<string, number>();
 const tiles: (number | string)[][] = [];
@@ -10,7 +12,7 @@ for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) {
   const t = tileAt(x, y);
   const nm = x === 0 && y === 0 ? "Brightwater" : t.name;
   if (!nameIx.has(nm)) { nameIx.set(nm, names.length); names.push(nm); }
-  tiles.push([TER.indexOf(t.terrain), t.level, t.poi === "cave" ? 1 : t.poi === "town" || (x === 0 && y === 0) ? 2 : 0, nameIx.get(nm)!]);
+  tiles.push([TER.indexOf(t.terrain), t.level, t.poi === "cave" ? 1 : t.poi === "town" || (x === 0 && y === 0) ? 2 : t.poi === "shrine" ? 3 : 0, nameIx.get(nm)!]);
 }
 const activity = JSON.parse(readFileSync(`${dir}/activity.json`, "utf8"));
 const towns = [{ id: "brightwater", name: "Brightwater", x: 0, y: 0, note: "the gift's home; Grey Hob keeps the old north toll-bridge" },

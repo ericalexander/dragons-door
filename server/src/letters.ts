@@ -27,7 +27,7 @@ const PER_RUN = 6;
 const PER_DAY = Number(process.env.MAIL_REPLIES_PER_DAY ?? 60);
 
 /** Who each townsperson is, for the letter-writer. */
-const TOWNSFOLK: Record<Personality, string> = {
+export const TOWNSFOLK: Record<Personality, string> = {
   banker: "Hilde, a steady, careful warrior who banks every coin and sleeps at the inn; practical, dry, a little stern, kind underneath. She/her.",
   drunk: "Grimwald, a big cheerful warrior who drinks, dies in the forest more than anyone, and sleeps in the fields; warm, rambling, misspells things, never holds a grudge long. He/him.",
   raider: "Vesper, a thief who robs sleepers in the fields at night; cool, clipped, amused, never apologizes, never quite threatens. She/her.",

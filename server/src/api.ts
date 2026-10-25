@@ -9,25 +9,26 @@ import {
 } from "./game.js";
 import * as Bag from "./bag.js";
 import { TOWNS as TOWN_INFO, homeOf } from "./towns.js";
-import { VOTE_MIN_LEVEL, openPolls, type Poll } from "./polls.js";
+import { VOTE_MIN_LEVEL, openPolls, tally, type Poll } from "./polls.js";
 import { boosted, forgeCost, MAX_RARITY, rarity, RARITY, withRarity } from "./rarity.js";
-import { AUCTION, TOWNS, bidCeiling, houseCut, listingFee, nextBid, priceProblem, worth, type ListSlot, type Town } from "./auctions.js";
+import { AUCTION, TOWNS, bidCeiling, marketFor, type Market, houseCut, listingFee, nextBid, priceProblem, worth, type ListSlot, type Town } from "./auctions.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
 import { weatherAt } from "./weather.js";
 import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
-import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
+import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor, weddingChance } from "./romance.js";
+import { draw } from "./luck.js";
 import { GEAR_ABOVE_LEVEL, GIFT_MIN_LEVEL, GOLD_PER_LEVEL, ITEMS_PER_DAY, courierFee, nextDay, townName, townOfCharacter, townOfPlayer } from "./gifts.js";
 import { PATHS, SPECIALIZE_AT, SPECS, SPEC_SWITCH_DAYS, SPEC_SWITCH_PER_LEVEL, pathOfClass, specsOf, type Path, type Spec } from "./paths.js";
 import { countryOf, regionAt, rollFind } from "./bestiary.js";
-import { DIRS, LEGEND, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
+import { DIRS, LEGEND, placeAt, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
-import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
+import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
 
@@ -123,7 +124,7 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
       if ((ctx.p.start_town ?? "brightwater") === "brightwater") explored.add("0,0");
       const places = [...explored].map((k) => k.split(",").map(Number) as [number, number])
         .map(([px, py]) => tileAt(px, py))
-        .filter((t) => (t.x === 0 && t.y === 0) || t.poi === "town" || t.poi === "cave")
+        .filter((t) => (t.x === 0 && t.y === 0) || t.poi === "town" || t.poi === "cave" || t.poi === "shrine")
         .filter((t) => !(t.x === x && t.y === y && !ctx.p.cave_depth))
         .sort((a, b) => Math.max(Math.abs(a.x - x), Math.abs(a.y - y)) - Math.max(Math.abs(b.x - x), Math.abs(b.y - y)))
         .slice(0, 8).map((t) => ({ name: t.name, x: t.x, y: t.y, kind: t.x === 0 && t.y === 0 ? "town" : t.poi }));
@@ -248,6 +249,16 @@ export function reservedName(n: string): boolean {
 }
 
 const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
+
+/**
+ * A rare roll a player feels, drawn from their own bag of marbles for that kind of luck (luck.ts) instead of a
+ * plain die, and logged so the game log shows how it's landing.
+ */
+async function luck(ctx: Ctx, kind: string, p: number): Promise<boolean> {
+  const d = await draw(ctx.c, ctx.p.id, kind, p);
+  if (p > 0 && p < 1) await logEvent(ctx, "luck", { kind: kind.split(":")[0], p: Math.round(p * 1000) / 1000, hit: d.hit, bag: d.size, left: d.left });
+  return d.hit;
+}
 
 /** One line in the game event log: game facts only, for balance checks. Never names or player-written text. */
 async function logEvent(ctx: Ctx, kind: string, data: Record<string, unknown> = {}) {
@@ -810,7 +821,9 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
   switch (n.kind) {
     case "joins": return String(n.detail.line);
     case "gate_won": return `${n.actor} fought past ${n.detail.monster} on the road and walked into ${n.detail.place}.`;
-    case "discovery": return n.detail.poi === "town" ? `${n.actor} made it to ${n.detail.place}, the hillfort few in Brightwater have ever seen, past Old Grudge on the road below the walls.` : `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : ""}.`;
+    case "discovery": return n.detail.poi === "town"
+      ? (n.detail.place === "Ashford" ? `${n.actor} made it to Ashford, down the south road, past Nan Silt at the ford.` : `${n.actor} made it to ${n.detail.place}, the hillfort few in Brightwater have ever seen, past Old Grudge on the road below the walls.`)
+      : `${n.actor} discovered ${n.detail.place}${n.detail.poi === "cave" ? ", a cave in the hills" : n.detail.poi === "shrine" ? ", the old shrine up in the hills" : ""}.`;
     case "join": return `${n.actor} has entered the realm.`;
     case "meeting_called": return `${n.detail.where ?? "The town"} meets on a question: ${n.detail.question} Every voice counts until ${n.detail.closes_on ?? "the meeting closes"}.`;
     case "meeting_result": return `${n.detail.town ? (n.detail.town === "brightwater" ? "Brightwater" : n.detail.town === "ironhold" ? "Ironhold" : "Ashford") : "The realm"} has decided: ${n.detail.winner}. (${n.detail.question})${n.detail.tie_broken_by_town ? " The adventurers were split; the townsfolk settled it." : ""}`;
@@ -1037,7 +1050,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     const next = expForLevel(ctx.p.level + 1);
     await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp });
     ctx.events.push({ kind: "monster_slain", monster: m.name, gold: m.gold, exp: m.exp });
-    const drop = rollDrop(m.level ?? ctx.p.level, ctx.p.class);
+    const drop = rollDrop(m.level ?? ctx.p.level, ctx.p.class, await luck(ctx, "drop", dropChance(ctx.p.class)));
     if (drop) {
       const w = Bag.item(drop.kind, drop.tier).weight;
       const usedNow = await Bag.used(ctx.c, ctx.p.id);
@@ -1308,15 +1321,25 @@ api.post("/vote", async (c) => {
 /** Town meetings for the website: open ones (question, choices, how many have voted) and settled ones with their results. */
 api.get("/public/polls", async (c) => {
   const out = await tx(async (db) => {
-    const rows = (await db.query<Poll & { voters: string }>(
-      `select p.id::int, p.town, p.question, p.about, p.options, p.opens::text, p.closes::text, p.status, p.result,
+    const rows = (await db.query<Poll & { voters: string; art: string | null; interviews: Record<string, { name: string; said: string }> }>(
+      `select p.id::int, p.town, p.question, p.about, p.options, p.opens::text, p.closes::text, p.status, p.result, p.art, p.interviews,
               (select count(*) from poll_votes v where v.poll_id = p.id and not v.townsfolk)::text as voters
        from polls p order by p.status = 'open' desc, p.closes desc limit 30`)).rows;
+    // Who could vote: adventurers from level 2 (anywhere; they can walk to the meeting), and the townsfolk of that town.
+    const canVote = Number((await db.query<{ n: string }>("select count(*)::text n from players where role = 'player' and not is_test and level >= $1", [VOTE_MIN_LEVEL])).rows[0].n);
+    const folkIn = (await db.query<{ home: string; n: string }>("select b.home, count(*)::text n from bots b join players p on p.id = b.player_id group by b.home")).rows;
+    const folkFor = (town: string | null) => folkIn.filter((f) => !town || f.home === town).reduce((a, f) => a + Number(f.n), 0);
+    const counts = (await db.query<{ poll_id: string; choice: string; townsfolk: boolean; n: string }>("select poll_id::text, choice, townsfolk, count(*)::text n from poll_votes group by 1, 2, 3")).rows;
+    const folkVoted = (await db.query<{ poll_id: string; n: string }>("select poll_id::text, count(*)::text n from poll_votes where townsfolk group by poll_id")).rows;
     const said = (await db.query<{ poll_id: string; name: string; why: string }>(
       "select v.poll_id::text, pl.name, v.why from poll_votes v join players pl on pl.id = v.player_id where v.townsfolk and v.why is not null order by v.day, pl.name")).rows;
     return rows.map((p) => ({
-      id: p.id, town: p.town, question: p.question, about: p.about, options: p.options.map((o) => ({ id: o.id, label: o.label })), opens: p.opens, last_day: p.closes,
-      status: p.status, voters: Number(p.voters), ...(p.status === "closed" ? { result: p.result } : {}),
+      id: p.id, town: p.town, question: p.question, about: p.about, ...(p.art ? { art: p.art } : {}), options: p.options.map((o) => ({ id: o.id, label: o.label })), opens: p.opens, last_day: p.closes,
+      status: p.status, voters: Number(p.voters), can_vote: canVote,
+      // Running count, shown live like an election night: adventurers decide, townsfolk break a tie.
+      tally: p.status === "closed" && p.result ? p.result : tally(p, counts.filter((v) => Number(v.poll_id) === p.id).flatMap((v) => Array(Number(v.n)).fill({ choice: v.choice, townsfolk: v.townsfolk }))),
+      townsfolk_voted: Number(folkVoted.find((f) => Number(f.poll_id) === p.id)?.n ?? 0), townsfolk: folkFor(p.town), ...(p.status === "closed" ? { result: p.result } : {}),
+      exit_polls: p.options.filter((o) => p.interviews?.[o.id]).map((o) => ({ choice: o.label, name: p.interviews[o.id].name, said: p.interviews[o.id].said })),
       townsfolk_said: said.filter((x) => Number(x.poll_id) === p.id).map((x) => ({ name: x.name, said: x.why })),
     }));
   });
@@ -1509,6 +1532,7 @@ api.post("/move", async (c) => {
       ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
     await questTriggers(ctx, { arrive: { x, y } });
     if (t.poi === "town") { await arriveInTown(ctx, t); return; }
+    if (t.poi === "shrine") await atShrine(ctx, t);
     if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, x, y);
     if (!ctx.events.some((e) => e.kind === "quest" || e.kind === "wild_event")) await maybeJournal(ctx, "wild", t.ring);
   }));
@@ -1557,6 +1581,7 @@ api.post("/travel", async (c) => {
     ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: false, by_known_paths: true, distance, ...(others.length ? { others_here: others } : {}) });
     await questTriggers(ctx, { arrive: { x: body.x, y: body.y } });
     if (t.poi === "town") { await arriveInTown(ctx, t); return; }
+    if (t.poi === "shrine") await atShrine(ctx, t);
     if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, body.x, body.y, Math.min(ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP * distance), true);
   }));
 });
@@ -2198,6 +2223,19 @@ async function startGateFight(ctx: Ctx, town: TownId) {
   ctx.hint = GATE_LINES[town]!.hint;
 }
 
+/** A hand-placed place out in the wild (the hill shrine): what it is, and what the town decided it should be, or that it's still deciding. */
+async function atShrine(ctx: Ctx, t: Tile) {
+  const p = placeAt(t.x, t.y);
+  if (!p) return;
+  let decided: string | null = null, deciding: { question: string; last_day: string } | null = null;
+  if (p.meeting) {
+    const m = (await ctx.c.query<Poll>("select id::int, question, options, closes::text, status, result from polls where id = $1", [p.meeting])).rows[0];
+    if (m?.status === "closed" && m.result) decided = m.options.find((o) => o.id === m.result!.winner)?.label ?? null;
+    else if (m) deciding = { question: m.question, last_day: m.closes };
+  }
+  ctx.events.push({ kind: "shrine", name: p.name, about: p.about ?? "", ...(decided ? { the_town_decided: decided } : {}), ...(deciding ? { the_town_is_deciding: deciding } : {}) });
+}
+
 /** Any town meeting open here: the question, its choices, whether this player has voted, and how many players have. Votes stay secret until it closes. */
 async function meetingsHere(ctx: Ctx, town: TownId) {
   const polls = await openPolls(ctx.c, ctx.day, town);
@@ -2381,7 +2419,7 @@ api.post("/talk", async (c) => {
 
     // A little gossip, now and then: a place someone found, preferably one they found themselves.
     let gossip: Record<string, unknown> | null = null;
-    if (!again && !ctx.t.gossip_heard && roll(99) < 30) {
+    if (!again && !ctx.t.gossip_heard && await luck(ctx, "gossip", 0.3)) {
       const ex = await exploredSet(ctx);
       const far = Math.max(2, ...[...ex].map((k) => { const [a, b] = k.split(",").map(Number); return Math.max(Math.abs(a), Math.abs(b)); }));
       const g = (await ctx.c.query<{ x: number; y: number; name: string; terrain: string; poi: string | null; found_by: string | null }>(
@@ -2410,7 +2448,7 @@ api.post("/talk", async (c) => {
       const sore = mind.grudge?.name.toLowerCase() === ctx.p.name.toLowerCase();
       // A recent gift warms them a little toward telling you more (never enough to buy a secret on its own).
       const fond = (await ctx.c.query("select 1 from gifts where from_player = $1 and to_player = $2 and state = 'kept' and sent_day > $3::date - 7 limit 1", [ctx.p.id, who.id, ctx.day])).rowCount;
-      if (!again && !sore && heardPieces < pieces.length && !h.today && Math.random() < (fond ? Math.min(0.75, PAST_CHANCE + 0.2) : PAST_CHANCE)) {
+      if (!again && !sore && heardPieces < pieces.length && !h.today && await luck(ctx, `past:${who.name}`, fond ? Math.min(0.75, PAST_CHANCE + 0.2) : PAST_CHANCE)) {
         await ctx.c.query("insert into player_lore (player_id, key, day, how) values ($1, $2, $3, 'talk') on conflict do nothing", [ctx.p.id, personKey(who.name, heardPieces), ctx.day]);
         past = { piece: PIECE_NAMES[heardPieces] ?? "more", told: pieces[heardPieces], ...(heardPieces ? { you_already_know: pieces.slice(0, heardPieces) } : {}) };
         heardPieces++;
@@ -2452,7 +2490,7 @@ api.post("/talk", async (c) => {
         // What's on their mind right now can make them ask: Grimwald out looking for his boot asks about it.
         const onMind = s.on_goal && mind.goal?.kind === s.on_goal.kind;
         if (past && !onMind) continue;
-        if (Math.random() < (onMind ? s.on_goal!.chance : s.chance) && await startQuest(ctx, q.id, false)) break;
+        if (await luck(ctx, `quest:${q.id}`, onMind ? s.on_goal!.chance : s.chance) && await startQuest(ctx, q.id, false)) break;
       }
     }
     if (ctx.events.some((e) => e.kind === "quest")) ctx.hint = `${before} Then the quest moment, in the same conversation: tell its cue, and offer any choices numbered (1), (2)…; call \`quest\` with the choice id only when they pick.`;
@@ -2622,7 +2660,8 @@ api.post("/flirt", async (c) => {
     }
     // Townsfolk court and marry too, so Sir Pomfrey can win your spouse away, but their charm counts for at most 20
     // here (about a 5% chance a night), so a local steals a heart now and then rather than every other day.
-    const { outcome, delta } = flirtOutcome(ctx.p.role === "player" ? charmOf(ctx.p) : Math.min(charmOf(ctx.p), 20), who.coy);
+    const flirtCharm = ctx.p.role === "player" ? charmOf(ctx.p) : Math.min(charmOf(ctx.p), 20);
+    const { outcome, delta } = flirtOutcome(flirtCharm, who.coy, await luck(ctx, `wed:${who.name}`, weddingChance(flirtCharm, who.coy)));
     let stoleFrom: string | null = null;
     let left: string | null = null;
     if (outcome === "married" && row) {
@@ -2969,8 +3008,11 @@ api.get("/chat", async (c) => {
     `select name, pos_x, pos_y from players where role = 'player' and is_test = $2 and banned_at is null
        and last_seen > now() - interval '15 minutes' and id <> $1 order by last_seen desc limit 60`, [me.id, me.is_test])).rows
     .filter((x) => chatRoom(x).room === room).slice(0, 20).map((x) => x.name);
+  // Everyone in the realm now, wherever they are (the same list the rankings mark online), for the side pane.
+  const online = (await pool.query<{ name: string }>(
+    "select name from players where role <> 'npc' and not is_test and banned_at is null and last_seen > now() - interval '15 minutes' order by level desc, exp desc limit 12")).rows.map((x) => x.name);
   return c.json({
-    room, room_name: name, you: me.name, here,
+    room, room_name: name, you: me.name, here, online,
     messages: rows.map((m) => ({ id: Number(m.id), from: m.from_name, body: m.body, at: m.created_at,
       ...(m.to_name ? { whisper: true, to: m.to_name, mine: m.from_id === me.id } : { mine: m.from_id === me.id }) })),
     last_id: rows.length ? Number(rows[rows.length - 1].id) : since,
@@ -3066,6 +3108,19 @@ function listingView(ctx: Ctx, r: ARow) {
   };
 }
 
+/** Each lot with the going price for one of it this week and which way it's moving (the same kind of item is looked up once). */
+async function withMarket(ctx: Ctx, lots: (readonly [ARow, ReturnType<typeof listingView>])[]) {
+  const seen = new Map<string, Market>();
+  const out = [];
+  for (const [r, v] of lots) {
+    const k = `${r.slot}:${r.item_id}:${r.rarity}`;
+    if (!seen.has(k)) seen.set(k, await marketFor(ctx.c, r.slot, r.item_id, r.rarity));
+    const m = seen.get(k)!;
+    out.push({ ...v, ...(m.unit !== null ? { market: { each: m.unit, sold_this_week: m.sales, ...(m.trend ? { trend: m.trend } : {}) } } : {}) });
+  }
+  return out;
+}
+
 /** Take gold for a bid or purchase: from the bank first, then the purse. False if they can't cover it. */
 async function payFrom(ctx: Ctx, amount: number): Promise<boolean> {
   if (ctx.p.bank + ctx.p.gold < amount) return false;
@@ -3134,7 +3189,12 @@ export async function settleAuctions(c: Client, day: string): Promise<string[]> 
       "select slot, item_id, qty, rarity from house_stock where town = $1 and qty > 0 order by random() for update", [town])).rows.filter((x) => !have.has(`${x.slot}:${x.item_id}:${x.rarity}`)).slice(0, room);
     for (const x of stock) {
       const qty = Math.min(x.qty, AUCTION.houseLotMax[x.slot] ?? 1);
-      const v = worth(x.slot, x.item_id, x.rarity).value * qty;
+      // The house prices off the board too: last week's going rate, nudged by how the last lot went, kept near shop worth.
+      const base = worth(x.slot, x.item_id, x.rarity).value;
+      const m = await marketFor(c, x.slot, x.item_id, x.rarity);
+      const nudge = m.last === "sold_at_buy_now" ? 1.08 : 0.92 ** m.unsold_run;
+      const unit = Math.min(base * 1.5, Math.max(base * 0.85, (m.unit ?? base) * nudge));
+      const v = Math.round(unit * qty);
       const ends = new Date(day + "T00:00:00Z"); ends.setUTCDate(ends.getUTCDate() + 2);
       await c.query("update house_stock set qty = qty - $4 where town = $1 and slot = $2 and item_id = $3 and rarity = $5", [town, x.slot, x.item_id, qty, x.rarity]);
       await c.query("insert into auctions (town, seller_id, slot, item_id, qty, rarity, min_bid, buy_now, listed_day, ends_day) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
@@ -3185,7 +3245,8 @@ api.get("/auction", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const waiting = Number((await ctx.c.query<{ n: string }>(
     "select count(*)::text as n from auctions where not collected and ((status = 'sold' and high_bidder = $1) or (status in ('expired','cancelled') and seller_id = $1))", [ctx.p.id])).rows[0].n);
   ctx.events.push({
-    kind: "auction_house", keeper: town === "brightwater" ? "Cass Marrow" : TOWN_INFO[town]!.auctioneer, town: TOWNS[town as Town] ?? town, connected: "one board for every town's house; lots elsewhere are delivered here when you collect", listings: board.map((r) => listingView(ctx, r)), your_lots: mine.map((r) => listingView(ctx, r)),
+    kind: "auction_house", keeper: town === "brightwater" ? "Cass Marrow" : TOWN_INFO[town]!.auctioneer, town: TOWNS[town as Town] ?? town, connected: "one board for every town's house; lots elsewhere are delivered here when you collect",
+    listings: await withMarket(ctx, board.map((r) => [r, listingView(ctx, r)] as const)), your_lots: mine.map((r) => listingView(ctx, r)),
     waiting_for_you: waiting, purse: ctx.p.gold, bank: ctx.p.bank,
     rules: { days: `${AUCTION.minDays}-${AUCTION.maxDays}`, listing_fee: `${Math.round(AUCTION.feeShare * 100)}% of the minimum bid, at least ${AUCTION.feeMin} gold`, house_cut: `${Math.round(AUCTION.cut * 100)}% of the sale`, max_lots: AUCTION.maxOpen, bids_from: "bank first, then purse; outbid gold comes back to your bank" },
   });

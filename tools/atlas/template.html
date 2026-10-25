@@ -117,7 +117,7 @@ const R = WORLD.radius, N = 2 * R + 1;
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const T = WORLD.terrains; // town, meadow, forest, marsh, hills, crags
 const idx = (x, y) => (y + R) * N + (x + R);
-const tile = (x, y) => { const t = WORLD.tiles[idx(x, y)]; return { x, y, terrain: T[t[0]], level: t[1], poi: t[2] === 1 ? "cave" : t[2] === 2 ? "town" : null, name: WORLD.names[t[3]] }; };
+const tile = (x, y) => { const t = WORLD.tiles[idx(x, y)]; return { x, y, terrain: T[t[0]], level: t[1], poi: t[2] === 1 ? "cave" : t[2] === 2 ? "town" : t[2] === 3 ? "shrine" : null, name: WORLD.names[t[3]] }; };
 const keyOf = (x, y) => `${x},${y}`;
 const count = (list) => { const m = new Map(); for (const [x, y, n] of list || []) m.set(keyOf(x, y), n ?? 1); return m; };
 const players = count(WORLD.activity.explored), folk = count(WORLD.activity.townsfolk), found = count(WORLD.activity.discovered);
@@ -201,6 +201,7 @@ function draw() {
   if ($("t-places").checked) {
     for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) {
       const t = tile(x, y);
+      if (t.poi === "shrine") { ctx.fillStyle = css("--gold"); const cx = px(x) + cs / 2, cy = py(y) + cs / 2, a = cs * .32, w = Math.max(2, cs * .14); ctx.fillRect(cx - w / 2, cy - a, w, a * 2); ctx.fillRect(cx - a, cy - w / 2, a * 2, w); }
       if (t.poi === "cave") { ctx.strokeStyle = css("--ink"); ctx.lineWidth = Math.max(1.5, cs * .1); ctx.fillStyle = css("--ink"); ctx.beginPath(); ctx.arc(px(x) + cs / 2, py(y) + cs / 2, cs * .28, Math.PI, 0); ctx.lineTo(px(x) + cs * .78, py(y) + cs * .75); ctx.lineTo(px(x) + cs * .22, py(y) + cs * .75); ctx.closePath(); ctx.fill(); }
     }
     for (const t of towns) {
@@ -227,7 +228,7 @@ function describe(t) {
   $("tile-kicker").textContent = `(${t.x}, ${t.y})${dir ? " · " + dir + " of Brightwater" : ""}`;
   $("tile-name").textContent = town ? town.name : t.name.replace(/^the /, "The ");
   const rows = [
-    ["Land", town ? "town" : t.terrain + (t.poi === "cave" ? ", with a cave" : "")],
+    ["Land", town ? "town" : t.terrain + (t.poi === "cave" ? ", with a cave" : t.poi === "shrine" ? ", with the shrine" : "")],
     ["Danger", town || (t.x === 0 && t.y === 0) ? "none inside the walls" : `level ${t.level}`],
     ["Ring", Math.max(Math.abs(t.x), Math.abs(t.y))],
     ["Players", t.x === 0 && t.y === 0 ? "everyone passes through" : players.get(k) ? `${players.get(k)} of ${WORLD.activity.players} have been` : "nobody yet"],
@@ -251,7 +252,7 @@ function legend() {
   };
   $("legend-note").textContent = notes[state.mode];
   if (state.mode === "terrain") {
-    L.innerHTML = `<div class="legend">${["meadow", "forest", "marsh", "hills", "crags"].map((t) => `<div><span class="sw" style="background:var(--t-${t})"></span>${t}</div>`).join("")}<div><span class="sw" style="background:var(--wax)"></span>town</div></div>`;
+    L.innerHTML = `<div class="legend">${["meadow", "forest", "marsh", "hills", "crags"].map((t) => `<div><span class="sw" style="background:var(--t-${t})"></span>${t}</div>`).join("")}<div><span class="sw" style="background:var(--wax)"></span>town</div><div><span class="sw" style="background:var(--gold)"></span>shrine</div></div>`;
     return;
   }
   const ramps = { danger: ["--t-meadow", "--wax", "level 1", "level 12"], players: ["--gold", "--wax", "1 player", "4+"], folk: ["--t-marsh", "--sea", "1", "6+"], gaps: ["--paper-hi", "--gold", "3 steps", `${maxGap} steps`] };
@@ -262,9 +263,10 @@ function legend() {
 function places() {
   const list = [];
   for (const t of towns) list.push({ ...t, kind: "town", level: "" });
-  for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) { const t = tile(x, y); if (t.poi === "cave") list.push({ name: t.name.replace(/^the /, "The "), x, y, kind: "cave", level: t.level }); }
-  list.sort((a, b) => (a.kind === b.kind ? Math.max(Math.abs(a.x), Math.abs(a.y)) - Math.max(Math.abs(b.x), Math.abs(b.y)) : a.kind === "town" ? -1 : 1));
-  $("places").innerHTML = list.map((p) => `<li data-x="${p.x}" data-y="${p.y}"><span>${p.name}</span><span class="c">${p.kind === "cave" ? "L" + p.level : "town"}</span><span class="c">${p.x}, ${p.y}</span></li>`).join("");
+  for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) { const t = tile(x, y); if (t.poi === "cave" || t.poi === "shrine") list.push({ name: t.name.replace(/^the /, "The "), x, y, kind: t.poi, level: t.level }); }
+  const order = { town: 0, shrine: 1, cave: 2 };
+  list.sort((a, b) => (a.kind === b.kind ? Math.max(Math.abs(a.x), Math.abs(a.y)) - Math.max(Math.abs(b.x), Math.abs(b.y)) : order[a.kind] - order[b.kind]));
+  $("places").innerHTML = list.map((p) => `<li data-x="${p.x}" data-y="${p.y}"><span>${p.name}</span><span class="c">${p.kind === "cave" ? "L" + p.level : p.kind}</span><span class="c">${p.x}, ${p.y}</span></li>`).join("");
   $("places").addEventListener("click", (e) => { const li = e.target.closest("li"); if (!li) return; state.pin = tile(+li.dataset.x, +li.dataset.y); describe(state.pin); draw(); scrollTo(state.pin); });
 }
 

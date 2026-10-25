@@ -17,6 +17,7 @@ interface File {
   masters?: Record<string, { name: string; about: string }>;
   ironMasters?: Record<string, { name: string; about: string }>;
   ashMasters?: Record<string, { name: string; about: string }>;
+  places?: { key: string; x: number; y: number; name: string; poi: string; about?: string; meeting?: number }[];
   journals?: { key: string; title: string; text: string; where: string; author?: string | null; min_ring?: number }[];
   quests?: ({ id: string; index?: number } & Record<string, unknown>)[];
   looks?: Record<string, { look: string; manner?: string }>;
@@ -35,6 +36,7 @@ for (const [name, p] of Object.entries(f.people ?? {})) {
 for (const [lvl, m] of Object.entries(f.masters ?? {})) rows.push({ key: `master:${lvl}`, kind: "master", subject: m.name, piece: Number(lvl), body: m.about, data: {} });
 for (const [lvl, m] of Object.entries(f.ironMasters ?? {})) rows.push({ key: `master:ironhold:${lvl}`, kind: "master", subject: m.name, piece: Number(lvl), body: m.about, data: { town: "ironhold" } });
 for (const [lvl, m] of Object.entries(f.ashMasters ?? {})) rows.push({ key: `master:ashford:${lvl}`, kind: "master", subject: m.name, piece: Number(lvl), body: m.about, data: { town: "ashford" } });
+for (const pl of f.places ?? []) rows.push({ key: `place:${pl.key}`, kind: "place", subject: pl.key, piece: null, body: pl.about ?? "", data: { x: pl.x, y: pl.y, name: pl.name, poi: pl.poi, ...(pl.meeting ? { meeting: pl.meeting } : {}) } });
 for (const j of f.journals ?? []) rows.push({ key: `journal:${j.key}`, kind: "journal", subject: j.title, piece: null, body: j.text, data: { where: j.where, author: j.author ?? null, min_ring: j.min_ring ?? 0 } });
 for (const [name, l] of Object.entries(f.looks ?? {})) rows.push({ key: `look:${name}`, kind: "look", subject: name, piece: null, body: l.look, data: l.manner ? { manner: l.manner } : {} });
 for (const q of f.quests ?? []) {
