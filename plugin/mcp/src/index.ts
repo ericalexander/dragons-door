@@ -37,7 +37,7 @@ void refreshInstalledScript();
 
 async function call(method: "GET" | "POST", path: string, body?: unknown) {
   const cfg = await loadConfig();
-  if (!cfg.api_key && path !== "/v1/register") {
+  if (!cfg.api_key && path !== "/v1/register" && path !== "/v1/trial/claim") {
     return { error: "not_registered", message: "No character yet. Call `register` with a name and a path (steel, shadow or gift)." };
   }
   const res = await fetch(cfg.api_url + path, {
@@ -68,6 +68,17 @@ server.tool("register", "Create your character. Run once. Stores your API key lo
     const r = (await call("POST", "/v1/register", { name, path, invite: invite ?? process.env.DRAGONS_DOOR_INVITE ?? process.env.LORD_INVITE })) as { api_key?: string; name?: string; error?: string };
     if (r.api_key) {
       await saveConfig({ ...cfg, api_key: r.api_key, name: r.name });
+      delete (r as { api_key?: string }).api_key; // never echo the key into the conversation
+    }
+    return text(r);
+  });
+
+server.tool("claim", "Claim a character the player started in the trial on the game's website (dragonsdoor.gg/try), with the code the page gave them (DOOR- and twelve letters and digits). It becomes their real character on this machine, carrying on from where the trial left off, and the active one; any character already on this machine is kept.",
+  { code: z.string().min(8).max(40) },
+  async ({ code }) => {
+    const r = (await call("POST", "/v1/trial/claim", { code })) as { api_key?: string; name?: string };
+    if (r.api_key && r.name) {
+      await switchCharacter(r.name, r.api_key);
       delete (r as { api_key?: string }).api_key; // never echo the key into the conversation
     }
     return text(r);
