@@ -66,6 +66,8 @@
   .notice { padding-top: 64px; padding-bottom: 48px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 22px; }
   .notice h1 { font-size: clamp(56px, 9vw, 96px); line-height: .95; }
   .notice .lede { margin: 0; font-size: 22px; max-width: 66ch; color: var(--ink-soft); }
+  .notice .lede.verse { font-style: italic; line-height: 1.5; margin-bottom: 0.9em; }
+  .notice .lede.plain-line { font-size: 17px; margin-top: 0.4em; }
   .ctas { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; padding-top: 8px; }
   .btn {
     display: inline-flex; align-items: center; min-height: 48px; padding: 0 26px;
@@ -194,7 +196,15 @@
   </svg>
   <div class="kicker">Posted at the tavern door</div>
   <h1>Adventurers wanted.</h1>
-  <p class="lede">A daily-turn multiplayer text RPG in the spirit of the old BBS door games, played inside Claude Code in one shared realm. The world keeps moving while you're away: townsfolk with lives of their own, quests that end the way you choose, and news written by what the realm's players do.</p>
+  <p class="lede verse">Come sit, and hear of Dragon's Door,<br>
+  where one day's turns are all you get;<br>
+  the realm is shared, the road is long,<br>
+  and no one's slain the dragon yet.</p>
+  <p class="lede verse">The townsfolk keep their lives without you,<br>
+  they drink and quarrel, wed and grieve;<br>
+  the quests will end the way you choose them,<br>
+  and the news is what the players leave.</p>
+  <p class="lede plain-line">A daily-turn multiplayer text RPG, played inside Claude Code.</p>
   <div class="ctas">
     <a class="btn primary" href="#enter">Enter the realm</a>
     <a class="btn ghost" href="#session">See a morning</a>
