@@ -77,6 +77,25 @@
   .term .send:hover { border-color: var(--pane-gold); }
   .term .gate { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 8px 0; }
   .term .gate p { margin: 0; max-width: 60ch; }
+  .term .field { display: flex; flex-direction: column; gap: 6px; width: min(100%, 360px); }
+  .term .field span, .term .paths legend { color: var(--pane-dim); font-size: 13px; }
+  .term .field input { background: transparent; border: 1px solid #5a4430; border-radius: 3px; color: var(--pane-fg); font: inherit; padding: 10px 12px; caret-color: var(--pane-gold); }
+  .term .field input:focus { outline: none; border-color: var(--pane-gold); }
+  .term .paths { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: 100%; max-width: 760px; }
+  .term .paths legend { padding: 0; margin-bottom: 6px; }
+  .term .paths label { display: block; cursor: pointer; }
+  .term .paths input { position: absolute; opacity: 0; pointer-events: none; }
+  .term .paths span { display: block; height: 100%; border: 1px solid #5a4430; border-radius: 3px; padding: 10px 12px; color: var(--pane-dim); font-size: 13px; line-height: 1.5; }
+  .term .paths b { display: block; color: var(--pane-fg); font-weight: 500; font-size: 15px; margin-bottom: 2px; }
+  .term .paths input:checked + span { border-color: var(--pane-gold); box-shadow: inset 0 0 0 1px var(--pane-gold); }
+  .term .paths input:checked + span b { color: var(--pane-gold); }
+  .term .paths input:focus-visible + span { outline: 2px solid var(--pane-gold); outline-offset: 2px; }
+  .claim { margin-top: 14px; border: 2px solid var(--ink); border-radius: 3px; padding: 14px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; background: var(--paper-hi); }
+  .claim[hidden] { display: none; }
+  .claim .what { flex: 1 1 320px; margin: 0; }
+  .claim code { font-family: var(--mono); font-size: 18px; letter-spacing: .06em; color: var(--wax-dark); white-space: nowrap; }
+  .claim button { font: inherit; font-weight: 700; border: 2px solid var(--ink); background: transparent; color: var(--ink); border-radius: 3px; padding: 6px 14px; cursor: pointer; }
+  .claim button:hover { background: var(--ink); color: var(--paper-hi); }
 
   .after { padding-top: 28px; padding-bottom: 56px; display: grid; grid-template-columns: 1.3fr 1fr; gap: 32px; align-items: start; }
   .after h2 { font-size: 34px; line-height: 1.1; margin-bottom: 8px; }
@@ -88,6 +107,7 @@
   footer .wrap { padding-top: 24px; padding-bottom: 32px; display: flex; gap: 22px; flex-wrap: wrap; font-size: 14px; }
 
   @media (max-width: 760px) {
+    .term .paths { grid-template-columns: 1fr; }
     .intro { padding-top: 28px; }
     .intro h1 { font-size: 46px; }
     .intro p { font-size: 17px; }
@@ -115,23 +135,35 @@
 <section class="intro wrap">
   <div class="kicker">At the gate</div>
   <h1>Try a day.</h1>
-  <p>You'll be a warrior, fresh in Brightwater, in the real realm: its townsfolk, its news, its weather are all live. Nothing you do here sticks, and the day ends after <span id="turns">30</span> moves. Type what you'd do, or press the letters.</p>
+  <p>Pick a name and a path and step into the real realm: its townsfolk, its news, its weather are all live. Nobody else sees you yet, and the day ends after <span id="turns">30</span> moves. Type what you'd do, or press the letters.</p>
 </section>
 
 <section class="wrap" aria-label="The game">
   <div class="term fresh" id="term">
     <div class="bar" id="bar" aria-live="polite"><span>Not yet through the gate</span></div>
     <div class="screen" id="screen" role="log" aria-live="polite">
-      <div class="gate" id="gate">
-        <p>The door's ajar. Beyond it, Brightwater's square, a smith's hammer, and someone arguing about the price of ale.</p>
-        <button class="btn primary" id="start" type="button">Open the gate</button>
-      </div>
+      <form class="gate" id="gate">
+        <p>The door's ajar. The clerk at the gate looks up from the register. "Name?"</p>
+        <label class="field"><span>Your name</span><input id="name" name="name" autocomplete="off" maxlength="20" minlength="2" required pattern="[A-Za-z0-9_.'\-]+( [A-Za-z0-9_.'\-]+)*" placeholder="2 to 20 letters"></label>
+        <fieldset class="paths">
+          <legend>Your path</legend>
+          <label><input type="radio" name="path" value="steel" checked><span><b>Steel</b> Blades, maces, heavy armor. A warrior, from Ironhold.</span></label>
+          <label><input type="radio" name="path" value="shadow"><span><b>Shadow</b> Quick and at range: bows and daggers. A thief, from Ashford.</span></label>
+          <label><input type="radio" name="path" value="gift"><span><b>The gift</b> Magic. A mage, from Brightwater.</span></label>
+        </fieldset>
+        <button class="btn primary" id="start" type="submit">Open the gate</button>
+      </form>
     </div>
     <form id="say" hidden>
       <label for="cmd">&gt;</label>
       <input id="cmd" name="cmd" autocomplete="off" maxlength="300" placeholder="a letter, or what you'd do" enterkeyhint="send">
       <button class="send" type="submit">Send</button>
     </form>
+  </div>
+  <div class="claim" id="claim" hidden>
+    <p class="what"><b>Keep this character.</b> In Claude Code, with Dragon's Door installed, say <i>claim my character</i> and this code. You carry on from here, for real. It keeps for a week.</p>
+    <code id="code"></code>
+    <button type="button" id="copy">Copy</button>
   </div>
 </section>
 
@@ -142,7 +174,7 @@
     <div class="cta"><a class="btn primary" href="/#enter">Install it</a><a class="btn ghost" href="/chronicle">Read the chronicle</a></div>
   </div>
   <div>
-    <p class="fine">On this page, what you type and what the game sends back go to the game's narrator, an AI model from Anthropic, to tell the story. Your trial character and the last few things you said are kept on the game's server for a day and then deleted. It never shows up in the rankings, the news or anywhere other players can see. To keep trials free, the site counts how many each internet address starts in a day, using a scrambled code that can't be turned back into the address. More in the <a href="/privacy">privacy notes</a>.</p>
+    <p class="fine">On this page, what you type and what the game sends back go to the game's narrator, an AI model from Anthropic, to tell the story. Your trial character and the last few things you said are kept on the game's server for a week, then deleted, unless you claim the character in Claude Code, when it becomes your real one. It never shows up in the rankings, the news or anywhere other players can see. To keep trials free, the site counts how many each internet address starts in a day, using a scrambled code that can't be turned back into the address. More in the <a href="/privacy">privacy notes</a>.</p>
   </div>
 </section>
 
@@ -162,6 +194,12 @@
   const KEY = "dd-trial";
   const $ = (id) => document.getElementById(id);
   const screen = $("screen"), bar = $("bar"), form = $("say"), cmd = $("cmd"), gate = $("gate");
+  let claimOpen = false;
+  function showClaim() {
+    const box = $("claim");
+    box.hidden = !(claimOpen && s.claim);
+    if (!box.hidden) $("code").textContent = s.claim;
+  }
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let s = { token: null, name: null, log: [], state: null, left: null, over: false };
   let busy = false;
@@ -229,15 +267,21 @@
     $("again").addEventListener("click", () => { forget(); location.reload(); });
   }
 
-  async function start() {
-    if (busy) return; busy = true;
+  async function start(e) {
+    e.preventDefault();
+    if (busy) return;
+    const name = $("name").value.trim().replace(/\s+/g, " ");
+    const path = (gate.querySelector('input[name="path"]:checked') || {}).value;
+    if (!$("name").checkValidity()) { $("name").reportValidity(); return; }
+    busy = true;
     $("start").disabled = true;
     stir(true);
-    const r = await call("/start").catch(() => ({ error: "offline", message: "Couldn't reach the realm. Check your connection and try again." }));
+    const r = await call("/start", { name, path }).catch(() => ({ error: "offline", message: "Couldn't reach the realm. Check your connection and try again." }));
     stir(false); busy = false;
     if (r.error) { $("start").disabled = false; line("note", r.message || "The gate won't open just now."); return; }
     gate.remove(); $("term").classList.remove("fresh");
-    s = { token: r.token, name: r.name, log: [], state: null, left: null, over: false };
+    s = { token: r.token, name: r.name, claim: r.claim || null, log: [], state: null, left: null, over: false };
+    showClaim();
     form.hidden = false;
     take(r);
     cmd.focus();
@@ -254,7 +298,11 @@
     if (!s.over) cmd.focus({ preventScroll: true });
   }
 
-  $("start").addEventListener("click", start);
+  gate.addEventListener("submit", start);
+  $("copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText("claim my character " + s.claim); $("copy").textContent = "Copied"; setTimeout(() => { $("copy").textContent = "Copy"; }, 1800); }
+    catch { const r = document.createRange(); r.selectNodeContents($("code")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+  });
   form.addEventListener("submit", (e) => { e.preventDefault(); say(cmd.value); });
   screen.addEventListener("click", (e) => { const b = e.target.closest(".key[data-k]"); if (b && !b.disabled) say(b.dataset.k); });
 
@@ -271,6 +319,7 @@
   }
   fetch(API + "/v1/trial").then((r) => r.json()).then((d) => {
     if (d.turns) $("turns").textContent = d.turns;
+    claimOpen = Boolean(d.claim_open); showClaim();
     if (!d.open && !s.token) { $("start").disabled = true; line("note", "The gate's shut for today: the trial has had all the visitors it can. Come back tomorrow, or install the game."); }
   }).catch(() => {});
 })();

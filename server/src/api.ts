@@ -250,7 +250,9 @@ export function reservedName(n: string): boolean {
   return RESERVED_FOLDED.has(f) || RESERVED_FOLDED.has(f.replace(/ /g, "")) || [...RESERVED_FOLDED].some((r) => r.replace(/ /g, "") === f.replace(/ /g, ""));
 }
 
-const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
+export const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
+/** What a character's name may be made of. */
+export const NAME_RE = /^[A-Za-z0-9_.'-]+( [A-Za-z0-9_.'-]+)*$/;
 
 /**
  * A rare roll a player feels, drawn from their own bag of marbles for that kind of luck (luck.ts) instead of a
@@ -321,7 +323,7 @@ async function requireNoEncounter(ctx: Ctx) {
 
 api.post("/register", async (c) => {
   const body = z.object({
-    name: z.string().trim().min(2).max(20).regex(/^[A-Za-z0-9_.'-]+( [A-Za-z0-9_.'-]+)*$/, "letters, digits, apostrophes, periods, hyphens, single spaces"),
+    name: z.string().trim().min(2).max(20).regex(NAME_RE, "letters, digits, apostrophes, periods, hyphens, single spaces"),
     // New plugins choose a path (Steel, Shadow or the gift) and specialize at level 5. Older ones choose a class,
     // which counts as already specialized.
     path: z.enum(["steel", "shadow", "gift"]).optional(),
