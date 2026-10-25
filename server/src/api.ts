@@ -63,7 +63,7 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
   const info = current();
   // Off unless MIN_PLUGIN_VERSION is set: only raised for releases that old plugins can't play against.
   const min = process.env.MIN_PLUGIN_VERSION;
-  if (min && info && !info.townsfolk && (!info.plugin || older(info.plugin, min))) {
+  if (min && info && !info.townsfolk && !info.trial && (!info.plugin || older(info.plugin, min))) {
     throw new GameError("update_required", `This realm needs Dragon's Door ${min} or newer (you have ${info.plugin ?? "an older version"}).`, 426);
   }
   // The sky is looked up once the key checks out, alongside the rest of the work; dropped if weather is off.
@@ -77,6 +77,8 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const day = realmDay(settings.resetHourUtc);
     const loaded = await loadTurns(c, r.rows[0], day);
     const ctx: Ctx = { c, p: numify(loaded.player), t: loaded.turns, day, dragonAlive: settings.dragonAlive, events: [], spouse: null };
+    // A trial character plays only through the website's narrator, never straight from outside.
+    if (ctx.p.trial && !info?.trial) throw new GameError("trial_only", "this character lives on the website's trial; install the game to play for real", 403);
     if (ctx.p.banned_at) throw new GameError("banned", "The gate is barred to you. The realm's keeper has turned this character away.", 403);
     // Renamed by the keeper: say so once.
     if (ctx.p.renamed_from) {
@@ -248,7 +250,9 @@ export function reservedName(n: string): boolean {
   return RESERVED_FOLDED.has(f) || RESERVED_FOLDED.has(f.replace(/ /g, "")) || [...RESERVED_FOLDED].some((r) => r.replace(/ /g, "") === f.replace(/ /g, ""));
 }
 
-const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
+export const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
+/** What a character's name may be made of. */
+export const NAME_RE = /^[A-Za-z0-9_.'-]+( [A-Za-z0-9_.'-]+)*$/;
 
 /**
  * A rare roll a player feels, drawn from their own bag of marbles for that kind of luck (luck.ts) instead of a
@@ -319,7 +323,7 @@ async function requireNoEncounter(ctx: Ctx) {
 
 api.post("/register", async (c) => {
   const body = z.object({
-    name: z.string().trim().min(2).max(20).regex(/^[A-Za-z0-9_.'-]+( [A-Za-z0-9_.'-]+)*$/, "letters, digits, apostrophes, periods, hyphens, single spaces"),
+    name: z.string().trim().min(2).max(20).regex(NAME_RE, "letters, digits, apostrophes, periods, hyphens, single spaces"),
     // New plugins choose a path (Steel, Shadow or the gift) and specialize at level 5. Older ones choose a class,
     // which counts as already specialized.
     path: z.enum(["steel", "shadow", "gift"]).optional(),
@@ -1676,6 +1680,8 @@ async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]
       await ctx.c.query("update quests set data = $2 where id = $1", [row.id, JSON.stringify(row.data)]);
     } else if ("mark_target" in fx) {
       if (row.data.target) await hearOf(ctx, row.data.target.x, row.data.target.y, q.title);
+    } else if ("errand" in fx && ctx.p.trial) {
+      // A trial is a visit, not a life: nobody in town sets off on its account.
     } else if ("errand" in fx) {
       // The townsperson sets off: they know the way to where they're going, and they're back after `days`.
       const e = fx.errand;
@@ -2976,7 +2982,7 @@ async function chatPlayer(c: { req: { header: (n: string) => string | undefined 
   const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
   if (!key) return null;
   const r = await pool.query<{ id: string; name: string; level: number; role: string; is_test: boolean; admin: boolean; banned_at: string | null; pos_x: number | null; pos_y: number | null }>(
-    "update players set last_seen = now() where api_key_hash = $1 returning id, name, level, role, is_test, admin, banned_at, pos_x, pos_y", [hash(key)]);
+    "update players set last_seen = now() where api_key_hash = $1 and not trial returning id, name, level, role, is_test, admin, banned_at, pos_x, pos_y", [hash(key)]);
   return r.rows[0] ?? null;
 }
 

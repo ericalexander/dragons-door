@@ -21,6 +21,7 @@ import { catchUp, writeEntry } from "./chronicle.js";
 import { answerLetters } from "./letters.js";
 import { settleGifts } from "./gifts.js";
 import { settlePolls } from "./polls.js";
+import { sweepTrials } from "./trial.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { realmDay, realmSettings } from "./day.js";
@@ -1231,6 +1232,8 @@ bots.on(["GET", "POST"], "/bots/run", async (c) => {
   try { auctions = await tx(async (cl) => settleAuctions(cl, realmDay((await realmSettings(cl)).resetHourUtc, when))); } catch (e) { auctions = [`error: ${(e as Error).message}`]; }
   // Chat is kept for 30 days, then gone.
   try { await pool.query(`delete from chat where created_at < now() - interval '${CHAT_KEEP_DAYS} days'`); } catch { /* next run */ }
+  // Trial characters past their day go, with everything of theirs.
+  try { await sweepTrials(); } catch { /* next run */ }
   // The courier's morning round: townsfolk take their gifts, and a week's unclaimed ones go home.
   let gifts: string[] = [];
   try { gifts = await tx(async (cl) => settleGifts(cl, realmDay((await realmSettings(cl)).resetHourUtc, when))); } catch (e) { gifts = [`error: ${(e as Error).message}`]; }
