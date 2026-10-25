@@ -135,7 +135,7 @@ type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; na
 type Msg = { role: "user" | "assistant"; content: string | Block[] };
 
 /** One call to the model. The instructions and tools are the same every time, so they're cached. */
-async function model(messages: Msg[]): Promise<{ content: Block[]; stop_reason: string; usage: Usage } | null> {
+async function model(messages: Msg[], opts: { noTools?: boolean } = {}): Promise<{ content: Block[]; stop_reason: string; usage: Usage } | null> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
   const tools = TOOLS.map(({ name, description, input_schema }, i) => ({ name, description, input_schema, ...(i === TOOLS.length - 1 ? { cache_control: { type: "ephemeral" } } : {}) }));
@@ -144,7 +144,7 @@ async function model(messages: Msg[]): Promise<{ content: Block[]; stop_reason: 
     const res = await fetch(process.env.TRIAL_API_URL ?? "https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: TRIAL.model(), max_tokens: 900, system: [{ type: "text", text: system(), cache_control: { type: "ephemeral" } }], tools, messages }),
+      body: JSON.stringify({ model: TRIAL.model(), max_tokens: 1400, system: [{ type: "text", text: system(), cache_control: { type: "ephemeral" } }], tools, ...(opts.noTools ? { tool_choice: { type: "none" } } : {}), messages }),
       signal: AbortSignal.timeout(45_000),
     });
     if (!res.ok) { console.error("trial llm:", res.status, (await res.text()).slice(0, 300)); return null; }
@@ -179,26 +179,40 @@ async function narrate(key: string, history: Msg[], said: string, notes: string)
   const messages: Msg[] = [...history, { role: "user", content: `[trial: ${notes}]\n${said}` }];
   const usage: Usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   let state: Record<string, unknown> | null = null;
+  const add = (u: Usage) => { for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] = (usage[k] ?? 0) + (u[k] ?? 0); };
+  const textOf = (c: Block[]) => c.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n");
   for (let calls = 0; ; ) {
-    const r = await model(messages);
+    const r = await model(messages, { noTools: calls >= MAX_CALLS });
     if (!r) return { text: "", state, usage };
-    for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] = (usage[k] ?? 0) + (r.usage[k] ?? 0);
+    add(r.usage);
     const uses = r.content.filter((b): b is Extract<Block, { type: "tool_use" }> => b.type === "tool_use");
-    if (r.stop_reason !== "tool_use" || uses.length === 0 || calls >= MAX_CALLS) {
-      const text = r.content.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n").trim();
-      return { text, state, usage };
+    if (r.stop_reason === "tool_use" && uses.length > 0) {
+      messages.push({ role: "assistant", content: r.content });
+      const results: Block[] = [];
+      for (const u of uses) {
+        calls++;
+        const tool = TOOLS.find((t) => t.name === u.name);
+        // Past the limit, the narrator is told to tell what's happened; the next call has no tools at all.
+        const out = !tool ? { error: "not_on_the_trial", message: "that isn't open on the trial" } : calls > MAX_CALLS ? { error: "enough", message: "tell the player what's happened so far" } : await play(key, tool, u.input);
+        const st = (out as { state?: Record<string, unknown> }).state;
+        if (st) state = st;
+        results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(out).slice(0, RESULT_MAX) });
+      }
+      messages.push({ role: "user", content: results });
+      continue;
     }
-    messages.push({ role: "assistant", content: r.content });
-    const results: Block[] = [];
-    for (const u of uses) {
-      calls++;
-      const tool = TOOLS.find((t) => t.name === u.name);
-      const out = !tool ? { error: "not_on_the_trial", message: "that isn't open on the trial" } : calls > MAX_CALLS ? { error: "enough", message: "tell the player what's happened so far" } : await play(key, tool, u.input);
-      const st = (out as { state?: Record<string, unknown> }).state;
-      if (st) state = st;
-      results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(out).slice(0, RESULT_MAX) });
+    // The telling. If it ran out of room mid-sentence, let it finish (twice at most).
+    let text = textOf(r.content);
+    let stop = r.stop_reason;
+    for (let more = 0; stop === "max_tokens" && more < 2; more++) {
+      const r2 = await model([...messages, { role: "assistant", content: text.trimEnd() }], { noTools: true });
+      if (!r2) break;
+      add(r2.usage);
+      text = text.trimEnd() + textOf(r2.content);
+      stop = r2.stop_reason;
     }
-    messages.push({ role: "user", content: results });
+    if (stop !== "end_turn") console.error("trial narrator stopped:", stop, "calls", calls, "chars", text.length);
+    return { text: text.trim(), state, usage };
   }
 }
 
