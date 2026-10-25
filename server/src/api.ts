@@ -1054,6 +1054,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     const next = expForLevel(ctx.p.level + 1);
     await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp });
     ctx.events.push({ kind: "monster_slain", monster: m.name, gold: m.gold, exp: m.exp });
+    await questTriggers(ctx, { win: true });
     const drop = rollDrop(m.level ?? ctx.p.level, ctx.p.class, await luck(ctx, "drop", dropChance(ctx.p.class)));
     if (drop) {
       const w = Bag.item(drop.kind, drop.tier).weight;
@@ -1360,6 +1361,7 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
   const r = await ctx.c.query("select author, body, ts from tavern where day = $1 and town = $2 and hidden_at is null order by id desc limit 20", [ctx.day, town]);
   const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
+  await questTriggers(ctx, { visit: "tavern" });
   // Violet and the bards are Brightwater's; other towns' taverns have their own keepers.
   if (town !== "brightwater") {
     const t = TOWN_INFO[town]!;
@@ -1592,7 +1594,7 @@ api.post("/travel", async (c) => {
 
 // ---------- side quests ----------
 
-interface QRow { id: string; quest: string; step: string; data: { target?: { x: number; y: number }; pending?: boolean }; started_day: string; step_day: string; deadline: string }
+interface QRow { id: string; quest: string; step: string; data: { target?: { x: number; y: number }; pending?: boolean; wins?: number }; started_day: string; step_day: string; deadline: string }
 
 async function activeQuests(ctx: Ctx): Promise<QRow[]> {
   return (await ctx.c.query<QRow>(
@@ -1650,12 +1652,16 @@ async function moveTo(ctx: Ctx, q: QuestDef, row: QRow, to?: string, end?: strin
   row.step = to; row.step_day = ctx.day; row.data.pending = false;
   await ctx.c.query("update quests set step = $2, step_day = $3, data = $4 where id = $1", [row.id, to, ctx.day, JSON.stringify(row.data)]);
   if (to !== stepOf(q, to)?.id) return;
+  // A song step with no song to be had today goes straight on, without a word.
+  const next = stepOf(q, to)!;
+  if (next.skip_if_heard && ctx.t.bard_heard) return moveTo(ctx, q, row, next.then, next.end);
   ctx.events.push({ kind: "quest_progress", quest: q.id, title: q.title, know: knowLine(q, row) });
 }
 
 /** Quest effects plus the ones only quests have (the item, a target spot). */
 async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]) {
   const plain: (Effect | QEffect)[] = [];
+  const gear: string[] = [];
   for (const fx of effects) {
     if ("give_item" in fx) await questItem(ctx, q, true);
     else if ("take_item" in fx) await questItem(ctx, q, false);
@@ -1678,6 +1684,10 @@ async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]
       best ??= tileAt(ring, 0);
       row.data.target = { x: best.x, y: best.y };
       await ctx.c.query("update quests set data = $2 where id = $1", [row.id, JSON.stringify(row.data)]);
+    } else if ("gear" in fx) {
+      const { slot, tier } = fx.gear;
+      await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, slot, tier]);
+      gear.push(slot === "weapon" && casts(ctx.p.class) ? casterItemName(ctx.p.class, tier) : Bag.item(slot, tier).name);
     } else if ("mark_target" in fx) {
       if (row.data.target) await hearOf(ctx, row.data.target.x, row.data.target.y, q.title);
     } else if ("errand" in fx && ctx.p.trial) {
@@ -1694,7 +1704,16 @@ async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]
     } else plain.push(fx);
   }
   const { got, monster } = await applyEffects(ctx, plain, Math.max(1, ctx.p.level), null, q.title);
-  return { got, monster };
+  return { got: gear.length ? { ...got, gear } : got, monster };
+}
+
+/** A brand-new character's first look round their home town starts that town's intro quest, once. */
+async function introQuest(ctx: Ctx, town: TownId) {
+  if (ctx.p.role !== "player" || ctx.p.level !== 1 || ctx.p.exp !== 0 || (ctx.p.start_town ?? "brightwater") !== town) return;
+  const q = QUESTS.find((x) => x.intro_for === town);
+  if (!q) return;
+  if ((await ctx.c.query("select 1 from quests where player_id = $1 limit 1", [ctx.p.id])).rowCount) return;
+  await startQuest(ctx, q.id, false);
 }
 
 /** What lives where the player is standing, if they're out in the wild (in town, the old familiar ones). */
@@ -1723,7 +1742,7 @@ async function fireStep(ctx: Ctx, q: QuestDef, row: QRow, st: QStep) {
 }
 
 /** Check whether anything they just did moves a quest along. */
-async function questTriggers(ctx: Ctx, what: { talk?: { name: string; townsfolk: boolean } } | { arrive: { x: number; y: number } }) {
+async function questTriggers(ctx: Ctx, what: { talk?: { name: string; townsfolk: boolean } } | { arrive: { x: number; y: number } } | { visit: "tavern" } | { song: true } | { win: true }) {
   for (const row of await activeQuests(ctx)) {
     if (row.data.pending) continue;
     const q = questById(row.quest); const st = q && stepOf(q, row.step);
@@ -1735,6 +1754,14 @@ async function questTriggers(ctx: Ctx, what: { talk?: { name: string; townsfolk:
       if (!fits || (on.chance !== undefined && Math.random() >= on.chance)) continue;
       await fireStep(ctx, q, row, st);
       return; // one quest moment per conversation
+    }
+    if ("visit" in what && "visit" in st.on) { await fireStep(ctx, q, row, st); continue; }
+    if ("song" in what && "song" in st.on) { await fireStep(ctx, q, row, st); continue; }
+    if ("win" in what && "wins" in st.on) {
+      row.data.wins = (row.data.wins ?? 0) + 1;
+      if (row.data.wins >= st.on.wins) { row.data.wins = 0; await fireStep(ctx, q, row, st); }
+      else await ctx.c.query("update quests set data = $2 where id = $1", [row.id, JSON.stringify(row.data)]);
+      continue;
     }
     if ("arrive" in what && "arrive" in st.on && row.data.target && row.data.target.x === what.arrive.x && row.data.target.y === what.arrive.y) {
       await fireStep(ctx, q, row, st);
@@ -2107,6 +2134,7 @@ api.get("/square", async (c) => c.json(await withPlayer(c.req.header("authorizat
     ...(lore().world ? { realm: lore().world } : {}),
   });
   await meetingsHere(ctx, "brightwater");
+  await introQuest(ctx, "brightwater");
   await maybeJournal(ctx, "town");
 }, { weather: true })));
 
@@ -2290,6 +2318,7 @@ api.get("/town", async (c) => c.json(await withPlayer(c.req.header("authorizatio
   if (!here || here === "brightwater") { ctx.events.push({ kind: "no_town_here", note: here === "brightwater" ? "this is Brightwater; use square" : "there's no town here" }); return; }
   ctx.events.push(await townView(ctx, here));
   await meetingsHere(ctx, here);
+  await introQuest(ctx, here);
   await maybeJournal(ctx, here === "ashford" ? "ashford" : "ironhold");
 }, { weather: true })));
 
@@ -2584,6 +2613,7 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
   const headline = n.rowCount ? n.rows[roll(n.rowCount - 1)] : null;
   const you = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, exp: ctx.p.exp, weapon: weapon(ctx.p.weapon_id).name, armor: armor(ctx.p.armor_id).name, gold: ctx.p.gold, charm: ctx.p.charm };
   ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, leans_toward: bard.sings_about, you, headline, gift, amount, ...(lucky ? { charm_luck: true } : {}) });
+  await questTriggers(ctx, { song: true });
   await logEvent(ctx, "song", { bard: bard.name, gift, amount });
   ctx.hint = `Write the song: exactly four lines of original lyrics in ${bard.name}'s voice, printed one per line in italics, using at least one real detail from you/headline/weather. Print the lyrics themselves; don't summarize or describe the song. Then the gift.`;
 }, { weather: true })));

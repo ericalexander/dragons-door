@@ -16,7 +16,10 @@ import type { Effect } from "./events.js";
 export type Trigger =
   | { talk: string[] | "townsfolk"; chance?: number }   // talking to one of these (or any townsperson)
   | { arrive: true }                                     // stepping onto the quest's target tile
-  | { meet: string };                                    // a stranger who appears in the square for this player
+  | { meet: string }                                     // a stranger who appears in the square for this player
+  | { visit: "tavern" }                                  // walking into a tavern (the quest's own town's, for an intro)
+  | { song: true }                                       // hearing the bard's song
+  | { wins: number };                                    // winning this many fights out in the wild, from when the step began
 
 export type QEffect =
   | Effect
@@ -25,6 +28,7 @@ export type QEffect =
   | { trinket: number }          // a piece of jewelry, straight onto them or into the bag
   | { place_target: { near: number; far: number; terrain?: string; side?: "north" | "east" | "south" | "west" } }  // pick a spot this many rings out (relative to their farthest), of a kind of land or on one side of town if it can
   | { mark_target: true }        // and mark it on their map
+  | { gear: { slot: "weapon" | "armor"; tier: number } }  // a piece of gear in the bag (a caster's weapon is a scroll)
   /** A townsperson goes to live in another town for a few days, because of what the player did. `lines` are
    *  things they (or the people they're with) might say in that town's tavern meanwhile. Keep them vague:
    *  the tavern board is public, and nobody's secret should land on it. */
@@ -41,6 +45,8 @@ export interface QStep {
   on?: Trigger;
   /** The trigger can't fire until this many days after the step began. */
   after_days?: number;
+  /** A song step that's passed over, straight to `then`, when there's no song to be had (they've heard today's). */
+  skip_if_heard?: boolean;
   /** For the narrator when the trigger fires: what happens, in plain words. */
   cue: string;
   effects?: QEffect[];
@@ -57,6 +63,8 @@ export interface QuestDef {
   item?: { name: string; sell: number };
   /** Days before it closes on its own, from the start. */
   days: number;
+  /** A new character's first quest in this home town: it starts the first time they look around it. */
+  intro_for?: TownId;
   /** How it can start. Events start quests with a { quest } effect; a talk start offers it. */
   start_on?: { talk: string[]; chance: number; needs_secret?: boolean; /** Or: at least this many pieces of their past heard. */ needs_pieces?: number;
     /** While the townsperson's own goal is this kind (Grimwald exploring, so talking about his boot), they ask far more often, even after a piece of their past. */
