@@ -2,7 +2,7 @@
 -- what they do, how it ends, and where the narrator stumbled. No names. The conversation itself is kept with
 -- it for 30 days (for the realm's keeper to read, as the privacy page says), then dropped.
 create table if not exists trial_log (
-  id            uuid primary key,            -- the trial character's id while it lived (no link: the character goes)
+  id            uuid primary key,            -- the trial character's id (a claimed character keeps it; the transcript goes after 30 days)
   started_at    timestamptz not null default now(),
   path          text not null,
   moves         int not null default 0,

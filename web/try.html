@@ -194,7 +194,9 @@
 
 <script>
 (() => {
-  const API = new URLSearchParams(location.search).get("api") || "https://api.dragonsdoor.gg";
+  // ?api= points the page at a local server, for testing only: anything else is ignored, so a link can't send the page (and its trial) elsewhere.
+  const asked = new URLSearchParams(location.search).get("api");
+  const API = asked && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(asked) ? asked : "https://api.dragonsdoor.gg";
   const KEY = "dd-trial";
   const $ = (id) => document.getElementById(id);
   const screen = $("screen"), bar = $("bar"), form = $("say"), cmd = $("cmd"), gate = $("gate");
@@ -237,13 +239,13 @@
     const st = s.state;
     if (!st) { bar.innerHTML = "<span>Not yet through the gate</span>"; return; }
     const bits = [
-      `<span><b>${esc(String(st.name ?? s.name ?? ""))}</b> · L${st.level ?? 1} ${esc(String(st.class ?? "warrior"))}</span>`,
-      `<span>HP <b>${st.hp}/${st.max_hp}</b></span>`,
-      `<span>Gold <b>${st.gold}</b></span>`,
-      `<span>Turns <b>${st.forest_fights}</b></span>`,
+      `<span><b>${esc(String(st.name ?? s.name ?? ""))}</b> · L${esc(String(st.level ?? 1))} ${esc(String(st.class ?? "warrior"))}</span>`,
+      `<span>HP <b>${esc(String(st.hp))}/${esc(String(st.max_hp))}</b></span>`,
+      `<span>Gold <b>${esc(String(st.gold))}</b></span>`,
+      `<span>Turns <b>${esc(String(st.forest_fights))}</b></span>`,
       `<span>${esc(String(st.where ?? "Brightwater"))}</span>`,
     ];
-    if (s.left !== null) bits.push(`<span class="left">${s.over ? "Trial over" : `Moves left <b>${s.left}</b>`}</span>`);
+    if (s.left !== null) bits.push(`<span class="left">${s.over ? "Trial over" : `Moves left <b>${esc(String(s.left))}</b>`}</span>`);
     bar.innerHTML = bits.join("");
   }
   function lockKeys() { screen.querySelectorAll(".key").forEach((b) => { b.disabled = true; }); }

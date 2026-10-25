@@ -1360,7 +1360,7 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
   const town = requireTown(ctx, "the tavern", ALL_TOWNS);
   const r = await ctx.c.query("select author, body, ts from tavern where day = $1 and town = $2 and hidden_at is null order by id desc limit 20", [ctx.day, town]);
   // Test and trial characters only see each other, and nobody else sees them.
-  const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 and is_test = $2 limit 10", [ctx.p.id, ctx.p.is_test]);
+  const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 and is_test = $2 and not trial limit 10", [ctx.p.id, ctx.p.is_test]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
   await questTriggers(ctx, { visit: "tavern" });
   // Violet and the bards are Brightwater's; other towns' taverns have their own keepers.
@@ -1440,7 +1440,7 @@ async function othersHere(ctx: Ctx, x: number, y: number) {
   const r = await ctx.c.query<{ name: string; class: string; level: number; townsfolk: boolean; personality: Personality | null; mind: Mind | null }>(
     `select p.name, p.class, p.level, p.role = 'townsfolk' as townsfolk, b.personality, b.mind
      from players p left join bots b on b.player_id = p.id
-     where p.pos_x = $1 and p.pos_y = $2 and p.id <> $3 and p.alive and p.role <> 'npc' and (p.role = 'townsfolk' or p.is_test = $4) limit 4`, [x, y, ctx.p.id, ctx.p.is_test]);
+     where p.pos_x = $1 and p.pos_y = $2 and p.id <> $3 and p.alive and p.role <> 'npc' and (p.role = 'townsfolk' or (p.is_test = $4 and not p.trial)) limit 4`, [x, y, ctx.p.id, ctx.p.is_test]);
   return r.rows.map((o) => ({ name: o.name, class: o.class, level: o.level, townsfolk: o.townsfolk,
     ...(o.personality && o.mind?.goal ? { on_mind: goalLabel(o.name, o.personality, o.mind.goal) } : {}) }));
 }
@@ -2818,9 +2818,10 @@ api.post("/mail", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     if (!seasoned(ctx, "send mail")) return;
     if (ctx.t.messages_sent >= GAME.messagesPerDay) { ctx.events.push({ kind: "mail_limit", per_day: GAME.messagesPerDay }); return; }
-    const r = await ctx.c.query<{ id: string; name: string; is_bot: boolean; role: string; is_test: boolean; pos_x: number | null; pos_y: number | null; start_town: string | null; home: string | null; level: number }>(
-      "select p.id, p.name, p.is_bot, p.role, p.is_test, p.pos_x, p.pos_y, p.start_town, b.home, p.level from players p left join bots b on b.player_id = p.id where lower(p.name) = lower($1)", [body.to]);
-    if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.to }); return; }
+    const r = await ctx.c.query<{ id: string; name: string; is_bot: boolean; role: string; is_test: boolean; trial: boolean; pos_x: number | null; pos_y: number | null; start_town: string | null; home: string | null; level: number }>(
+      "select p.id, p.name, p.is_bot, p.role, p.is_test, p.trial, p.pos_x, p.pos_y, p.start_town, b.home, p.level from players p left join bots b on b.player_id = p.id where lower(p.name) = lower($1)", [body.to]);
+    // Mail doesn't cross between test or trial characters and real ones.
+    if (!r.rowCount || r.rows[0].trial || (r.rows[0].role === "player" && r.rows[0].is_test !== ctx.p.is_test)) { ctx.events.push({ kind: "no_such_player", name: body.to }); return; }
     const to = r.rows[0];
     if (to.id === ctx.p.id) { ctx.events.push({ kind: "mail_self" }); return; }
     // Nobody's mailbag takes more than this many letters a day, however many senders there are.
@@ -2989,7 +2990,7 @@ api.get("/mail/peek", async (c) => {
      from players p
      left join messages m on m.to_player = p.id and m.read_at is null
      left join players f on f.id = m.from_player
-     where p.api_key_hash = $1
+     where p.api_key_hash = $1 and not p.trial
      group by p.id`, [hash(key)]);
   if (!r.rowCount) return c.json({ error: "unauthorized" }, 401);
   const row = r.rows[0];
@@ -3411,7 +3412,8 @@ api.post("/challenge", async (c) => {
     if (!seasoned(ctx, "attack another player")) return;
     if (body.name.toLowerCase() === ctx.p.name.toLowerCase()) throw new GameError("self", "you cannot fight yourself");
     const r = await ctx.c.query<Player>("select * from players where lower(name) = lower($1) for update", [body.name]);
-    if (!r.rowCount) { ctx.events.push({ kind: "no_such_player", name: body.name }); return; }
+    // Test and trial characters live apart from the realm: nobody real can reach them, nor they anyone real.
+    if (!r.rowCount || r.rows[0].trial || (r.rows[0].role === "player" && r.rows[0].is_test !== ctx.p.is_test)) { ctx.events.push({ kind: "no_such_player", name: body.name }); return; }
     const d = numify(r.rows[0]);
     if (d.role === "npc") { ctx.events.push({ kind: "cannot_challenge", name: d.name, reason: "not a fighter" }); return; }
     if (!d.alive) { ctx.events.push({ kind: "target_dead", name: d.name }); return; }

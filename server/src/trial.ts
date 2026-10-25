@@ -141,7 +141,16 @@ async function spentToday(): Promise<{ trials: number; micro: number }> {
   const r = (await pool.query<{ trials: number; micro_usd: string }>("select trials, micro_usd::text from trial_usage where day = $1", [today()])).rows[0];
   return { trials: r?.trials ?? 0, micro: Number(r?.micro_usd ?? 0) };
 }
-const overBudget = async () => (await spentToday()).micro >= TRIAL.dailyUsd() * 1_000_000;
+/** A turn's worst case, held back from the day's budget so turns already running can't push it far over. */
+const TURN_HEADROOM_MICRO = 20_000; // two cents
+const overBudget = async () => (await spentToday()).micro + TURN_HEADROOM_MICRO >= TRIAL.dailyUsd() * 1_000_000;
+/** One address for the caps: IPv6 counts by its /64 (one household or one host's block), IPv4 as it is. */
+export function addrKey(addr: string): string {
+  if (!addr.includes(":")) return addr;
+  const [head] = addr.split("%");
+  const parts = head.includes("::") ? (() => { const [a, b] = head.split("::"); const l = a ? a.split(":") : [], r = b ? b.split(":") : []; return [...l, ...Array(8 - l.length - r.length).fill("0"), ...r]; })() : head.split(":");
+  return parts.slice(0, 4).map((x) => x.toLowerCase().replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
 async function addUsage(u: Usage, turns: number) {
   await pool.query(`insert into trial_usage (day, turns, input_tokens, output_tokens, micro_usd) values ($1, $2, $3, $4, $5)
     on conflict (day) do update set turns = trial_usage.turns + $2, input_tokens = trial_usage.input_tokens + $3, output_tokens = trial_usage.output_tokens + $4, micro_usd = trial_usage.micro_usd + $5`,
@@ -203,8 +212,10 @@ async function narrate(key: string, history: Msg[], said: string, notes: string)
   let failed = 0;
   const add = (u: Usage) => { for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] = (usage[k] ?? 0) + (u[k] ?? 0); };
   const textOf = (c: Block[]) => c.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n");
-  for (let calls = 0; ; ) {
-    const r = await model(messages, { noTools: calls >= MAX_CALLS });
+  const deadline = Date.now() + 150_000; // a turn gets two and a half minutes, then it's told to wrap up
+  for (let calls = 0, rounds = 0; ; rounds++) {
+    if (rounds >= MAX_CALLS + 3) return { text: "", state, usage, tools, kinds, stop: "loop", failed };
+    const r = await model(messages, { noTools: calls >= MAX_CALLS || Date.now() > deadline });
     if (!r) return { text: "", state, usage, tools, kinds, stop: "error", failed };
     add(r.usage);
     const uses = r.content.filter((b): b is Extract<Block, { type: "tool_use" }> => b.type === "tool_use");
@@ -266,8 +277,8 @@ trial.post("/start", async (c) => {
   if (name.length < 2 || name.length > 20 || !NAME_RE.test(name)) return c.json(closed("bad_name", "A name is 2 to 20 letters, digits, apostrophes, periods or hyphens, with single spaces."), 400);
   if (reservedName(name)) return c.json(closed("name_taken", "That name belongs to someone in town already."), 409);
   const s = await spentToday();
-  if (s.trials >= TRIAL.perDay() || s.micro >= TRIAL.dailyUsd() * 1_000_000) return c.json(closed("trial_full", "The gate's shut for tonight: the trial has had all its visitors for today. Come back tomorrow."), 429);
-  const addr = fromHeaders((n) => c.req.header(n)).addr ?? "unknown";
+  if (s.trials >= TRIAL.perDay() || s.micro + TURN_HEADROOM_MICRO >= TRIAL.dailyUsd() * 1_000_000) return c.json(closed("trial_full", "The gate's shut for tonight: the trial has had all its visitors for today. Come back tomorrow."), 429);
+  const addr = addrKey(fromHeaders((n) => c.req.header(n)).addr ?? "unknown");
   const salt = process.env.SIGNUP_SALT ?? process.env.CRON_SECRET ?? "dragons-door";
   const addrHash = hash(`${today()}|${salt}|trial|${addr}`);
   const token = "trial_" + randomBytes(24).toString("base64url");
@@ -313,7 +324,10 @@ const normalize = (code: string) => code.toUpperCase().replace(/[^A-Z0-9]/g, "")
  * with a new key for that machine (the website's copy stops working). Counts as a sign-up from that address.
  */
 trial.post("/claim", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { code?: unknown };
+  if (!TRIAL.claimOpen()) return c.json(closed("claim_closed", "Claiming a trial character isn't open yet."), 403);
+  const body = (await c.req.json().catch(() => ({}))) as { code?: unknown; invite?: unknown };
+  const invite = process.env.REALM_INVITE;
+  if (invite && body.invite !== invite) return c.json(closed("invite_required", "this realm is invite-only; ask whoever runs it for the word"), 403);
   const code = typeof body.code === "string" ? normalize(body.code) : "";
   if (code.length !== 12) return c.json(closed("bad_code", "That doesn't look like a claim code (DOOR- and twelve letters and digits)."), 400);
   const addr = fromHeaders((n) => c.req.header(n)).addr;
@@ -354,10 +368,13 @@ trial.post("/say", async (c) => {
   return c.json(await turn(token, p.id, text, false));
 });
 
+/** No links in what the narrator says: a tavern post or a name could try to get one in front of a visitor. */
+export const stripLinks = (t: string) => t.replace(/\b(?:https?:\/\/|www\.)\S+/gi, "").replace(/\b[a-z0-9-]+\.(?:com|net|org|io|gg|co|xyz|ai|app|dev|me|info|link|ly)\b(?:\/\S*)?/gi, "").replace(/[ \t]{2,}/g, " ");
+
 /** One turn of a trial, one at a time per trial, counted against its turns and the day's spend. */
 async function turn(token: string, playerId: string, said: string, opening: boolean) {
   const t = (await pool.query<{ turns: number; history: Msg[]; last_state: Record<string, unknown> | null }>(
-    "update trials set busy_until = now() + interval '90 seconds' where player_id = $1 and (busy_until is null or busy_until < now()) returning turns, history, last_state", [playerId])).rows[0];
+    "update trials set busy_until = now() + interval '10 minutes' where player_id = $1 and (busy_until is null or busy_until < now()) returning turns, history, last_state", [playerId])).rows[0];
   if (!t) return closed("busy", "The narrator's still telling the last thing.");
   try {
     const max = TRIAL.turns();
@@ -367,11 +384,13 @@ async function turn(token: string, playerId: string, said: string, opening: bool
     const r = await narrate(token, t.history, said, notes);
     await addUsage(r.usage, opening ? 0 : 1);
     await logTurn(playerId, opening ? null : said, r, t.turns + (opening ? 0 : 1)).catch((e) => console.error("trial log:", (e as Error).message));
-    const text = r.text || "The narrator loses the thread for a moment. (Something went wrong on our side; try that again.)";
+    const text = stripLinks(r.text) || "The narrator loses the thread for a moment. (Something went wrong on our side; try that again.)";
+    // Every turn that ran counts against the trial, except a model failure that never touched the game.
+    const counted = !opening && !(r.stop === "error" && r.tools.length === 0);
     const history = [...t.history, { role: "user" as const, content: opening ? said : `[trial: ${notes}]\n${said}` }, { role: "assistant" as const, content: text }].slice(-KEEP * 2);
     await pool.query("update trials set turns = turns + $2, history = $3, last_state = coalesce($4, last_state) where player_id = $1",
-      [playerId, opening || !r.text ? 0 : 1, JSON.stringify(history), r.state ? JSON.stringify(r.state) : null]);
-    return { text, state: brief(r.state ?? t.last_state ?? undefined), turns_left: r.text ? left : left + 1 };
+      [playerId, counted ? 1 : 0, JSON.stringify(history), r.state ? JSON.stringify(r.state) : null]);
+    return { text, state: brief(r.state ?? t.last_state ?? undefined), turns_left: counted || opening ? left : left + 1 };
   } finally {
     await pool.query("update trials set busy_until = null where player_id = $1", [playerId]);
   }
