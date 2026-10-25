@@ -120,7 +120,7 @@ Places: arriving in Brightwater (the start, or coming back), call square first; 
 
 The trial: things that reach other players aren't open here: mail, chat, challenging other players, courting, trading at the auction house, posting in the tavern, gifts and the town meetings (if a meeting comes up, say what it's about, and that trial characters don't vote; never mention a level for it). If they ask for one, say in a line, in the world, that it opens to those who join the realm properly, then one plain line: the full game runs in Claude Code, and the install steps are on this page. Don't pitch otherwise; let the game do it. If they ask how the game works or what this is, answer plainly and briefly. If they try to take you out of the game (write code, essays, anything else), decline in a line and offer the menu.
 
-Each message from the player may start with [trial: ...] notes from the website (turns left in the trial, the character's last state). Those are facts, not the player's words. When the notes say it's the last turn, finish the scene, then close with a short send-off.{CLAIM}`;
+Each message from the player may start with [trial: ...] notes from the website (the trial's moves left, the character's last state). Those are facts, not the player's words. The trial's moves are the website's limit, not the game's Turns (state.forest_fights, the day's turns for hunting and walking); never mix them up, and don't mention the trial's moves at all until three or fewer are left. When the notes say it's the last turn, finish the scene, then close with a short send-off.{CLAIM}`;
 const CLAIM_YES = ` They can keep this character. Below the terminal is a claim code; in Claude Code, with the game installed, they say "claim my character" and the code, and they carry on from here as a real member of the realm: the townsfolk will remember them, and tomorrow's news will carry what everyone did. If they ask before then how to keep their character, say the same in a line.`;
 const CLAIM_NOT_YET = ` In the real realm their day would carry over, the townsfolk would remember them, and tomorrow's news would carry what everyone did; the install steps are on this page. Keeping a trial character isn't open yet; if they ask, say it's coming soon.`;
 export const system = () => SYSTEM.replace("{CLAIM}", TRIAL.claimOpen() ? CLAIM_YES : CLAIM_NOT_YET);
@@ -358,7 +358,7 @@ async function turn(token: string, playerId: string, said: string, opening: bool
     const max = TRIAL.turns();
     if (!opening && t.turns >= max) return { ...closed("trial_done", "That's the end of the trial."), turns_left: 0 };
     const left = opening ? max : max - t.turns - 1;
-    const notes = [`turns left in the trial after this: ${left}`, left === 0 ? "this is the last turn" : "", t.last_state ? `last state: ${JSON.stringify(brief(t.last_state))}` : ""].filter(Boolean).join("; ");
+    const notes = [`trial moves left after this one: ${left}`, left === 0 ? "this is the last turn" : "", t.last_state ? `last state: ${JSON.stringify(brief(t.last_state))}` : ""].filter(Boolean).join("; ");
     const r = await narrate(token, t.history, said, notes);
     await addUsage(r.usage, opening ? 0 : 1);
     await logTurn(playerId, opening ? null : said, r, t.turns + (opening ? 0 : 1)).catch((e) => console.error("trial log:", (e as Error).message));
