@@ -12,6 +12,7 @@
 import { Hono } from "hono";
 import { timingSafeEqual } from "node:crypto";
 import { api, CHAT_KEEP_DAYS, settleAuctions } from "./api.js";
+import { marketFor } from "./auctions.js";
 import { INTERNAL_TOKEN } from "./request.js";
 import { PLAN, sessionTime, type Personality } from "./schedule.js";
 export { sessionTime } from "./schedule.js";
@@ -201,8 +202,33 @@ async function tidyBag(b: Bot) {
 
 // ---------- the auction house ----------
 
-interface BagItem { id: number; slot: string; name: string; sells_for: number }
-interface Lot { id: number; slot: string; tier: number; item: string; worth: number; seller: string; buy_now?: number; next_bid: number; yours?: boolean; you_lead?: boolean }
+interface BagItem { id: number; slot: string; name: string; sells_for: number; item_id?: number; rarity_level?: number }
+interface Lot { id: number; slot: string; tier: number; item: string; worth: number; seller: string; buy_now?: number; next_bid: number; min_bid?: number; high_bid?: number | null; days_left?: number; yours?: boolean; you_lead?: boolean; market?: { each: number; sold_this_week: number; trend?: string } }
+
+/** How each kind of townsperson prices what they sell: Vesper asks high, Hilde sells cheap and sure, Pomfrey overprices everything. */
+const ASKS: Partial<Record<Personality, number>> = { raider: 1.15, braggart: 1.25, banker: 0.92, pious: 0.9, gossip: 1.05, pickpocket: 1.1, veteran: 0.97 };
+const jitter = (spread: number) => 1 + (Math.random() * 2 - 1) * spread;
+
+/**
+ * A townsperson's asking price for a lot, from the market: the going price this week if there is one (else half
+ * way between the smith and the shop), raised after a sale at buy-now, lowered after a lot that didn't sell or when
+ * the board's already full of the same thing, and tilted by who they are. Never below what the smith would pay.
+ */
+async function askingPrice(b: Bot, it: BagItem, qty: number): Promise<{ min_bid: number; buy_now: number } | null> {
+  const smith = it.sells_for * qty, shop = it.sells_for * 2 * qty;
+  const m = it.item_id === undefined ? null : await marketFor(pool, it.slot, it.item_id, it.rarity_level ?? 0);
+  let base = m?.unit != null ? m.unit * qty : (smith + shop) / 2;
+  if (m?.last === "sold_at_buy_now") base *= 1.12;
+  if (m?.last === "expired") base *= 0.9 ** m.unsold_run; // each lot in a row that didn't sell pulls the price down again
+  if ((m?.on_board ?? 0) >= 2) base *= 0.93;
+  base *= (ASKS[b.personality] ?? 1) * jitter(0.06);
+  // Keep it sane: never under the smith, never past three times the shop (the house's own ceiling).
+  // Three lots in a row went unsold and it's down to what the smith pays anyway: take it to the smith.
+  if ((m?.unsold_run ?? 0) >= 3 && base <= smith * 1.1) return null;
+  base = Math.max(smith * 1.1, Math.min(shop * 2.5, base));
+  const min_bid = Math.max(Math.ceil(smith * 1.05), Math.ceil(base * 0.75));
+  return { min_bid, buy_now: Math.max(min_bid + 1, Math.ceil(base * 1.3)) };
+}
 /** How many lots of their own a townsperson keeps up at once. */
 const BOT_LOTS = 2;
 
@@ -213,7 +239,7 @@ async function readBoard(b: Bot): Promise<{ listings: Lot[]; mine: Lot[]; purse:
   return ev ? { listings: ev.listings, mine: ev.your_lots ?? [], purse: ev.purse, bank: ev.bank } : null;
 }
 
-/** Put spare gear and ore up for sale: a fifth over what the smith pays to open, nine-tenths of shop worth to buy now. Returns what got listed. */
+/** Put spare gear and ore up for sale, priced from the market (askingPrice). Returns what got listed. */
 async function listSpares(b: Bot, items: BagItem[]): Promise<Set<number>> {
   const done = new Set<number>();
   const board = await readBoard(b);
@@ -229,8 +255,9 @@ async function listSpares(b: Bot, items: BagItem[]): Promise<Set<number>> {
     if (board.listings.filter((l) => l.slot === it.slot && l.item.startsWith(it.name.replace(/^Scroll of /, ""))).length >= 2) continue;
     const same = it.slot === "ore" ? items.filter((x) => x.slot === "ore" && x.name === it.name) : [it];
     const qty = Math.min(3, same.length);
-    const smith = it.sells_for * qty;
-    const r = await b.post("/auction", { op: "list", id: it.id, ...(it.slot === "ore" ? { qty } : {}), min_bid: Math.ceil(smith * 1.2), buy_now: Math.ceil(smith * 1.8), days: 3, confirm: true });
+    const ask = await askingPrice(b, it, qty);
+    if (!ask) continue;
+    const r = await b.post("/auction", { op: "list", id: it.id, ...(it.slot === "ore" ? { qty } : {}), min_bid: ask.min_bid, buy_now: ask.buy_now, days: 3, confirm: true });
     if (!isErr(r) && kinds(r).includes("auction_listed")) {
       for (const x of same.slice(0, qty)) done.add(x.id);
       open++;
@@ -248,7 +275,12 @@ async function listGems(b: Bot) {
   const board = await readBoard(b);
   if (!board || board.mine.length >= BOT_LOTS || board.listings.filter((l) => l.slot === "gem").length >= 2) return;
   const n = Math.min(2, (s.state.gems ?? 0) - 1);
-  const r = await b.post("/auction", { op: "list", gems: n, min_bid: 60 * n, buy_now: 90 * n, days: 3, confirm: true });
+  // Gems price like everything else: the going rate, nudged by the last lot, never under 40 a stone.
+  const m = await marketFor(pool, "gem", 0, 0);
+  let each = (m.unit ?? 75) * (m.last === "sold_at_buy_now" ? 1.12 : 0.9 ** m.unsold_run) * (ASKS[b.personality] ?? 1) * jitter(0.06);
+  each = Math.max(40, Math.min(150, each));
+  const min_bid = Math.ceil(each * 0.8 * n), buy_now = Math.max(min_bid + 1, Math.ceil(each * 1.2 * n));
+  const r = await b.post("/auction", { op: "list", gems: n, min_bid, buy_now, days: 3, confirm: true });
   if (!isErr(r) && kinds(r).includes("auction_listed")) b.log.push(`put ${n} gem${n > 1 ? "s" : ""} up at auction`);
 }
 
@@ -261,8 +293,10 @@ async function buyLot(b: Bot, lot: Lot): Promise<boolean> {
 }
 
 /**
- * Materials from the board: an Ironholder short of ore for the forge, or anyone saving up for Odile's
- * jewelry, buys what's for sale if the price is fair (no more than shop worth) and they can spare it.
+ * Materials from the board: an Ironholder short of ore for the forge, or anyone saving up for Odile's jewelry,
+ * goes after what's for sale. Each has their own sense of what it's worth to them: someone who needs it pays up to
+ * a little over shop price, anyone else only takes a bargain. They bid while there's time and take buy-now only
+ * when it's a steal or the lot closes tomorrow, so two of them after the same copper push the price up.
  */
 async function buyMaterials(b: Bot, mind: Mind, spare: number) {
   const native = b.native ?? b.home;
@@ -271,11 +305,18 @@ async function buyMaterials(b: Bot, mind: Mind, spare: number) {
   if (!forge && !jewel) return;
   const board = await readBoard(b);
   if (!board) return;
-  const wanted = (l: Lot) => !l.yours && l.buy_now !== undefined && l.buy_now <= l.worth && l.buy_now <= spare
-    && (l.slot === "ore" ? true : l.slot === "gem" ? jewel : false);
-  // Cheapest first; one purchase a day is plenty.
-  const pick = board.listings.filter(wanted).sort((a, z) => (a.buy_now ?? 0) - (z.buy_now ?? 0))[0];
-  if (pick) await buyLot(b, pick);
+  const need = (l: Lot) => (l.slot === "ore" ? forge || jewel : l.slot === "gem" ? jewel : false);
+  const value = (l: Lot) => Math.floor(l.worth * (need(l) ? 1.1 : 0.7) * jitter(0.08));
+  const lots = board.listings.filter((l) => !l.yours && need(l)).sort((a, z) => a.next_bid / a.worth - z.next_bid / z.worth);
+  for (const l of lots) {
+    const v = Math.min(value(l), spare);
+    if (l.buy_now !== undefined && (l.buy_now <= v * 0.8 || ((l.days_left ?? 3) <= 1 && l.buy_now <= v))) {
+      if (await buyLot(b, l)) return; // one purchase a day is plenty
+    } else if (!l.you_lead && l.next_bid <= v) {
+      const r = await b.post("/auction", { op: "bid", lot: l.id });
+      if (!isErr(r) && kinds(r).some((k) => k === "auction_bid" || k === "auction_bought")) { b.log.push(`bid ${l.next_bid} on ${l.item} at auction`); return; }
+    }
+  }
 }
 
 // ---------- session building blocks ----------
@@ -545,7 +586,8 @@ async function auctionBids(b: Bot) {
     if (ev) cats[kind] = ev.owned;
   }
   const spare = Math.floor((ev.purse + ev.bank) * 0.6);
-  const want = ev.listings.filter((l) => !l.yours && !l.you_lead && cats[l.slot] !== undefined && l.tier > cats[l.slot] && l.next_bid <= spare)
+  // An upgrade is worth up to a quarter over shop price to them, and no more than they can spare.
+  const want = ev.listings.filter((l) => !l.yours && !l.you_lead && cats[l.slot] !== undefined && l.tier > cats[l.slot] && l.next_bid <= spare && l.next_bid <= Math.floor(((l as { worth?: number }).worth ?? Infinity) * 1.25))
     .sort((a, z) => z.tier - a.tier)[0];
   if (!want) return;
   const r = await b.post("/auction", { op: "bid", lot: want.id });
@@ -938,7 +980,8 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
     can_mine: !b.native && Boolean(f.cave) && (f.pickaxe || f.gold + f.bank >= PICKAXE_COST + 100) && s.swings_left > 0,
     can_craft: b.home === "brightwater" && bestCraft(f, row.personality) !== null,
   }, Math.random);
-  b.keepOre = mind.goal?.kind === "jewel";
+  // Ironhold's own feed the forge, so they hold on to ore rather than sell it and buy it back.
+  b.keepOre = mind.goal?.kind === "jewel" || (b.native ?? b.home) === "ironhold";
   mind.today!.sessions[String(i)] = acts;
   b.log.push(`chose ${acts.join(" + ")}`);
 

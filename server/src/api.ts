@@ -11,7 +11,7 @@ import * as Bag from "./bag.js";
 import { TOWNS as TOWN_INFO, homeOf } from "./towns.js";
 import { VOTE_MIN_LEVEL, openPolls, tally, type Poll } from "./polls.js";
 import { boosted, forgeCost, MAX_RARITY, rarity, RARITY, withRarity } from "./rarity.js";
-import { AUCTION, TOWNS, bidCeiling, houseCut, listingFee, nextBid, priceProblem, worth, type ListSlot, type Town } from "./auctions.js";
+import { AUCTION, TOWNS, bidCeiling, marketFor, type Market, houseCut, listingFee, nextBid, priceProblem, worth, type ListSlot, type Town } from "./auctions.js";
 import { current, fromHeaders, older, runWith } from "./request.js";
 import { weatherAt } from "./weather.js";
 import { bardFor, pickGift } from "./bards.js";
@@ -3105,6 +3105,19 @@ function listingView(ctx: Ctx, r: ARow) {
   };
 }
 
+/** Each lot with the going price for one of it this week and which way it's moving (the same kind of item is looked up once). */
+async function withMarket(ctx: Ctx, lots: (readonly [ARow, ReturnType<typeof listingView>])[]) {
+  const seen = new Map<string, Market>();
+  const out = [];
+  for (const [r, v] of lots) {
+    const k = `${r.slot}:${r.item_id}:${r.rarity}`;
+    if (!seen.has(k)) seen.set(k, await marketFor(ctx.c, r.slot, r.item_id, r.rarity));
+    const m = seen.get(k)!;
+    out.push({ ...v, ...(m.unit !== null ? { market: { each: m.unit, sold_this_week: m.sales, ...(m.trend ? { trend: m.trend } : {}) } } : {}) });
+  }
+  return out;
+}
+
 /** Take gold for a bid or purchase: from the bank first, then the purse. False if they can't cover it. */
 async function payFrom(ctx: Ctx, amount: number): Promise<boolean> {
   if (ctx.p.bank + ctx.p.gold < amount) return false;
@@ -3173,7 +3186,12 @@ export async function settleAuctions(c: Client, day: string): Promise<string[]> 
       "select slot, item_id, qty, rarity from house_stock where town = $1 and qty > 0 order by random() for update", [town])).rows.filter((x) => !have.has(`${x.slot}:${x.item_id}:${x.rarity}`)).slice(0, room);
     for (const x of stock) {
       const qty = Math.min(x.qty, AUCTION.houseLotMax[x.slot] ?? 1);
-      const v = worth(x.slot, x.item_id, x.rarity).value * qty;
+      // The house prices off the board too: last week's going rate, nudged by how the last lot went, kept near shop worth.
+      const base = worth(x.slot, x.item_id, x.rarity).value;
+      const m = await marketFor(c, x.slot, x.item_id, x.rarity);
+      const nudge = m.last === "sold_at_buy_now" ? 1.08 : 0.92 ** m.unsold_run;
+      const unit = Math.min(base * 1.5, Math.max(base * 0.85, (m.unit ?? base) * nudge));
+      const v = Math.round(unit * qty);
       const ends = new Date(day + "T00:00:00Z"); ends.setUTCDate(ends.getUTCDate() + 2);
       await c.query("update house_stock set qty = qty - $4 where town = $1 and slot = $2 and item_id = $3 and rarity = $5", [town, x.slot, x.item_id, qty, x.rarity]);
       await c.query("insert into auctions (town, seller_id, slot, item_id, qty, rarity, min_bid, buy_now, listed_day, ends_day) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
@@ -3224,7 +3242,8 @@ api.get("/auction", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const waiting = Number((await ctx.c.query<{ n: string }>(
     "select count(*)::text as n from auctions where not collected and ((status = 'sold' and high_bidder = $1) or (status in ('expired','cancelled') and seller_id = $1))", [ctx.p.id])).rows[0].n);
   ctx.events.push({
-    kind: "auction_house", keeper: town === "brightwater" ? "Cass Marrow" : TOWN_INFO[town]!.auctioneer, town: TOWNS[town as Town] ?? town, connected: "one board for every town's house; lots elsewhere are delivered here when you collect", listings: board.map((r) => listingView(ctx, r)), your_lots: mine.map((r) => listingView(ctx, r)),
+    kind: "auction_house", keeper: town === "brightwater" ? "Cass Marrow" : TOWN_INFO[town]!.auctioneer, town: TOWNS[town as Town] ?? town, connected: "one board for every town's house; lots elsewhere are delivered here when you collect",
+    listings: await withMarket(ctx, board.map((r) => [r, listingView(ctx, r)] as const)), your_lots: mine.map((r) => listingView(ctx, r)),
     waiting_for_you: waiting, purse: ctx.p.gold, bank: ctx.p.bank,
     rules: { days: `${AUCTION.minDays}-${AUCTION.maxDays}`, listing_fee: `${Math.round(AUCTION.feeShare * 100)}% of the minimum bid, at least ${AUCTION.feeMin} gold`, house_cut: `${Math.round(AUCTION.cut * 100)}% of the sale`, max_lots: AUCTION.maxOpen, bids_from: "bank first, then purse; outbid gold comes back to your bank" },
   });
