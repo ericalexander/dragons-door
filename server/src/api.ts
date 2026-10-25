@@ -1359,7 +1359,8 @@ api.get("/tavern", async (c) => c.json(await withPlayer(c.req.header("authorizat
   // Each tavern has its own board: what's posted in the Long Hall stays in the Long Hall.
   const town = requireTown(ctx, "the tavern", ALL_TOWNS);
   const r = await ctx.c.query("select author, body, ts from tavern where day = $1 and town = $2 and hidden_at is null order by id desc limit 20", [ctx.day, town]);
-  const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 limit 10", [ctx.p.id]);
+  // Test and trial characters only see each other, and nobody else sees them.
+  const online = await ctx.c.query("select name from players where role <> 'npc' and last_seen > now() - interval '15 minutes' and id <> $1 and is_test = $2 limit 10", [ctx.p.id, ctx.p.is_test]);
   ctx.events.push({ kind: "tavern_messages", messages: r.rows.reverse() });
   await questTriggers(ctx, { visit: "tavern" });
   // Violet and the bards are Brightwater's; other towns' taverns have their own keepers.
@@ -1439,7 +1440,7 @@ async function othersHere(ctx: Ctx, x: number, y: number) {
   const r = await ctx.c.query<{ name: string; class: string; level: number; townsfolk: boolean; personality: Personality | null; mind: Mind | null }>(
     `select p.name, p.class, p.level, p.role = 'townsfolk' as townsfolk, b.personality, b.mind
      from players p left join bots b on b.player_id = p.id
-     where p.pos_x = $1 and p.pos_y = $2 and p.id <> $3 and p.alive and p.role <> 'npc' limit 4`, [x, y, ctx.p.id]);
+     where p.pos_x = $1 and p.pos_y = $2 and p.id <> $3 and p.alive and p.role <> 'npc' and (p.role = 'townsfolk' or p.is_test = $4) limit 4`, [x, y, ctx.p.id, ctx.p.is_test]);
   return r.rows.map((o) => ({ name: o.name, class: o.class, level: o.level, townsfolk: o.townsfolk,
     ...(o.personality && o.mind?.goal ? { on_mind: goalLabel(o.name, o.personality, o.mind.goal) } : {}) }));
 }
