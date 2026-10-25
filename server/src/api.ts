@@ -17,7 +17,8 @@ import { weatherAt } from "./weather.js";
 import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
-import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor } from "./romance.js";
+import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor, weddingChance } from "./romance.js";
+import { draw } from "./luck.js";
 import { GEAR_ABOVE_LEVEL, GIFT_MIN_LEVEL, GOLD_PER_LEVEL, ITEMS_PER_DAY, courierFee, nextDay, townName, townOfCharacter, townOfPlayer } from "./gifts.js";
 import { PATHS, SPECIALIZE_AT, SPECS, SPEC_SWITCH_DAYS, SPEC_SWITCH_PER_LEVEL, pathOfClass, specsOf, type Path, type Spec } from "./paths.js";
 import { countryOf, regionAt, rollFind } from "./bestiary.js";
@@ -27,7 +28,7 @@ import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, even
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
-import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
+import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
 
@@ -248,6 +249,16 @@ export function reservedName(n: string): boolean {
 }
 
 const SIGNUPS_PER_ADDRESS_PER_DAY = 3;
+
+/**
+ * A rare roll a player feels, drawn from their own bag of marbles for that kind of luck (luck.ts) instead of a
+ * plain die, and logged so the game log shows how it's landing.
+ */
+async function luck(ctx: Ctx, kind: string, p: number): Promise<boolean> {
+  const d = await draw(ctx.c, ctx.p.id, kind, p);
+  if (p > 0 && p < 1) await logEvent(ctx, "luck", { kind: kind.split(":")[0], p: Math.round(p * 1000) / 1000, hit: d.hit, bag: d.size, left: d.left });
+  return d.hit;
+}
 
 /** One line in the game event log: game facts only, for balance checks. Never names or player-written text. */
 async function logEvent(ctx: Ctx, kind: string, data: Record<string, unknown> = {}) {
@@ -1039,7 +1050,7 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     const next = expForLevel(ctx.p.level + 1);
     await savePlayer(ctx, { gold: ctx.p.gold + m.gold, exp: ctx.p.exp + m.exp });
     ctx.events.push({ kind: "monster_slain", monster: m.name, gold: m.gold, exp: m.exp });
-    const drop = rollDrop(m.level ?? ctx.p.level, ctx.p.class);
+    const drop = rollDrop(m.level ?? ctx.p.level, ctx.p.class, await luck(ctx, "drop", dropChance(ctx.p.class)));
     if (drop) {
       const w = Bag.item(drop.kind, drop.tier).weight;
       const usedNow = await Bag.used(ctx.c, ctx.p.id);
@@ -2408,7 +2419,7 @@ api.post("/talk", async (c) => {
 
     // A little gossip, now and then: a place someone found, preferably one they found themselves.
     let gossip: Record<string, unknown> | null = null;
-    if (!again && !ctx.t.gossip_heard && roll(99) < 30) {
+    if (!again && !ctx.t.gossip_heard && await luck(ctx, "gossip", 0.3)) {
       const ex = await exploredSet(ctx);
       const far = Math.max(2, ...[...ex].map((k) => { const [a, b] = k.split(",").map(Number); return Math.max(Math.abs(a), Math.abs(b)); }));
       const g = (await ctx.c.query<{ x: number; y: number; name: string; terrain: string; poi: string | null; found_by: string | null }>(
@@ -2437,7 +2448,7 @@ api.post("/talk", async (c) => {
       const sore = mind.grudge?.name.toLowerCase() === ctx.p.name.toLowerCase();
       // A recent gift warms them a little toward telling you more (never enough to buy a secret on its own).
       const fond = (await ctx.c.query("select 1 from gifts where from_player = $1 and to_player = $2 and state = 'kept' and sent_day > $3::date - 7 limit 1", [ctx.p.id, who.id, ctx.day])).rowCount;
-      if (!again && !sore && heardPieces < pieces.length && !h.today && Math.random() < (fond ? Math.min(0.75, PAST_CHANCE + 0.2) : PAST_CHANCE)) {
+      if (!again && !sore && heardPieces < pieces.length && !h.today && await luck(ctx, `past:${who.name}`, fond ? Math.min(0.75, PAST_CHANCE + 0.2) : PAST_CHANCE)) {
         await ctx.c.query("insert into player_lore (player_id, key, day, how) values ($1, $2, $3, 'talk') on conflict do nothing", [ctx.p.id, personKey(who.name, heardPieces), ctx.day]);
         past = { piece: PIECE_NAMES[heardPieces] ?? "more", told: pieces[heardPieces], ...(heardPieces ? { you_already_know: pieces.slice(0, heardPieces) } : {}) };
         heardPieces++;
@@ -2479,7 +2490,7 @@ api.post("/talk", async (c) => {
         // What's on their mind right now can make them ask: Grimwald out looking for his boot asks about it.
         const onMind = s.on_goal && mind.goal?.kind === s.on_goal.kind;
         if (past && !onMind) continue;
-        if (Math.random() < (onMind ? s.on_goal!.chance : s.chance) && await startQuest(ctx, q.id, false)) break;
+        if (await luck(ctx, `quest:${q.id}`, onMind ? s.on_goal!.chance : s.chance) && await startQuest(ctx, q.id, false)) break;
       }
     }
     if (ctx.events.some((e) => e.kind === "quest")) ctx.hint = `${before} Then the quest moment, in the same conversation: tell its cue, and offer any choices numbered (1), (2)…; call \`quest\` with the choice id only when they pick.`;
@@ -2649,7 +2660,8 @@ api.post("/flirt", async (c) => {
     }
     // Townsfolk court and marry too, so Sir Pomfrey can win your spouse away, but their charm counts for at most 20
     // here (about a 5% chance a night), so a local steals a heart now and then rather than every other day.
-    const { outcome, delta } = flirtOutcome(ctx.p.role === "player" ? charmOf(ctx.p) : Math.min(charmOf(ctx.p), 20), who.coy);
+    const flirtCharm = ctx.p.role === "player" ? charmOf(ctx.p) : Math.min(charmOf(ctx.p), 20);
+    const { outcome, delta } = flirtOutcome(flirtCharm, who.coy, await luck(ctx, `wed:${who.name}`, weddingChance(flirtCharm, who.coy)));
     let stoleFrom: string | null = null;
     let left: string | null = null;
     if (outcome === "married" && row) {

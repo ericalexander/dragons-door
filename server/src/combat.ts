@@ -174,10 +174,11 @@ export interface Drop {
 }
 
 /** Rare drop after a forest kill: a piece of gear one tier above the monster's level. Pure; the caller decides where it goes. */
-export function rollDrop(monsterLevel: number, cls?: Player["class"]): Drop | null {
+export const dropChance = (cls?: Player["class"]) => (cls && (GAME.classes[cls] as { dropChance?: number }).dropChance) || GAME.drops.chance;
+export function rollDrop(monsterLevel: number, cls?: Player["class"], hit?: boolean): Drop | null {
   const cfg = GAME.drops;
-  const chance = (cls && (GAME.classes[cls] as { dropChance?: number }).dropChance) || cfg.chance;
-  if (roll(9999) >= Math.round(chance * 10000)) return null;
+  const chance = dropChance(cls);
+  if (hit === false || (hit === undefined && roll(9999) >= Math.round(chance * 10000))) return null;
   const kind: Drop["kind"] = roll(1) === 0 ? "weapon" : "armor";
   const tier = Math.min(12, Math.max(1, monsterLevel + cfg.tierAbove));
   return { kind, item: (kind === "weapon" ? weapon(tier) : armor(tier)).name, tier };

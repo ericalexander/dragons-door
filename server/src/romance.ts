@@ -59,9 +59,17 @@ const FLIRT_CAP = Number(process.env.SIM_FLIRT_CAP ?? 20);
 const WEDDING_AT = Number(process.env.SIM_WEDDING_AT ?? 100);
 export const charmInFlirting = (charm: number) => Math.min(FLIRT_CAP, Math.floor(Math.max(0, charm) * FLIRT_SHARE));
 
-/** The flirt itself. Charm helps, a little; some people are harder to win. */
-export function flirtOutcome(charm: number, coy: number): { outcome: "ignored" | "smile" | "kiss" | "married"; delta: number } {
-  const r = roll(99) + charmInFlirting(charm) - coy;
+/** The chance a flirt ends in a wedding: the share of rolls (0 to 99) that reach it, after charm and coyness. */
+export const weddingChance = (charm: number, coy: number) => Math.max(0, Math.min(100, 100 - (WEDDING_AT - charmInFlirting(charm) + coy))) / 100;
+
+/**
+ * The flirt itself. Charm helps, a little; some people are harder to win. Whether it's a wedding can be decided
+ * beforehand (`wed`, from a bag of marbles); then the roll only decides how the rest of the evening goes.
+ */
+export function flirtOutcome(charm: number, coy: number, wed?: boolean): { outcome: "ignored" | "smile" | "kiss" | "married"; delta: number } {
+  if (wed === true) return { outcome: "married", delta: 5 };
+  let r = roll(99) + charmInFlirting(charm) - coy;
+  if (wed === false && r >= WEDDING_AT) r = WEDDING_AT - 1;
   if (r < 30) return { outcome: "ignored", delta: 0 };
   if (r < 70) return { outcome: "smile", delta: 1 };
   if (r < WEDDING_AT) return { outcome: "kiss", delta: 2 };
