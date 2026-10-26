@@ -8,7 +8,7 @@ import { GAME, armor, weapon, expForLevel, master, levelGains, manaMax, manaRule
 import { bardFor, pickGift } from "./bards.js";
 import { visitorFor, pickVisitorGift } from "./square.js";
 import { charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor, weddingChance } from "./romance.js";
-import { exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
+import { blow, exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 import { boosted, forgeCost, rarity as rarityOf, RARITY } from "./rarity.js";
 import { FINDS_PER_PERSON, SWINGS_PER_DAY, GEM_SELL, ORES, PICKAXE_COST, TRINKETS, canMake, caveLevel, swing, trinket } from "./caves.js";
 
@@ -76,6 +76,9 @@ if (process.env.DHP) GAME.dragon.hp = Number(process.env.DHP); if (process.env.D
 if (K.ghp) GAME.growth.hp = Number(K.ghp); if (K.gstr) GAME.growth.str = Number(K.gstr); if (K.gdef) GAME.growth.def = Number(K.gdef);
 for (const m of GAME.monsters) { m.str = Math.round(m.str * K.mstr); m.hp = Math.round(m.hp * K.mhp); m.gold = Math.round(m.gold * K.mgold); m.exp = Math.round(m.exp * K.mexp); }
 for (const m of GAME.masters) { m.str = Math.round(m.str * K.mstr); m.hp = Math.round(m.hp * K.mhp); }
+// Armor experiments: AF=share uses the K formula (AK = k); MDEF scales monsters', masters' and the dragon's armor; GDEF_LVL a guardian's defense per level.
+if (process.env.MDEF) { const f = Number(process.env.MDEF); for (const m of [...GAME.monsters, ...GAME.masters]) m.def = Math.round(m.def * f); GAME.dragon.def = Math.round(GAME.dragon.def * f); }
+if (process.env.GDEF_LVL) GAME.classes.guardian.defPerLevel = Number(process.env.GDEF_LVL);
 for (const c of Object.values(GAME.classes)) { c.strPerLevel = Math.round(c.strPerLevel * K.pstr); c.hpPerLevel = Math.round(c.hpPerLevel * K.phpk); c.defPerLevel = Math.round(c.defPerLevel * K.pdef); }
 
 // The daily extras a real player gets: a flirt, a bard's song, a word with the visitor. EXTRAS=0 turns them off.
@@ -187,7 +190,7 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number,
       // a Healing Draught: four tenths back, and the monster gets its swing
       drank = true; draughts.n--; POT.drunk++;
       pf.hp = Math.min(p.max_hp, pf.hp + Math.ceil(p.max_hp * POTS[0].amount));
-      const dmg = Math.max(0, roll(mf.str) - roll(pf.def));
+      const dmg = Math.max(0, Math.round(blow(mf.str, pf.def)));
       pf.hp = Math.max(0, pf.hp - dmg);
       if (pf.hp <= 0) { p.hp = 0; return "died"; }
       continue;
@@ -195,7 +198,7 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number,
     if (r > 0 && pf.hp / p.max_hp < runBelow && runBelow > 0) {
       const chance = p.class === "thief" ? 85 : 65;
       if (roll(99) < chance) { p.hp = pf.hp; return "fled"; }
-      const dmg = Math.max(0, roll(mf.str) - roll(pf.def));
+      const dmg = Math.max(0, Math.round(blow(mf.str, pf.def)));
       pf.hp = Math.max(0, pf.hp - dmg);
       if (pf.hp <= 0) { p.hp = 0; return "died"; }
       continue;
@@ -209,14 +212,14 @@ function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number,
       if (mr.heal && specials.n >= mr.heal && pf.hp / p.max_hp < HEALAT) {
         specials.n -= mr.heal;
         pf.hp = Math.min(p.max_hp, pf.hp + Math.ceil(p.max_hp * (mr.healPct ?? 0.3)));
-        const dmg = Math.max(0, roll(mf.str) - roll(pf.def));
+        const dmg = Math.max(0, Math.round(blow(mf.str, pf.def)));
         pf.hp = Math.max(0, pf.hp - dmg);
         if (pf.hp <= 0) { p.hp = 0; return "died"; }
         continue;
       }
       if (specials.n >= mr.fireball && mf.hp > full * 1.5) { mult = specialMultiplier(p); dodge = specialDodges(p); specials.n -= mr.fireball; }
       else if (specials.n >= mr.cast) specials.n -= mr.cast;
-      else pf.str = Math.round(full * mr.staff);
+      else { pf.kFrom = full; pf.str = Math.round(full * mr.staff); }
       exchange(pf, mf, mult, dodge);
       pf.str = full;
     } else {

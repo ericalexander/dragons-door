@@ -15,6 +15,25 @@ export interface Fighter {
   def: number;
   /** Chance each swing lands as a critical hit. Players only; monsters never crit. */
   crit?: number;
+  /** Their full strength, when this swing is weaker than that (a staff): armor is measured against it. */
+  kFrom?: number;
+}
+
+/**
+ * How armor turns a blow. "subtract" is the old way: a roll of the attacker's strength minus a roll of the
+ * defender's armor, so heavy armor makes most blows do nothing. "share" is the K formula: armor takes a share
+ * off every blow, def / (def + K), with K growing with the attacker (k times the strength they swing with), so
+ * armor never makes anyone untouchable and is worth the same against anything your own level.
+ */
+export const ARMOR = {
+  kind: (process.env.AF ?? (GAME as { armorFormula?: { kind?: string } }).armorFormula?.kind ?? "subtract") as "subtract" | "share",
+  k: Number(process.env.AK ?? (GAME as { armorFormula?: { k?: number } }).armorFormula?.k ?? 0.46),
+};
+/** The damage of one blow before specials and crits: `str` is what they swing with, `kFrom` what they'd swing with at full strength. */
+export function blow(str: number, def: number, kFrom = str): number {
+  if (ARMOR.kind === "subtract") return Math.max(0, roll(str) - roll(def));
+  const K = Math.max(1, ARMOR.k * kFrom);
+  return roll(str) * K / (Math.max(0, def) + K);
 }
 
 export function playerAsFighter(p: Player): Fighter {
@@ -35,7 +54,7 @@ export function monsterAsFighter(m: Monster): Fighter {
 export function exchange(att: Fighter, def: Fighter, attMult = 1, dodge = false): Event[] {
   const events: Event[] = [];
   const crit = crits(att);
-  const dmg = Math.max(0, Math.round((roll(att.str) - roll(def.def)) * attMult * (crit ? GAME.critMultiplier : 1)));
+  const dmg = Math.max(0, Math.round(blow(att.str, def.def, att.kFrom) * attMult * (crit ? GAME.critMultiplier : 1)));
   if (dmg > 0) {
     def.hp = Math.max(0, def.hp - dmg);
     events.push({ kind: "hit", attacker: att.name, defender: def.name, damage: dmg, defender_hp: def.hp, special: attMult > 1, ...(crit ? { crit: true } : {}) });
@@ -49,7 +68,7 @@ export function exchange(att: Fighter, def: Fighter, attMult = 1, dodge = false)
   }
 
   const backCrit = crits(def);
-  const back = Math.max(0, (roll(def.str) - roll(att.def)) * (backCrit ? GAME.critMultiplier : 1));
+  const back = Math.max(0, Math.round(blow(def.str, att.def) * (backCrit ? GAME.critMultiplier : 1)));
   if (back > 0) {
     att.hp = Math.max(0, att.hp - back);
     events.push({ kind: "hit", attacker: def.name, defender: att.name, damage: back, defender_hp: att.hp, ...(backCrit ? { crit: true } : {}) });
@@ -151,7 +170,7 @@ export function resolveDuel(a: Duelist, d: Duelist, limits = DUEL_LIMITS, maxRou
       me.specials--; used[side].big++; mult = specialMultiplier(me.p); dodge = specialDodges(me.p); move = GAME.classes[me.p.class].special;
     }
     const crit = crits(mf);
-    const dmg = Math.max(0, Math.round((roll(str) - roll(foe.def)) * mult * (crit ? GAME.critMultiplier : 1)));
+    const dmg = Math.max(0, Math.round(blow(str, foe.def, mf.str) * mult * (crit ? GAME.critMultiplier : 1)));
     if (dmg > 0) {
       foe.hp = Math.max(0, foe.hp - dmg);
       log.push({ kind: "hit", attacker: mf.name, defender: foe.name, damage: dmg, defender_hp: foe.hp, special: mult > 1, ...(move ? { move } : {}), ...(crit ? { crit: true } : {}) });

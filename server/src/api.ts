@@ -30,7 +30,7 @@ import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
 import { OATH, incantation, oathLine } from "./flair.js";
 import { FORAGE, FORAGES_PER_DAY, HERBS, POTIONS, SPOT_CHANCE, TEACHERS, boostAmount, extraChance, herb, herbsAt, pickHerb, potion } from "./herbs.js";
-import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
+import { blow, exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
 
@@ -1041,7 +1041,7 @@ async function fightRound(ctx: Ctx, body: { action: "attack" | "special" | "staf
       }
       // failed to flee: monster gets a free swing
       const pf = fighterOf(ctx.p);
-      const dmg = Math.max(0, roll(m.str) - roll(pf.def));
+      const dmg = Math.max(0, Math.round(blow(m.str, pf.def)));
       await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
       ctx.events.push({ kind: "flee_failed", monster: m.name, damage: dmg, hp: ctx.p.hp });
       if (ctx.p.hp <= 0) {
@@ -1067,7 +1067,7 @@ async function fightRound(ctx: Ctx, body: { action: "attack" | "special" | "staf
       flair(ctx, enc.round, false, "plea");
       ctx.events.push({ kind: "healed_self", healed, hp: ctx.p.hp, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
       const pf0 = fighterOf(ctx.p);
-      const dmg = Math.max(0, roll(m.str) - roll(pf0.def));
+      const dmg = Math.max(0, Math.round(blow(m.str, pf0.def)));
       await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
       ctx.events.push(dmg > 0 ? { kind: "hit", attacker: m.name, defender: ctx.p.name, damage: dmg, defender_hp: ctx.p.hp } : { kind: "miss", attacker: m.name, defender: ctx.p.name });
       if (ctx.p.hp <= 0) {
@@ -1104,7 +1104,7 @@ async function fightRound(ctx: Ctx, body: { action: "attack" | "special" | "staf
 
     flair(ctx, enc.round, mult > 1, staff ? "staff" : undefined);
     const pf = fighterOf(ctx.p);
-    if (staff) pf.str = Math.round(pf.str * mr!.staff);
+    if (staff) { pf.kFrom = pf.str; pf.str = Math.round(pf.str * mr!.staff); }
     const mf = monsterAsFighter(m);
     const evs = exchange(pf, mf, mult, dodge);
     // A thief slips the counter, a guardian takes it on the shield, a bard's tune lulls it.
@@ -2340,7 +2340,7 @@ api.post("/drink", async (c) => {
     await ctx.c.query("update encounters set drank = true where id = $1", [enc.id]);
     const m = enc.monster;
     const pf = fighterOf(ctx.p);
-    const dmg = Math.max(0, roll(m.str) - roll(pf.def));
+    const dmg = Math.max(0, Math.round(blow(m.str, pf.def)));
     await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
     ctx.events.push(dmg > 0 ? { kind: "hit", attacker: m.name, defender: ctx.p.name, damage: dmg, defender_hp: ctx.p.hp } : { kind: "miss", attacker: m.name, defender: ctx.p.name });
     if (ctx.p.hp <= 0) {
