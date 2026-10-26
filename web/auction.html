@@ -96,6 +96,7 @@
   .filters button[hidden] { display: none; }
   .more { font: inherit; font-size: 15px; background: transparent; border: 1px solid var(--rule); color: var(--ink); padding: 6px 14px; margin-top: 14px; cursor: pointer; }
   td .for { color: var(--ink-faint); }
+  td.when, th.when { width: 9ch; white-space: nowrap; color: var(--ink-soft); }
   @media (max-width: 640px) { .filters { gap: 10px 12px; } .filters label { flex: 1 1 calc(50% - 6px); } .filters select, .filters input { width: 100%; } .filters .q { flex-basis: 100%; } }
 
   footer { border-top: 2px solid var(--ink); }
@@ -202,6 +203,8 @@
   const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   const gold = (n) => n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US");
   const short = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  // How long ago, by realm day: "today", "yesterday", "3 days ago"; the date itself is in the tooltip.
+  const ago = (today, d) => { const n = Math.max(0, Math.round((Date.parse(today) - Date.parse(d)) / 864e5)); return n === 0 ? "today" : n === 1 ? "yesterday" : n < 14 ? `${n} days ago` : short(d); };
   const daysLeft = (today, d) => Math.max(0, Math.round((Date.parse(d) - Date.parse(today)) / 864e5));
   const statLine = (x) => x.power ? `power ${x.power}` : x.def ? `defense ${x.def}` : x.bonus ? esc(x.bonus) : "";
 
@@ -255,9 +258,9 @@
     const list = d.sold.filter((x) => match(x, true));
     if (!list.length) { box.innerHTML = '<p class="quiet">Nothing that matches has sold lately.</p>'; return; }
     const shown = soldAll ? list : list.slice(0, 15);
-    const rows = shown.map((x) => `<tr><td class="num">${esc(short(x.day))}</td><td>${esc(x.item)}${x.bought_outright ? '<span class="tag" title="bought at the buy-now price">outright</span>' : ""}${x.for ? `<span class="stat">${forLine(x).replace(' · ', '')}</span>` : ""}</td>
+    const rows = shown.map((x) => `<tr><td class="when" title="${esc(short(x.day))}">${esc(ago(d.day, x.day))}</td><td>${esc(x.item)}${x.bought_outright ? '<span class="tag" title="bought at the buy-now price">outright</span>' : ""}${x.for ? `<span class="stat">${forLine(x).replace(' · ', '')}</span>` : ""}</td>
       <td class="who wide">${esc(x.seller)}</td><td class="who">${esc(x.buyer)}</td><td class="num">${gold(x.price)}</td></tr>`).join("");
-    box.innerHTML = `<table><thead><tr><th class="num">Day</th><th>Item</th><th class="wide">Seller</th><th>Buyer</th><th class="num">Price</th></tr></thead><tbody>${rows}</tbody></table>` +
+    box.innerHTML = `<table><thead><tr><th class="when">Sold</th><th>Item</th><th class="wide">Seller</th><th>Buyer</th><th class="num">Price</th></tr></thead><tbody>${rows}</tbody></table>` +
       (list.length > shown.length ? `<button type="button" class="more" id="sold-more">Show all ${list.length}</button>` : "");
     const more = $("sold-more"); if (more) more.addEventListener("click", () => { soldAll = true; sold(D); });
   }
