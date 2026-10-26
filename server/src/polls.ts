@@ -138,7 +138,7 @@ async function exitPolls(c: PoolClient, p: Poll): Promise<string[]> {
        where v.poll_id = $1 and v.choice = $2 and v.townsfolk order by v.day, pl.name limit 1`, [p.id, o.id])).rows[0];
     if (!v) continue;
     const facts = { who: townsperson(v.name)?.persona ?? v.name, question: p.question, setting: p.about, they_voted_for: o.label, the_other_choices: p.options.filter((x) => x.id !== o.id).map((x) => x.label), what_swayed_them: o.appeals ?? [], their_one_line_reason: v.why };
-    const text = await write({ system: INTERVIEW, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${v.name} says.`, maxTokens: 300, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
+    const text = await write({ system: INTERVIEW, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${v.name} says.`, maxTokens: 800, trim: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
     // No writer today: try again on the next run rather than fall back to a stock line.
     if (!text) continue;
     const said = plain(text, 420).replace(/^["“]|["”]$/g, "");
