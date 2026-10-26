@@ -766,7 +766,7 @@ api.get("/public/rankings", async (c) => {
   return c.json(out);
 });
 
-/** For the website's board: what kind of gear a lot is and which classes can use it. Anyone can use everything else. */
+/** For the website's auction page: what kind of gear a lot is and which classes can use it, for its filters. Anyone can use everything else. */
 const FAMILY_CLASSES: Record<string, string[]> = { steel: ["warrior", "guardian"], shadow: ["thief"], mage: ["mage"], priest: ["priest"], bard: ["bard"],
   heavy: ["warrior", "guardian"], leathers: ["thief"], robes: ["mage", "priest"], performer: ["bard"] };
 function whoFor(slot: ListSlot, id: number): { kind?: string; for?: string; classes?: string[] } {
