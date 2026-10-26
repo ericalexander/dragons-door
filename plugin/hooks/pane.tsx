@@ -256,7 +256,7 @@ export const register: Register = on => {
         </Box>
         {section('Purse', <Text>Gold {n(c.gold)} · bank {n(c.bank)}{c.gems ? ` · gems ${c.gems}` : ''}</Text>)}
         {section('Today', <Text>Turns {c.forest_fights} · PvP {c.player_fights} · bag {c.bag_used}/{c.bag_capacity}</Text>)}
-        {section('Gear', <Text>{c.weapon}</Text>, <Text>{c.armor}</Text>)}
+        {section('Gear', <Text>{c.weapon}</Text>, <Text>{c.armor}</Text>, c.jewelry ? <Text>{c.jewelry}</Text> : null)}
         {section('Where', <Text>{where}</Text>, <Text dimColor>{ground}{c.time_of_day ? ` · ${c.time_of_day}` : ''}</Text>,
           ...(g.map.length > 0 ? [<Box flexDirection="column" marginTop={1}>{g.map.map(line => (
             // You (@) stand out in bold and the accent colour; towns (T) and caves (O) in bold.

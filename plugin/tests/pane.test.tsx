@@ -12,7 +12,7 @@ const LABEL = "Dragon's Door, a text RPG (game state for the narrator)"
 const state = {
   name: 'Ossian Vale', class: 'bard', path: 'the gift', level: 5, exp: 7052, exp_next: 10000, hp: 56, max_hp: 92,
   gold: 6000, bank: 8056, gems: 2, forest_fights: 10, player_fights: 3, specials: 0, mana: 17, mana_max: 45,
-  weapon: "Shepherd's Fiddle", armor: 'Iron Armor', alive: true, in_encounter: false, bag_used: 4, bag_capacity: 20,
+  weapon: "Shepherd's Fiddle", armor: 'Iron Armor', jewelry: 'Copper Band (+3 Strength)', alive: true, in_encounter: false, bag_used: 4, bag_capacity: 20,
   unread_mail: 2, unread_news: 0, gifts_waiting: 1, time_of_day: 'afternoon',
   place: { name: "the Wren's Wood", terrain: 'forest', level: 1 }, cave_depth: null,
   quests: [{ title: "Grimwald's Other Boot", days_left: 6 }],
@@ -67,6 +67,7 @@ test('a game result opens the pane and draws the character, on every surface', a
     expect((await ui.find({ type: 'Text', text: /^56\/92$/ }))?.text).toBe('56/92')
     expect((await ui.find({ type: 'Text', text: /^17\/45$/ }))?.text).toBe('17/45')
     expect((await ui.find({ type: 'Text', text: /Wren's Wood/ }))?.text).toBe("the Wren's Wood")
+    expect((await ui.find({ type: 'Text', text: /^Copper Band/ }))?.text).toBe('Copper Band (+3 Strength)')
     expect((await ui.find({ type: 'Text', text: /forest, level 1/ }))?.text).toBe('forest, level 1 · afternoon')
     expect((await ui.find({ type: 'Text', text: /\? @/ }))?.text).toBe('      ? @')
     expect((await ui.find({ type: 'Text', text: /courier/ }))?.text).toBe('1 gift from the courier')

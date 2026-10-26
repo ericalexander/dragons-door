@@ -3,7 +3,7 @@ export type Character = {
   name: string; class: string; path?: string; level: number; exp: number; exp_next: number | null;
   hp: number; max_hp: number; gold: number; bank: number; gems: number;
   forest_fights: number; player_fights: number; specials: number; mana?: number; mana_max?: number;
-  weapon: string; armor: string; alive: boolean; in_encounter: boolean;
+  weapon: string; armor: string; jewelry?: string | null; alive: boolean; in_encounter: boolean;
   bag_used: number; bag_capacity: number; unread_mail: number; unread_news: number; gifts_waiting?: number;
   time_of_day?: string; place: { name: string; terrain: string; level: number; x?: number; y?: number } | null; cave_depth?: number | null;
   quests?: { title: string; days_left?: number; doing?: string }[];
