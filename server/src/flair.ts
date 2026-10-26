@@ -1,7 +1,7 @@
 /**
  * The words that go with a fight: the same every time, so players come to know them. A mage's spell always has
  * the same incantation (made from its name, in a tongue nobody's spoken in a long while), and a guardian says the
- * same oath, a line a round. The narrator writes everything else; nothing here touches a roll.
+ * same oath, a line a round. The narrator writes everything else; nothing here touches a roll (see FLAIR in api.ts).
  */
 import { createHash } from "node:crypto";
 
