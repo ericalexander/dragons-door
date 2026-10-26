@@ -422,6 +422,16 @@ async function analytics(event: string, distinctId: string, properties: Record<s
   }).catch(() => {});
 }
 
+/** The page says the visitor copied the install steps or their claim code: a step of the trial funnel. */
+trial.post("/copied", async (c) => {
+  const token = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+  const body = (await c.req.json().catch(() => ({}))) as { what?: unknown };
+  const col = body.what === "claim" ? "claim_copied_at" : body.what === "install" ? "install_copied_at" : null;
+  if (!token.startsWith("trial_") || !col) return c.json(closed("bad_request", "Nothing to note."), 400);
+  await pool.query(`update trial_log set ${col} = coalesce(${col}, now()) where id = (select id from players where api_key_hash = $1 and trial)`, [hash(token)]);
+  return c.json({ ok: true });
+});
+
 /** Say something to the narrator. */
 trial.post("/say", async (c) => {
   const token = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
@@ -457,6 +467,7 @@ async function turn(token: string, playerId: string, said: string, opening: bool
     const history = [...t.history, { role: "user" as const, content: opening ? said : `[trial: ${notes}]\n${said}` }, { role: "assistant" as const, content: text }].slice(-KEEP * 2);
     await pool.query("update trials set turns = turns + $2, history = $3, last_state = coalesce($4, last_state) where player_id = $1",
       [playerId, counted ? 1 : 0, JSON.stringify(history), r.state ? JSON.stringify(r.state) : null]);
+    if (counted && left === 0) await pool.query("update trial_log set finished_at = coalesce(finished_at, now()) where id = $1", [playerId]).catch(() => {});
     return { text, state: brief(r.state ?? t.last_state ?? undefined), turns_left: counted || opening ? left : left + 1, ...(r.rolls.length ? { rolls: r.rolls.slice(0, 40) } : {}) };
   } finally {
     await pool.query("update trials set busy_until = null where player_id = $1", [playerId]);

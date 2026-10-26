@@ -311,6 +311,8 @@
     } else if (s.left === 0) end(true);
     drawBar(); save();
   }
+  // The trial's own record keeps the same step, for the trials dashboard.
+  const noteCopied = (what) => { if (s.token) call("/copied", { what }).catch(() => {}); };
   const STEPS = ["/plugin marketplace add ericalexander/dragons-door", "/plugin install dragons-door@dragons-door", "/dragons-door:enter"];
   function end(fresh) {
     const first = !s.over;
@@ -329,6 +331,7 @@
     box.addEventListener("click", async (e) => {
       const b = e.target.closest(".cp"); if (!b) return;
       track(b.dataset.what === "claim" ? "claim_code_copied" : "install_copied", { where: "trial_end", step: b.dataset.copy.split(" ")[0] });
+      noteCopied(b.dataset.what);
       try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1600); } catch { b.textContent = "Select it"; }
     });
     $("again").addEventListener("click", () => { forget(); location.reload(); });
@@ -370,6 +373,7 @@
   gate.addEventListener("submit", start);
   $("copy").addEventListener("click", async () => {
     track("claim_code_copied", { where: "claim_box" });
+    noteCopied("claim");
     try { await navigator.clipboard.writeText("claim my character " + s.claim); $("copy").textContent = "Copied"; setTimeout(() => { $("copy").textContent = "Copy"; }, 1800); }
     catch { const r = document.createRange(); r.selectNodeContents($("code")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
   });
