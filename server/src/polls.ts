@@ -141,7 +141,7 @@ export async function settlePolls(c: PoolClient, day: string): Promise<string[]>
   return log;
 }
 
-const VOTE_LINES_PER_RUN = 8;
+const VOTE_LINES_PER_RUN = 12;
 const VOTE_LINE = `You write what one townsperson says in the tavern about how they just voted at a town meeting in Dragon's Door, a fantasy village text game. One sentence, two at most, under 30 words, first person, in their own voice and the way they'd really talk. Make it plain which way they voted without reciting the choice's wording. Say something none of the lines already said in the tavern says: no repeating their words, their joke or their reason. Plain words, no quotation marks, no stage directions, no names of real players. Stay inside the fiction, never reveal anyone's secrets or invent history. If what swayed them doesn't fit who they are, find a reason that does.`;
 
 /** A townsperson's tavern line about their vote, in their own words. Null when the writer isn't about. */
