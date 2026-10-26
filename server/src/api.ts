@@ -306,6 +306,10 @@ function fightSummary(log: Event[], last: Event[], me: string) {
     crits_taken: all.filter((e) => e.defender === me && e.crit).length,
     specials: mine.filter((e) => e.special).length,
     dodges: all.filter((e) => e.kind === "dodged" && e.defender === me).length,
+    // What armor did: swings at them, the ones that did nothing, and the damage that got through.
+    blows_taken: all.filter((e) => e.defender === me && (e.kind === "hit" || e.kind === "miss")).length,
+    blanks_taken: all.filter((e) => e.defender === me && e.kind === "miss").length,
+    damage_taken: all.filter((e) => e.defender === me && e.kind === "hit").reduce((n, e) => n + Number(e.damage ?? 0), 0),
   };
 }
 
