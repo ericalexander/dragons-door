@@ -202,7 +202,7 @@
     <a href="/chronicle">Chronicle</a>
     <a href="/auction">Auction House</a>
     <a href="/meetings">Meetings</a>
-    <a href="#fromrealm">Rankings</a>
+    <a href="/rankings">Rankings</a>
     <a href="#enter">Install</a>
     <a href="https://github.com/ericalexander/dragons-door">Source</a>
   </nav>
@@ -368,7 +368,7 @@
     if (!top.length) { board.innerHTML = '<p class="quiet">Nobody on the board yet.</p>'; return; }
     const rows = top.map((p, i) => `<tr><td class="rank">${i + 1}</td><td class="name">${esc(p.name)}${p.bot ? "<i>†</i>" : ""}</td><td class="cls">${esc(String(p.class).charAt(0).toUpperCase() + String(p.class).slice(1))}</td><td class="lvl">L${Number(p.level)}</td></tr>`).join("");
     const anyBot = top.some(p => p.bot);
-    board.innerHTML = `<table><thead><tr><th class="rank" aria-label="Rank"></th><th>Name</th><th class="cls">Class</th><th class="lvl">Level</th></tr></thead><tbody>${rows}</tbody></table>` + (anyBot ? '<p class="note">† townsfolk</p>' : "");
+    board.innerHTML = `<table><thead><tr><th class="rank" aria-label="Rank"></th><th>Name</th><th class="cls">Class</th><th class="lvl">Level</th></tr></thead><tbody>${rows}</tbody></table>` + (anyBot ? '<p class="note">† townsfolk</p>' : "") + '<p><a href="/rankings">See everyone on the board</a></p>';
   }).catch(() => { status.textContent = "The realm isn't answering right now. It'll be back."; });
 </script>
 <!-- Vercel Web Analytics: cookieless page-view counts for this site only -->

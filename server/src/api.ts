@@ -745,6 +745,26 @@ api.get("/public/realm", async (c) => {
   return c.json(out);
 });
 
+/** Everyone on the board, for the website's rankings page: adventurers and townsfolk, never test or trial characters. Names only. */
+api.get("/public/rankings", async (c) => {
+  const out = await tx(async (db) => {
+    const today = realmDay((await realmSettings(db)).resetHourUtc);
+    const r = await db.query<{ name: string; class: string; level: number; bot: boolean; town: string; dragon_kills: number; days: number | null; wed: boolean }>(
+      `select p.name, p.class, p.level, p.is_bot as bot, coalesce(b.home, p.start_town, 'brightwater') as town, p.dragon_kills,
+              (current_date - p.last_seen::date) as days, p.spouse_id is not null as wed
+       from players p left join bots b on b.player_id = p.id
+       where p.role <> 'npc' and not p.is_test order by p.level desc, p.exp desc, p.name limit 1000`);
+    return {
+      day: today,
+      rankings: r.rows.map((x) => ({ name: x.name, class: x.class, level: x.level, bot: x.bot, town: x.town, dragon_kills: x.dragon_kills, married: x.wed,
+        seen: x.days === null ? "a while ago" : x.days <= 0 ? "today" : x.days <= 7 ? "this week" : x.days <= 31 ? "this month" : "a while ago" })),
+    };
+  });
+  c.header("access-control-allow-origin", "*");
+  c.header("cache-control", "public, max-age=60, s-maxage=60, stale-while-revalidate=60");
+  return c.json(out);
+});
+
 /** The auction house, for the website: what's on the board, what sold lately, and prices over time. Names only. */
 api.get("/public/auctions", async (c) => {
   const out = await tx(async (db) => {

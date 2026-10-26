@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rankings · Dragon's Door</title>
+<meta name="description" content="Everyone in the realm of Dragon's Door, adventurers and townsfolk, ranked by level: their path, their home town and the dragons they've slain.">
+<link rel="canonical" href="https://www.dragonsdoor.gg/rankings">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Dragon's Door">
+<meta property="og:title" content="Rankings · Dragon's Door">
+<meta property="og:description" content="Everyone in the realm of Dragon's Door, adventurers and townsfolk, ranked by level: their path, their home town and the dragons they've slain.">
+<meta property="og:url" content="https://www.dragonsdoor.gg/rankings">
+<meta property="og:image" content="https://www.dragonsdoor.gg/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23efe4c9'/><path d='M4 15V7a4 4 0 0 1 8 0v8' fill='none' stroke='%232a1c10' stroke-width='1.5'/><circle cx='7' cy='11' r='1' fill='%238f2a1c'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #efe4c9;
+    --paper-hi: #f7efdc;
+    --ink: #2a1c10;
+    --ink-soft: #4a3322;
+    --ink-faint: #6b4a2e;
+    --rule: #b89c70;
+    --wax: #8f2a1c;
+    --wax-dark: #5c1a10;
+    --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --prose: "Alegreya", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--wax); text-decoration: underline; text-underline-offset: 3px; }
+  a:hover, a:focus-visible { color: var(--wax-dark); }
+  :focus-visible { outline: 2px solid var(--wax); outline-offset: 3px; }
+  ::selection { background: var(--ink); color: var(--paper-hi); }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+  .kicker { font-size: 14px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+
+  header.mast { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 22px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+  .mast .name { font-family: var(--display); font-size: 26px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .mast .name a { color: var(--ink); text-decoration: none; }
+  .mast nav { display: flex; gap: 26px; flex-wrap: wrap; font-size: 15px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }
+  .mast nav a { color: var(--ink); text-decoration: none; }
+  .mast nav a:hover, .mast nav a[aria-current] { text-decoration: underline; }
+
+  .head { padding-top: 56px; padding-bottom: 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; border-bottom: 2px solid var(--ink); }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(48px, 7vw, 72px); line-height: .95; margin: 0; }
+  .sub { margin: 0; font-size: 19px; color: var(--ink-soft); }
+
+  .pages { max-width: 1080px; margin: 0 auto; padding: 8px 24px 48px; }
+  section.day { padding: 36px 0 8px; border-bottom: 1px solid var(--rule); }
+  section.day:last-child { border-bottom: 0; }
+  h2 { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1.1; margin: 0 0 4px; }
+  h2 .date { display: block; font-family: var(--body); font-weight: 500; font-size: 14px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); margin-top: 6px; }
+  .entry { font-family: var(--prose); font-size: 19px; line-height: 1.6; color: var(--ink); }
+  .entry p { margin: 14px 0 0; }
+  .entry p:first-child { margin-top: 16px; }
+  .draft { background: var(--paper-hi); border: 1px solid var(--rule); padding: 20px 24px 24px; margin-top: 36px; }
+  .draft h2 { font-size: 28px; }
+  .draft .note { font-family: var(--body); font-size: 15px; color: var(--ink-faint); font-style: italic; margin: 6px 0 0; }
+  .draft .entry p:first-child::first-letter { font-size: 1em; float: none; padding: 0; color: inherit; }
+  .quiet { color: var(--ink-faint); margin: 24px 0 0; }
+
+  footer { border-top: 2px solid var(--ink); }
+  footer .wrap { padding-top: 24px; padding-bottom: 32px; font-size: 14px; color: var(--ink-faint); }
+  footer p { margin: 0; max-width: 90ch; }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; }
+    .head { padding-top: 40px; }
+    .entry { font-size: 18px; }
+    h2 { font-size: 30px; }
+  }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; margin: 28px 0 8px; font-size: 15px; }
+  .controls .group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .controls .lab { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); margin-right: 4px; }
+  .controls button { font: inherit; font-size: 15px; background: transparent; color: var(--ink); border: 1px solid var(--rule); padding: 3px 12px; cursor: pointer; }
+  .controls button[aria-pressed="true"] { background: var(--ink); color: var(--paper-hi); border-color: var(--ink); }
+  .count { font-size: 14px; color: var(--ink-faint); margin: 0 0 12px; }
+  table.board { width: 100%; border-collapse: collapse; }
+  .board th { text-align: left; font-weight: 500; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); padding: 0 10px 6px 0; border-bottom: 1px solid var(--rule); }
+  .board td { padding: 8px 10px 8px 0; border-bottom: 1px solid #ddd0b3; color: var(--ink-soft); vertical-align: baseline; }
+  .board td.rank, .board th.rank { width: 3ch; color: var(--wax); font-family: var(--display); font-size: 20px; font-weight: 700; }
+  .board td.name { font-weight: 700; color: var(--ink); }
+  .board td.name i { font-style: normal; font-weight: 400; color: var(--ink-faint); }
+  .board td.lvl, .board th.lvl, .board td.num, .board th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .board tr.top td.rank { font-size: 24px; }
+  .note { font-size: 14px; color: var(--ink-faint); margin: 12px 0 0; }
+  @media (max-width: 640px) {
+    .board .town, .board .seen { display: none; }
+    .board td, .board th { padding-right: 6px; }
+  }
+  @media (max-width: 640px) { header.mast .name { font-size: 22px; } header.mast nav { gap: 10px 16px; font-size: 14px; } }
+</style>
+</head>
+<body>
+
+<header class="mast wrap">
+  <div class="name"><a href="/">Dragon's Door</a></div>
+  <nav aria-label="Site">
+    <a href="/try">Try it</a>
+    <a href="/chronicle">Chronicle</a>
+    <a href="/auction">Auction House</a>
+    <a href="/meetings">Meetings</a>
+    <a href="/rankings" aria-current="page">Rankings</a>
+    <a href="/#enter">Install</a>
+    <a href="https://github.com/ericalexander/dragons-door">Source</a>
+  </nav>
+</header>
+
+<div class="head wrap">
+  <div class="kicker">Names on the board</div>
+  <h1>Rankings</h1>
+  <p class="sub">Everyone in the realm, ranked by level: the adventurers who play it and the townsfolk who live in it.</p>
+</div>
+
+<main class="pages">
+  <div class="controls" role="group" aria-label="Filter the rankings">
+    <div class="group" id="who"><span class="lab">Who</span>
+      <button type="button" data-who="all" aria-pressed="true">Everyone</button>
+      <button type="button" data-who="players" aria-pressed="false">Adventurers</button>
+      <button type="button" data-who="townsfolk" aria-pressed="false">Townsfolk</button>
+    </div>
+    <div class="group" id="town"><span class="lab">Home</span>
+      <button type="button" data-town="all" aria-pressed="true">All towns</button>
+      <button type="button" data-town="brightwater" aria-pressed="false">Brightwater</button>
+      <button type="button" data-town="ironhold" aria-pressed="false">Ironhold</button>
+      <button type="button" data-town="ashford" aria-pressed="false">Ashford</button>
+    </div>
+  </div>
+  <p class="count" id="count"></p>
+  <div id="rankings"><p class="quiet">Reading the board…</p></div>
+  <p class="note">† townsfolk. Ranked by level, then experience. A rank is a place in the whole realm, whatever you filter by.</p>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Want your name up here? <a href="/try">Try it in your browser</a>, or <a href="/#enter">play Dragon's Door</a> in Claude Code.</p>
+  </div>
+</footer>
+
+<script>
+  const API = "https://api.dragonsdoor.gg";
+  const esc = (t) => String(t).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+  const TOWN = { brightwater: "Brightwater", ironhold: "Ironhold", ashford: "Ashford" };
+  const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+  const box = document.getElementById("rankings"), count = document.getElementById("count");
+  let all = [], who = "all", town = "all";
+  function draw() {
+    const rows = all.filter((p) => (who === "all" || (who === "players") === !p.bot) && (town === "all" || p.town === town));
+    const people = (n) => `${n} ${n === 1 ? "name" : "names"}`;
+    count.textContent = rows.length === all.length ? `${people(all.length)} on the board.` : `${people(rows.length)} of ${all.length}.`;
+    if (!rows.length) { box.innerHTML = '<p class="quiet">Nobody here yet.</p>'; return; }
+    box.innerHTML = `<table class="board"><thead><tr><th class="rank" aria-label="Rank"></th><th>Name</th><th>Class</th><th class="lvl">Level</th><th class="town">Home</th><th class="num" title="Dragons slain">Dragons</th><th class="seen">Last seen</th></tr></thead><tbody>` +
+      rows.map((p) => `<tr${p.rank <= 3 ? ' class="top"' : ""}><td class="rank">${p.rank}</td><td class="name">${esc(p.name)}${p.bot ? " <i>†</i>" : ""}${p.married ? ' <i title="married">⚭</i>' : ""}</td><td>${esc(cap(p.class))}</td><td class="lvl">${Number(p.level)}</td><td class="town">${esc(TOWN[p.town] || cap(p.town))}</td><td class="num">${Number(p.dragon_kills) || "–"}</td><td class="seen">${esc(cap(p.seen))}</td></tr>`).join("") +
+      "</tbody></table>";
+  }
+  for (const g of ["who", "town"]) {
+    document.getElementById(g).addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      for (const x of e.currentTarget.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
+      if (g === "who") who = b.dataset.who; else town = b.dataset.town;
+      draw();
+    });
+  }
+  fetch(API + "/v1/public/rankings").then((r) => r.json()).then((d) => {
+    all = d.rankings.map((p, i) => ({ ...p, rank: i + 1 }));
+    draw();
+  }).catch(() => { box.innerHTML = '<p class="quiet">The board isn\'t answering right now. It\'ll be back.</p>'; });
+</script>
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
+<script>
+  /* PostHog: where visitors come from (city and region), which pages they read. Anonymous: no profiles, no session recording. */
+  !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+  posthog.init("phc_J1rAmysu72Vfoxzo0cwd0Xb7CSfIbLoQmcERFGYMsAj", { api_host: "https://us.i.posthog.com", person_profiles: "identified_only", disable_session_recording: true, autocapture: false, capture_pageview: true, capture_pageleave: true });
+  posthog.register({ site: "dragons-door" });
+</script>
+</body>
+</html>
