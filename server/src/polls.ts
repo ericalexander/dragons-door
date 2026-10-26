@@ -148,7 +148,7 @@ const VOTE_LINE = `You write what one townsperson says in the tavern about how t
 async function voteLine(p: Poll, name: string, o: PollOption, swayed: Appeal | null, said: string[]): Promise<string | null> {
   const facts = { who: townsperson(name)?.persona ?? name, question: p.question, setting: p.about, they_voted_for: o.label,
     the_other_choices: p.options.filter((x) => x.id !== o.id).map((x) => x.label), what_swayed_them: swayed, already_said_in_the_tavern: said.slice(-12) };
-  const text = await write({ system: VOTE_LINE, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${name} says.`, maxTokens: 400, trim: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
+  const text = await write({ system: VOTE_LINE, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${name} says.`, maxTokens: 400, trim: true, quick: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
   return text ? plain(text, 280).replace(/^["“]|["”]$/g, "") : null;
 }
 
@@ -165,7 +165,7 @@ async function exitPolls(c: PoolClient, p: Poll): Promise<string[]> {
        where v.poll_id = $1 and v.choice = $2 and v.townsfolk order by v.day, pl.name limit 1`, [p.id, o.id])).rows[0];
     if (!v) continue;
     const facts = { who: townsperson(v.name)?.persona ?? v.name, question: p.question, setting: p.about, they_voted_for: o.label, the_other_choices: p.options.filter((x) => x.id !== o.id).map((x) => x.label), what_swayed_them: o.appeals ?? [], their_one_line_reason: v.why };
-    const text = await write({ system: INTERVIEW, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${v.name} says.`, maxTokens: 800, trim: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
+    const text = await write({ system: INTERVIEW, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${v.name} says.`, maxTokens: 800, trim: true, quick: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
     // No writer today: try again on the next run rather than fall back to a stock line.
     if (!text) continue;
     const said = plain(text, 420).replace(/^["“]|["”]$/g, "");
