@@ -27,6 +27,9 @@ test("a regional monster fights exactly like the old one it stands in for", () =
 test("the land round Ironhold is its own, caves are caves, and Brightwater's forest keeps the old names", () => {
   const t = TOWN_TILES.ironhold;
   assert.equal(regionAt(t.x + 1, t.y + 1), "highland");
+  const a = TOWN_TILES.ashford;
+  assert.equal(regionAt(a.x + 1, a.y - 2), "riverside");
+  for (let i = 0; i < 50; i++) assert.ok(BESTIARY.riverside[pickMonster(3, "riverside").level].length > 0);
   assert.equal(regionAt(2, 0, true), "cave");
   const old = new Set(GAME.monsters.map((m) => m.name));
   for (let i = 0; i < 50; i++) assert.ok(old.has(pickMonster(2, "forest").name));

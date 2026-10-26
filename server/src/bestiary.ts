@@ -8,7 +8,7 @@
  */
 import { POCKET, TOWN_TILES, tileAt, type Terrain } from "./world.js";
 
-export type Region = "forest" | "meadow" | "marsh" | "hills" | "crags" | "highland" | "cave";
+export type Region = "forest" | "meadow" | "marsh" | "hills" | "crags" | "highland" | "riverside" | "cave";
 
 /** Names by level. Order matters: it picks which old monster's stats each one borrows. */
 export const BESTIARY: Record<Exclude<Region, "forest">, Record<number, string[]>> = {
@@ -72,6 +72,14 @@ export const BESTIARY: Record<Exclude<Region, "forest">, Record<number, string[]
     4: ["Slag Imp", "Rock Troll"],
     5: ["Rust Hound", "Hollow Soldier"],
   },
+  // The gentle land round Ashford, along the Ash: wharves, weirs, mudflats, and the people who work the river crooked.
+  riverside: {
+    1: ["Wharf Pickpocket", "Ford Ruffian", "River Midges", "Snapping Turtle"],
+    2: ["Mudlark", "Wharf Dogs", "Smuggler"],
+    3: ["Giant Water Spider", "River Ogre", "Smuggler Captain"],
+    4: ["Weir Sprite", "Weir Troll"],
+    5: ["Ford Kelpie", "River Reaver"],
+  },
   cave: {
     1: ["Cave Rat", "Blind Thief", "Cave Gnats", "Tusked Mole"],
     2: ["Lost Miner", "Ghoul Pack", "Tunnel Bandit"],
@@ -93,20 +101,21 @@ const BY_TERRAIN: Record<Exclude<Terrain, "town">, Region> = { meadow: "meadow",
 /** What kind of place this is, for what lives there. Inside a cave is the cave, wherever it is. */
 export function regionAt(x: number, y: number, inCave = false): Region {
   if (inCave) return "cave";
-  for (const t of Object.values(TOWN_TILES)) if (Math.max(Math.abs(x - t.x), Math.abs(y - t.y)) <= POCKET) return "highland";
+  // Each outside town's own gentle country: Ironhold's hills, Ashford's riverbank.
+  for (const [town, t] of Object.entries(TOWN_TILES)) if (Math.max(Math.abs(x - t.x), Math.abs(y - t.y)) <= POCKET) return town === "ashford" ? "riverside" : "highland";
   const terrain = tileAt(x, y).terrain;
   return terrain === "town" ? "forest" : BY_TERRAIN[terrain];
 }
 
 // ---------- what the land gives up ----------
-// Stone country (the hills, the crags, and the land round Ironhold) gives up ore; the lowlands round
-// Brightwater (forest, meadow, marsh) give up gems. Ironhold's forge wants ore and, at the top, gems;
+// Stone country (the hills, the crags, and the land round Ironhold) gives up ore; the lowlands (forest,
+// meadow, marsh, and the riverbank round Ashford) give up gems. Ironhold's forge wants ore and, at the top, gems;
 // Odile's jewelry in Brightwater wants both. So each town has something the other needs, and the
 // shared auction board is where they meet.
 
 export type Find = { kind: "ore"; ore: number } | { kind: "gem" };
 /** Chance a kill leaves something behind besides gold, by kind of land. Caves have the pick instead. */
-export const FIND_CHANCE: Record<Region, number> = { highland: 0.08, hills: 0.08, crags: 0.08, forest: 0.06, meadow: 0.06, marsh: 0.06, cave: 0 };
+export const FIND_CHANCE: Record<Region, number> = { riverside: 0.06, highland: 0.08, hills: 0.08, crags: 0.08, forest: 0.06, meadow: 0.06, marsh: 0.06, cave: 0 };
 const STONE: Region[] = ["highland", "hills", "crags"];
 
 /** What a kill leaves, if anything: ore in stone country (better ore off tougher monsters), a gem in the lowlands. */
