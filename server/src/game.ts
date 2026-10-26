@@ -43,6 +43,8 @@ export interface Player {
   ground: { slot: "weapon" | "armor"; item_id: number; rarity?: number } | null;
   /** A draught drunk for the fight: what it adds, until that fight is over. */
   boost?: { name: string; str?: number; def?: number } | null;
+  /** Fights told plainly, without the class's flair. */
+  plain_fights?: boolean;
   mail_notified_upto: number;
   news_seen_upto: number;
   client: unknown;
@@ -173,6 +175,7 @@ export interface PublicState {
   swings_left: number;
   forages_left: number;
   draught?: { name: string; str?: number; def?: number };
+  plain_fights?: boolean;
   /** Who they're married to, if anyone. */
   spouse: string | null;
   /** People you could court who are around right now, and where. */
@@ -395,6 +398,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     swings_left: Math.max(0, SWINGS_PER_DAY - (t.swings ?? 0)),
     forages_left: Math.max(0, FORAGES_PER_DAY - (t.forages ?? 0)),
     ...(p.boost ? { draught: p.boost } : {}),
+    ...(p.plain_fights ? { plain_fights: true } : {}),
     ...(casts(p.class) ? { mana: t.mana ?? 0, mana_max: manaMax(p) } : {}),
     special: specialName(p.class, p.weapon_id),
     attribute: attributeName(p.class),

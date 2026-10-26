@@ -22,7 +22,7 @@ const LOOKS = new Set(["status", "news", "rankings", "map", "journal", "library"
 const FINAL = new Set(["drop", "sell", "respec", "admin", "characters"]);
 const TITLES: Record<string, string> = { send_mail: "Send a letter", collect_gifts: "Collect gifts", learn_spell: "Learn a spell or buy an instrument",
   tavern_post: "Post on the tavern board", square_talk: "Talk in the square", install_statusline: "Install the status line",
-  workshop_order: "Order from the workshop", forge_order: "Order from the forge", auction_act: "Bid, buy or list at auction", apothecary_act: "Learn or brew at the healer's bench" };
+  workshop_order: "Order from the workshop", forge_order: "Order from the forge", auction_act: "Bid, buy or list at auction", apothecary_act: "Learn or brew at the healer's bench", fight_style: "Choose how fights are told" };
 const titleOf = (name: string) => TITLES[name] ?? name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 {
   const register = server.tool.bind(server) as (...a: unknown[]) => { update: (u: { annotations: Record<string, unknown> }) => void };
@@ -339,6 +339,10 @@ server.tool("flirt", "Flirt with someone: Violet (tavern), Rowan (healer's, by d
 server.tool("challenge", "Attack another player in the fields. Resolves the whole fight at once. Uses one player fight.",
   { name: z.string().min(1) },
   async ({ name }) => text(await call("POST", "/v1/challenge", { name })));
+
+server.tool("fight_style", "How the player's fights are told: with their class's flair (warriors' comic-book sounds, thieves' hardboiled voice, mages' incantations, priests' prayers, guardians' oath) or plainly (plain: true). Bards sing either way. Only when the player asks.",
+  { plain: z.boolean() },
+  async ({ plain }) => text(await call("POST", "/v1/fight_style", { plain })));
 
 server.tool("weather", "Turn the realm's weather on or off. When on, the sky in the game roughly matches the player's real sky, from their approximate location; nothing about their location is stored.",
   { on: z.boolean() },

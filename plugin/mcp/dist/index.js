@@ -616,7 +616,8 @@ var TITLES = {
   workshop_order: "Order from the workshop",
   forge_order: "Order from the forge",
   auction_act: "Bid, buy or list at auction",
-  apothecary_act: "Learn or brew at the healer's bench"
+  apothecary_act: "Learn or brew at the healer's bench",
+  fight_style: "Choose how fights are told"
 };
 var titleOf = (name) => TITLES[name] ?? name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 {
@@ -1044,6 +1045,12 @@ server.tool(
   "Attack another player in the fields. Resolves the whole fight at once. Uses one player fight.",
   { name: z.string().min(1) },
   async ({ name }) => text(await call("POST", "/v1/challenge", { name }))
+);
+server.tool(
+  "fight_style",
+  "How the player's fights are told: with their class's flair (warriors' comic-book sounds, thieves' hardboiled voice, mages' incantations, priests' prayers, guardians' oath) or plainly (plain: true). Bards sing either way. Only when the player asks.",
+  { plain: z.boolean() },
+  async ({ plain }) => text(await call("POST", "/v1/fight_style", { plain }))
 );
 server.tool(
   "weather",

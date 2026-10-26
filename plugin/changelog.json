@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.26.0",
+    "lore": "The bards were getting all the attention, so everyone else found their voice. Warriors fight like a Saturday-morning serial, thieves narrate their own crimes, mages say the words properly now, priests pray out loud, and guardians have an oath they will tell you about at length.",
+    "plain": "Fights are told in each class's own style. If you'd rather have them plain, just ask the narrator; bards keep their songs either way."
+  },
+  {
     "version": "0.25.0",
     "lore": "Rowan, Jessamy Crane and the doctor in Ashford will each teach you a draught for a price, though the herbs you'll have to get on your knees for yourself. Your first pots will be honest; after a while your hands start to know more than you do.",
     "plain": "Forage for herbs in the wild (a few searches a day, apart from turns), learn recipes from any town's healer, brew potions at their bench, and drink them between fights or in one. Herbs and potions sell, auction and gift like anything else."

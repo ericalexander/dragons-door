@@ -28,6 +28,7 @@ import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, even
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
+import { OATH, incantation, oathLine } from "./flair.js";
 import { FORAGE, FORAGES_PER_DAY, HERBS, POTIONS, SPOT_CHANCE, TEACHERS, boostAmount, extraChance, herb, herbsAt, pickHerb, potion } from "./herbs.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
@@ -826,6 +827,15 @@ api.get("/public/auctions", async (c) => {
 
 api.get("/status", async (c) => c.json(await withPlayer(c.req.header("authorization"), async () => {}, { weather: true, surroundings: true })));
 
+// Fights told with each class's flair, or plainly.
+api.post("/fight_style", async (c) => {
+  const body = z.object({ plain: z.boolean() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    await savePlayer(ctx, { plain_fights: body.plain });
+    ctx.events.push({ kind: "fight_style", plain: body.plain });
+  }));
+});
+
 // Weather on or off for this player. Nothing about their location is kept either way.
 api.post("/weather", async (c) => {
   const body = z.object({ on: z.boolean() }).parse(await c.req.json());
@@ -1039,6 +1049,7 @@ async function fightRound(ctx: Ctx, body: { action: "attack" | "special" | "staf
       await saveTurns(ctx, { mana: mana - mr.heal });
       const healed = Math.min(ctx.p.max_hp - ctx.p.hp, Math.ceil(ctx.p.max_hp * (mr.healPct ?? 0.3)));
       await savePlayer(ctx, { hp: ctx.p.hp + healed });
+      flair(ctx, enc.round, false, "plea");
       ctx.events.push({ kind: "healed_self", healed, hp: ctx.p.hp, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
       const pf0 = fighterOf(ctx.p);
       const dmg = Math.max(0, roll(m.str) - roll(pf0.def));
@@ -1076,6 +1087,7 @@ async function fightRound(ctx: Ctx, body: { action: "attack" | "special" | "staf
       dodge = specialDodges(ctx.p);
     }
 
+    flair(ctx, enc.round, mult > 1, staff ? "staff" : undefined);
     const pf = fighterOf(ctx.p);
     if (staff) pf.str = Math.round(pf.str * mr!.staff);
     const mf = monsterAsFighter(m);
@@ -1099,6 +1111,20 @@ async function fightRound(ctx: Ctx, body: { action: "attack" | "special" | "staf
       await ctx.c.query("update encounters set monster = $2, round = round + 1, log = log || $3::jsonb where id = $1", [enc.id, m, JSON.stringify(evs)]);
     }
   }
+}
+
+/**
+ * How each class's rounds are told: a warrior's in comic-book sound effects, a thief's in a hardboiled inner voice,
+ * a mage's in the spell's own words, a priest's as prayers, a guardian's as the lines of their oath. Bards sing
+ * (their casts carry verse). The narrator writes them; nothing here changes a roll. Players can turn it off.
+ */
+const FLAIR: Partial<Record<PlayerClass, string>> = { warrior: "comic", thief: "noir", mage: "incantation", priest: "prayer", guardian: "oath" };
+function flair(ctx: Ctx, round: number, big: boolean, as?: "plea" | "staff") {
+  const form = FLAIR[ctx.p.class];
+  if (!form || ctx.p.plain_fights) return;
+  const extra = form === "incantation" && as !== "staff" ? { words: incantation(big ? specialName(ctx.p.class, ctx.p.weapon_id) : weaponName(ctx.p.class, ctx.p.weapon_id), big) }
+    : form === "oath" ? { line: big ? OATH[OATH.length - 1] : oathLine(round + 1) } : {};
+  ctx.events.push({ kind: "flair", form, round: round + 1, ...(big ? { big: true } : {}), ...(as ? { as } : {}), ...extra });
 }
 
 /** A player as they fight right now: their gear, and whatever draught they've had for this fight. */
