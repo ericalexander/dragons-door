@@ -3501,8 +3501,9 @@ api.post("/challenge", async (c) => {
     if (!d.alive) { ctx.events.push({ kind: "target_dead", name: d.name }); return; }
     if (d.location === "inn") { ctx.events.push({ kind: "target_at_inn", name: d.name }); return; }
     if (Math.abs(d.level - ctx.p.level) > PVP_LEVEL_GAP) { ctx.events.push({ kind: "level_gap", name: d.name, their_level: d.level, max_gap: PVP_LEVEL_GAP }); return; }
+    // Newcomers are left alone: nobody can be attacked at level 1 (just as nobody can attack before level 2), nor in their first day.
     const age = await ctx.c.query("select created_at < now() - interval '24 hours' as old from players where id = $1", [d.id]);
-    if (!age.rows[0].old) { ctx.events.push({ kind: "newcomer_grace", name: d.name }); return; }
+    if (d.level < SEASONED_LEVEL || !age.rows[0].old) { ctx.events.push({ kind: "newcomer_grace", name: d.name, ...(d.level < SEASONED_LEVEL ? { until: `level ${SEASONED_LEVEL}` } : {}) }); return; }
     await leaveInn(ctx);
 
     await saveTurns(ctx, { player_fights: ctx.t.player_fights - 1 });

@@ -382,7 +382,7 @@ async function raid(b: Bot) {
   const target = await pool.query<{ name: string }>(
     `select name from players
      where role <> 'npc' and not is_test and alive and location = 'fields' and gold > 0 and name <> $1
-       and abs(level - $2) <= 1 and created_at < now() - interval '24 hours'
+       and abs(level - $2) <= 1 and level >= 2 and created_at < now() - interval '24 hours'
      order by gold desc, level desc limit 1`,
     [b.name, me.state.level],
   );

@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.24.2",
+    "lore": "The fields have a new custom, and even Vesper keeps it: nobody lays a hand on a greenhorn. Until you've earned your second level, you can sleep under the stars with your purse on your chest and wake up with both.",
+    "plain": "Level 1 characters can no longer be attacked in the fields, by players or townsfolk; the protection ends when you reach level 2."
+  },
+  {
     "version": "0.24.1",
     "lore": "Market Row has a new door, next to the smith's: Della Moss, clothier, who has opinions about your robes and will share them while she measures you. The smith is relieved. He was never comfortable selling doublets.",
     "plain": "Robes, performers' clothes, leathers and bags are now sold by Della Moss, the clothier on Market Row; the smith keeps weapons and heavy armor."
