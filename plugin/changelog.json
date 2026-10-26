@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.24.1",
+    "lore": "Market Row has a new door, next to the smith's: Della Moss, clothier, who has opinions about your robes and will share them while she measures you. The smith is relieved. He was never comfortable selling doublets.",
+    "plain": "Robes, performers' clothes, leathers and bags are now sold by Della Moss, the clothier on Market Row; the smith keeps weapons and heavy armor."
+  },
+  {
     "version": "0.24.0",
     "lore": "The realm's smiths have stopped pretending a sword is a fiddle if you squint. Gear is what it is now: steel and plate for those who fight up front, leathers and bows for the quick, robes, scrolls and instruments for the gifted. Your old spellbook isn't just a memory any more, either; keep it, and someone will pay for it.",
     "plain": "Each path now has its own weapons and armor (yours changed to match; nothing was lost), heavy armor guards more and light armor hits harder, and spells and instruments can be kept, sold and auctioned. Lots show what they are, and who can use them."

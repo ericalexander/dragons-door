@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, armorName, carriedId, carriedName, familyLabel, familyOf, familyUsers, fits, itemName, tierOf, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec, casterItemName,
+  GAME, armor, weapon, armorName, armorFamilyOf, weaponFamilyOf, carriedId, carriedName, familyLabel, familyOf, familyUsers, fits, itemName, tierOf, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec, casterItemName,
   type Player, type PlayerClass, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -241,7 +241,7 @@ function seasoned(ctx: Ctx, what: string): boolean {
 /** Names that would pass for a local. Compared after folding lookalike characters. */
 const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
   "violet", "odile", "mother quill", "quill", "prior hale", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon", "the dark dragon", "dark dragon", "vael", "vael the watchful", "the watchful",
-  "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic"];
+  "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic", "della moss"];
 // i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
 const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
 const RESERVED_FOLDED = new Set(RESERVED.map(fold));
@@ -872,18 +872,40 @@ api.get("/rankings", async (c) => c.json(await withPlayer(c.req.header("authoriz
   ctx.events.push({ kind: "rankings", players: r.rows });
 })));
 
+/**
+ * Who sells you what, where you are: the shop is the same for everyone (your own path's gear), but the counter
+ * isn't. Brightwater's smith does weapons and heavy armor, and Della Moss, the clothier, everything softer and the
+ * bags; Ironhold's Brannagh does weapons and Tobin Harrow the rest; Ashford's Haverly's does the Shadow path's gear.
+ */
+function soldBy(ctx: Ctx, kind: "weapon" | "armor" | "bag"): { keeper: string | null; where: string } {
+  const town = townAt(ctx.p.pos_x, ctx.p.pos_y) ?? "brightwater";
+  const fam = kind === "weapon" ? "weapon" : kind === "armor" ? armorFamilyOf(ctx.p.class) : "bag";
+  if (town === "ironhold") {
+    if (fam === "weapon") return { keeper: "Brannagh Steel", where: "the weaponry at the forge" };
+    if (fam === "robes" || fam === "performer") return { keeper: "Tobin Harrow", where: "the rack at the back of the armory he keeps for visitors" };
+    return { keeper: "Tobin Harrow", where: "the armory" };
+  }
+  if (town === "ashford") {
+    if (fam === "robes" || fam === "performer") return { keeper: null, where: "a cloth-seller's stall on the Exchange" };
+    if (fam === "heavy" || (fam === "weapon" && weaponFamilyOf(ctx.p.class) === "steel")) return { keeper: "Sim Haverly", where: "Haverly's, from the few pieces he keeps for soldiers passing through" };
+    return { keeper: "Sim Haverly", where: "Haverly's on the Exchange" };
+  }
+  if (fam === "weapon" || fam === "heavy") return { keeper: "the smith", where: "the smithy on Market Row" };
+  return { keeper: "Della Moss", where: "her clothier's on Market Row" };
+}
+
 api.get("/shop", async (c) => {
   const q = c.req.query("kind");
   const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) }); return; }
-    if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell spells; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
+    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", sold_by: soldBy(ctx, "bag"), owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) }); return; }
+    if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell ${ctx.p.class === "bard" ? "instruments" : "spells"}; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
     // A weapon's str is its power (a bonus on top of the class's attribute), so call it that.
     const named = (items as { id: number; name: string }[]).map((x) => ({ ...x, name: itemName(kind, x.id, ctx.p.class) }));
     const listed = kind === "weapon" ? (named as unknown as { str: number }[]).map(({ str, ...rest }) => ({ ...rest, power: str })) : named;
-    ctx.events.push({ kind: "catalog", shop: kind, owned, items: listed, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) });
+    ctx.events.push({ kind: "catalog", shop: kind, sold_by: soldBy(ctx, kind), owned, items: listed, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) });
   }));
 });
 
@@ -1234,7 +1256,7 @@ api.post("/buy", async (c) => {
       if (nb.id <= ctx.p.bag_id) { ctx.events.push({ kind: "already_have_bigger", bag: Bag.bag(ctx.p.bag_id).name }); return; }
       const bagCost = Math.ceil(nb.cost * (1 - discount));
       if (!confirmed) {
-        ctx.events.push({ kind: "buy_quote", shop: "bag", item: nb.name, capacity: nb.capacity, cost: bagCost, gold: ctx.p.gold, bank: ctx.p.bank, ...(ctx.p.gold < bagCost ? { short_by: bagCost - ctx.p.gold } : {}), ...pct });
+        ctx.events.push({ kind: "buy_quote", shop: "bag", sold_by: soldBy(ctx, "bag"), item: nb.name, capacity: nb.capacity, cost: bagCost, gold: ctx.p.gold, bank: ctx.p.bank, ...(ctx.p.gold < bagCost ? { short_by: bagCost - ctx.p.gold } : {}), ...pct });
         ctx.hint = "Say what it costs, then ask Confirm? (Y)es / (N)o. Only on a yes call buy again with confirm: true. If they're short, say so; never take gold from the bank unless they ask.";
         return;
       }
@@ -1244,7 +1266,7 @@ api.post("/buy", async (c) => {
       await logEvent(ctx, "spend", { on: "bag", item: nb.name, gold: bagCost });
       return;
     }
-    if (body.kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell spells; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
+    if (body.kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell ${ctx.p.class === "bard" ? "instruments" : "spells"}; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current_ = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
@@ -1261,7 +1283,7 @@ api.post("/buy", async (c) => {
     const stat = (x: { str?: number; def?: number }) => body.kind === "weapon" ? { power: x.str ?? 0 } : { defense: x.def ?? 0 };
     if (!confirmed) {
       ctx.events.push({
-        kind: "buy_quote", shop: body.kind, item: itemLabel, ...stat(item), gold: ctx.p.gold, bank: ctx.p.bank, ...pct,
+        kind: "buy_quote", shop: body.kind, sold_by: soldBy(ctx, body.kind), item: itemLabel, ...stat(item), gold: ctx.p.gold, bank: ctx.p.bank, ...pct,
         ...(hasOld ? {
           old: { item: old.name, ...stat(current_) },
           trade_in: { value: tradeIn, cost: costTrading, ...(ctx.p.gold < costTrading ? { short_by: costTrading - ctx.p.gold } : {}) },
@@ -2467,7 +2489,7 @@ api.post("/talk", async (c) => {
       if (s && !available(s)) { ctx.events.push({ kind: "not_around", name: who.name, hours: s.hours ?? null, days: s.days ?? null }); return; }
       const bardNames = ["Fennick Reed", "Dunstan the Unfinished", "Corwin Lark", "Wren"];
       if (bardNames.includes(who.name) && bardFor(ctx.day).name !== who.name) { ctx.events.push({ kind: "not_around", name: who.name, where: "not playing tonight" }); return; }
-      where = who.name === "Odile" ? "her workshop" : who.name === "Mother Quill" ? "the library" : who.name === "Prior Hale" ? "the chapel" : who.name === "Cass Marrow" ? "the auction house" : s ? s.where : "the tavern";
+      where = who.name === "Odile" ? "her workshop" : who.name === "Mother Quill" ? "the library" : who.name === "Prior Hale" ? "the chapel" : who.name === "Cass Marrow" ? "the auction house" : who.name === "Della Moss" ? "her clothier's on Market Row" : s ? s.where : "the tavern";
     }
 
     const talked = (ctx.t.talked ?? []) as string[];

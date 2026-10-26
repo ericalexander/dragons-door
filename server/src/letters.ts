@@ -69,6 +69,7 @@ function characterPersona(name: string): string | null {
   };
   if (ash[name]) return ash[name];
   if (name === "Cass Marrow") return "Cass Marrow, who runs the auction house on Market Row; quick, sharp-eyed and cheerful, talks prices the way other people talk weather, knows what everything in town is worth and who wants it. She/her.";
+  if (name === "Della Moss") return "Della Moss, the clothier on Market Row: robes, performers' clothes, leathers and bags. Small and quick, pins in her collar and a tape measure round her neck; talks while she measures and is never wrong about a size; despairs of bards' costumes and thinks plate is something you eat dinner off. She/her.";
   if (name === "Odile") return "Odile, the gemcutter, with a jeweler's loupe in one eye and burn scars on both hands; few words, all exact; blunt about bad ore, quietly delighted by a good gem. She/her.";
   const b = BARDS.find((x) => x.name === name);
   if (b) return `${b.name}, a bard who plays the tavern some nights: ${b.style}. Writes a little like they sing.`;

@@ -30,7 +30,7 @@ export const TOWNS: Partial<Record<TownId, Town>> = {
     inn: "a bunk in the Long Hall at Ironhold",
     forge: true,
     services: { healer: "Jessamy Crane, in the Long Hall", inn: "a bunk in the Long Hall (wake up here)", board: "the Long Hall's own board; Brightwater's tavern has its own", bank: "Mabry's strongbox, the same accounts as Brightwater's bank",
-      weaponry: "Brannagh Steel's weaponry, at the forge", armory: "Tobin Harrow's armory: armor and bags", forge: "Brannagh Steel's forge", auction: "Mabry Locke's auction house, on the same board as Brightwater's", sell: "Brannagh Steel buys gear" },
+      weaponry: "Brannagh Steel's weaponry, at the forge", armory: "Tobin Harrow's armory: armor and bags, and a rack of robes and travelling clothes at the back for visitors", forge: "Brannagh Steel's forge", auction: "Mabry Locke's auction house, on the same board as Brightwater's", sell: "Brannagh Steel buys gear" },
     people: [
       { name: "Sergeant Rusk", where: "the gate", does: "keeps the gate and the register of everyone who comes through it" },
       { name: "Brannagh Steel", where: "the forge", does: "runs the great forge; she can take a blade or a coat of mail past what any smith makes, and buys gear too" },
@@ -50,7 +50,7 @@ export const TOWNS: Partial<Record<TownId, Town>> = {
     tavern: "the Ford House",
     inn: "a room at the Ford House in Ashford",
     services: { healer: "Doctor Aurel Imre, the council's physician", inn: "a room at the Ford House (wake up here)", board: "the Ford House's own board; Brightwater's tavern has its own", bank: "the Counting House, Octavia Strand's: the same accounts as Brightwater's bank",
-      weaponry: "Haverly's on the Exchange: bows, daggers and the rest", armory: "Haverly's: armor and bags too", auction: "Ysolde Fairweather's auction house, on the same board as Brightwater's", sell: "Sim Haverly buys gear" },
+      weaponry: "Haverly's on the Exchange: bows, daggers and the rest", armory: "Haverly's: leathers, armor and bags; robes and fine clothes from a cloth-seller's stall on the Exchange", auction: "Ysolde Fairweather's auction house, on the same board as Brightwater's", sell: "Sim Haverly buys gear" },
     people: [
       { name: "Herald Ambrose Kettle", where: "the Exchange steps", does: "reads the council's proclamations from the Exchange steps every morning, whether or not anyone stops" },
       { name: "Agnes Fane", where: "the Ford House", does: "keeps the Ford House, Ashford's inn and tavern, with its own board" },
