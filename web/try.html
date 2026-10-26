@@ -69,6 +69,8 @@
   .term .note { color: var(--pane-dim); font-style: italic; }
   .term em { color: #f2e6cc; }
   .term .key { color: var(--pane-gold); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(217, 168, 90, .35); text-underline-offset: 3px; }
+  .term .face { color: var(--pane-gold); white-space: nowrap; }
+  .term strong { color: #f3e3c3; letter-spacing: .04em; }
   .term .key:hover, .term .key:focus-visible { text-decoration-color: var(--pane-gold); }
   .term .key:disabled { cursor: default; text-decoration: none; }
   .term .dice { color: var(--pane-dim); font-size: 13px; border-left: 2px solid #5a4430; padding-left: 10px; margin-top: -.4em; }
@@ -242,6 +244,8 @@
   const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   // The narrator's plain text: *italics*, and every (X) hotkey a button that sends that letter.
   const render = (t) => esc(t.replace(/```[a-z]*\n?/g, ""))
+    .replace(/`([^`\n]+)`/g, '<span class="face">$1</span>')
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
     .replace(/([A-Za-z']*)\(([A-Za-z0-9])\)([A-Za-z']*)/g, (m, a, k, z) => `<span class="item">${a}<button class="key" type="button" data-k="${k}">(${k})</button>${z}</span>`);
 
