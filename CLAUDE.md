@@ -1,5 +1,8 @@
 # Dragon's Door
 
+## What makes it fun
+- Eric's private doc "What Makes Dragon's Door Fun" (https://claude.ai/artifact/BZDiMQKNS7gkaRUkAKhVhU) ranks the eight kinds of fun for this game: Discovery first, then Fellowship and Submission. Read it before proposing or building a feature, and say in the plan which kind it serves.
+
 ## Shipping a plugin change
 - Bump `version` in `plugin/.claude-plugin/plugin.json`. Players' Claude Code only updates when it changes.
 - If players would notice the change, add an entry at the top of `plugin/changelog.json`: `lore` in the game's voice (second person, plain, a little wry, a couple of sentences), and `plain` saying what to do in one line. Players see new entries once, the first time they enter after updating.
