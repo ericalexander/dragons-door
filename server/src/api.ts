@@ -2221,9 +2221,11 @@ api.post("/apothecary", async (c) => {
         ctx.hint = "A quote, nothing paid yet: say what the recipe does, what it needs, and the price, and ask them to confirm. Call again with confirm: true only on a yes.";
         return;
       }
-      if (!(await payFrom(ctx, p.price))) { ctx.events.push({ kind: "not_enough_gold", need: p.price, gold: ctx.p.gold }); return; }
+      // Paid over the counter, from the purse, like the healer's own fees.
+      if (ctx.p.gold < p.price) { ctx.events.push({ kind: "too_poor", cost: p.price, gold: ctx.p.gold, ...(ctx.p.bank >= p.price - ctx.p.gold ? { bank: ctx.p.bank, hint: "withdraw it from the bank first" } : {}) }); return; }
+      await savePlayer(ctx, { gold: ctx.p.gold - p.price });
       await ctx.c.query("insert into recipes (player_id, potion, learned_day) values ($1,$2,$3) on conflict do nothing", [ctx.p.id, p.id, ctx.day]);
-      ctx.events.push({ kind: "recipe_learned", recipe: p.name, healer: teacher.name, price: p.price, needs: Object.entries(p.needs).map(([h, k]) => `${k} ${herb(Number(h)).name}`).join(", ") });
+      ctx.events.push({ kind: "recipe_learned", recipe: p.name, healer: teacher.name, price: p.price, gold: ctx.p.gold, needs: Object.entries(p.needs).map(([h, k]) => `${k} ${herb(Number(h)).name}`).join(", ") });
       await logEvent(ctx, "spend", { on: "recipe", recipe: p.name, gold: p.price });
       return;
     }
@@ -2235,7 +2237,8 @@ api.post("/apothecary", async (c) => {
     if (can < 1) { ctx.events.push({ kind: "missing_herbs", recipe: p.name, needs: Object.entries(p.needs).map(([h, k]) => ({ herb: herb(Number(h)).name, need: k, have: herbs[Number(h)] ?? 0 })) }); return; }
     const n = Math.min(want, can);
     const fee = p.fee * ctx.p.level * n;
-    if (!(await payFrom(ctx, fee))) { ctx.events.push({ kind: "not_enough_gold", need: fee, gold: ctx.p.gold, reason: "the bench fee" }); return; }
+    if (ctx.p.gold < fee) { ctx.events.push({ kind: "too_poor", cost: fee, gold: ctx.p.gold, reason: "the bench fee", ...(ctx.p.bank >= fee - ctx.p.gold ? { bank: ctx.p.bank, hint: "withdraw it from the bank first" } : {}) }); return; }
+    await savePlayer(ctx, { gold: ctx.p.gold - fee });
     for (const [h, k] of Object.entries(p.needs)) await takeOut(ctx, "herb", Number(h), k * n);
     // Practice: each pot brewed makes the next a little likelier to give a draught more. Nobody tells you the odds.
     let extra = 0;

@@ -412,6 +412,8 @@ async function brewAtBench(b: Bot) {
   for (const rec of bench.recipes.filter((x) => !x.known && x.price !== undefined).sort((a, z) => a.id - z.id)) {
     // A recipe is worth it when it costs less than a fifth of what they'd spend anyway.
     if (rec.price! > purse * Math.max(0.1, 0.4 - reserve)) continue;
+    // Fees are paid from the purse, so they fetch it from the bank first.
+    if (s.state.gold < rec.price!) await b.post("/bank", { op: "withdraw", amount: rec.price! - s.state.gold });
     const r = await b.post("/apothecary", { op: "learn", potion: rec.id, confirm: true });
     if (!isErr(r) && kinds(r).includes("recipe_learned")) b.log.push(`learned the ${POTIONS[rec.id].name} from the healer`);
     break; // one new recipe a day at most
@@ -431,6 +433,9 @@ async function brewAtBench(b: Bot) {
   }
   bench = await look();
   if (!bench) return;
+  const fees = bench.recipes.filter((x) => x.known && (x.can_brew_now ?? 0) > 0).reduce((n, x) => n + (x as { fee?: number }).fee! * Math.min(10, x.can_brew_now!), 0);
+  const now = await b.get("/status");
+  if (fees && !isErr(now) && now.state.gold < fees) await b.post("/bank", { op: "withdraw", amount: fees - now.state.gold });
   for (const rec of bench.recipes.filter((x) => x.known && (x.can_brew_now ?? 0) > 0)) {
     const r = await b.post("/apothecary", { op: "brew", potion: rec.id, count: Math.min(10, rec.can_brew_now!) });
     const ev = isErr(r) ? undefined : (r.events.find((e) => e.kind === "brewed") as { made?: number; extra?: number } | undefined);
