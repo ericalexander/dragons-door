@@ -42,20 +42,29 @@ const CARES: Record<Personality, Partial<Record<Appeal, number>>> = {
 
 /** Why they'd say they voted that way, by what swayed them. {choice} is the option's label. */
 const WHY: Record<Appeal, string[]> = {
-  careful: ["I voted for {choice}. Careful is how you get old.", "{choice}. Somebody has to think before they leap."],
-  bold: ["{choice}, and I'd vote it twice. Nothing ever got better by waiting.", "I said {choice}. Fortune likes a loud voice."],
-  faith: ["{choice}. The Lamp would have it so, I think.", "I voted {choice}, and I'll pray it was right."],
-  profit: ["{choice}. Follow the coin; it knows the way.", "I voted {choice}. Someone's getting rich off this, and it may as well be us."],
-  kin: ["{choice}. Look after your own first.", "I voted {choice}, for the people I'd miss."],
-  curiosity: ["{choice}. I want to see what happens.", "I said {choice}. You don't learn anything by leaving it be."],
-  order: ["{choice}. Rules are what keep the wall standing.", "I voted {choice}. Somebody has to keep the place in order."],
-  mercy: ["{choice}. Be kind; it costs less than you'd think.", "I voted {choice}, because somebody ought to be gentle about it."],
+  careful: ["I voted for “{choice}”. Careful is how you get old.", "“{choice}”. Somebody has to think before they leap.", "I went with “{choice}”. Slow and sure.", "“{choice}”, for me. Measure twice."],
+  bold: ["“{choice}”, and I'd vote it twice. Nothing ever got better by waiting.", "I said “{choice}”. Fortune likes a loud voice.", "“{choice}”. Why do anything halfway?", "Put me down for “{choice}”, and put me down loudly."],
+  faith: ["“{choice}”. The Lamp would have it so, I think.", "I voted “{choice}”, and I'll pray it was right.", "“{choice}”. Some things are owed to more than us.", "I chose “{choice}”. It felt like the right side of the Lamp."],
+  profit: ["“{choice}”. Follow the coin; it knows the way.", "I voted “{choice}”. Someone's getting rich off this, and it may as well be us.", "“{choice}”. It pays, and I like things that pay.", "I said “{choice}”. Do the sums and you'll say the same."],
+  kin: ["“{choice}”. Look after your own first.", "I voted “{choice}”, for the people I'd miss.", "“{choice}”. Think of who'll use it, not who'll admire it.", "I went with “{choice}”. Family first, then the rest of you."],
+  curiosity: ["“{choice}”. I want to see what happens.", "I said “{choice}”. You don't learn anything by leaving things as they are.", "“{choice}”. It's the one I can't stop wondering about.", "I picked “{choice}”. The interesting one."],
+  order: ["“{choice}”. Rules are what keep the wall standing.", "I voted “{choice}”. Somebody has to keep the place in order.", "“{choice}”. Do it properly or don't do it.", "I said “{choice}”. A town runs on someone deciding."],
+  mercy: ["“{choice}”. Be kind; it costs less than you'd think.", "I voted “{choice}”, because somebody ought to be gentle about it.", "“{choice}”. Think of the ones who've nothing.", "I went with “{choice}”. It's the kind one."],
 };
 
 const hash = (s: string) => { let h = 2166136261; for (const ch of s) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0; };
 
 /** A townsperson's vote: the option that appeals most to what they care about; ties settled by their name, so it's stable. */
-export function townsfolkVote(name: string, p: Personality, poll: Pick<Poll, "id" | "options">): { choice: string; why: string } {
+/** A stock line for a vote, one nobody in the tavern has said yet if there's one left. */
+function stockLine(name: string, pollId: number, o: PollOption, swayed: Appeal | null, said: string[]): string {
+  if (o.line) return o.line;
+  const lines = (swayed ? WHY[swayed] : ["I voted for “{choice}”. Don't ask me why.", "“{choice}”. That's all I'm saying."]).map((l) => l.replace("{choice}", o.label));
+  const start = hash(`${pollId}|${name}`) % lines.length;
+  for (let k = 0; k < lines.length; k++) { const l = lines[(start + k) % lines.length]; if (!said.includes(l)) return l; }
+  return lines[start];
+}
+
+export function townsfolkVote(name: string, p: Personality, poll: Pick<Poll, "id" | "options">): { choice: string; why: string; swayed: Appeal | null } {
   const cares = CARES[p] ?? {};
   let best: { o: PollOption; score: number; swayed: Appeal | null } | null = null;
   for (const o of poll.options) {
@@ -65,9 +74,8 @@ export function townsfolkVote(name: string, p: Personality, poll: Pick<Poll, "id
     if (!best || score > best.score) best = { o, score, swayed };
   }
   const o = best!.o;
-  const lines = best!.swayed ? WHY[best!.swayed] : ["I voted {choice}. Don't ask me why."];
-  const why = (o.line ?? lines[hash(`${poll.id}|${name}`) % lines.length]).replace("{choice}", o.label);
-  return { choice: o.id, why };
+  const why = stockLine(name, poll.id, o, best!.swayed, []);
+  return { choice: o.id, why, swayed: best!.swayed };
 }
 
 /** Count a meeting's votes: players decide, the town breaks a tie. */
@@ -112,10 +120,18 @@ export async function settlePolls(c: PoolClient, day: string): Promise<string[]>
     const folk = (await c.query<{ id: string; name: string; personality: Personality; home: string }>(
       `select p.id, p.name, b.personality, b.home from bots b join players p on p.id = b.player_id
        where p.alive and not exists (select 1 from poll_votes v where v.poll_id = $1 and v.player_id = p.id) and ($2::text is null or b.home = $2)`, [p.id, p.town])).rows;
+    const said = (await c.query<{ why: string }>("select why from poll_votes where poll_id = $1 and townsfolk and why is not null", [p.id])).rows.map((r) => r.why);
+    let written = 0;
     for (const f of folk) {
       // Not everyone gets round to it on the first day.
       if (hash(`${p.id}|${f.name}|${day}`) % 3 === 0 && p.closes > day) continue;
       const v = townsfolkVote(f.name, f.personality, p);
+      const o = p.options.find((x) => x.id === v.choice)!;
+      // Their own words if the writer's about (a few a run, so a run stays quick); otherwise a stock line nobody's used yet.
+      const own = written < VOTE_LINES_PER_RUN && !o.line ? await voteLine(p, f.name, o, v.swayed, said) : null;
+      if (own) written++;
+      v.why = own ?? stockLine(f.name, p.id, o, v.swayed, said);
+      said.push(v.why);
       await c.query("insert into poll_votes (poll_id, player_id, choice, townsfolk, why, day) values ($1, $2, $3, true, $4, $5) on conflict do nothing", [p.id, f.id, v.choice, v.why, day]);
       await c.query("insert into tavern (day, author, body, town) values ($1, $2, $3, $4)", [day, f.name, v.why.slice(0, 280), f.home]);
       log.push(`${f.name} voted ${v.choice} in meeting ${p.id}`);
@@ -123,6 +139,17 @@ export async function settlePolls(c: PoolClient, day: string): Promise<string[]>
     log.push(...await exitPolls(c, p));
   }
   return log;
+}
+
+const VOTE_LINES_PER_RUN = 8;
+const VOTE_LINE = `You write what one townsperson says in the tavern about how they just voted at a town meeting in Dragon's Door, a fantasy village text game. One sentence, two at most, under 30 words, first person, in their own voice and the way they'd really talk. Make it plain which way they voted without reciting the choice's wording. Say something none of the lines already said in the tavern says: no repeating their words, their joke or their reason. Plain words, no quotation marks, no stage directions, no names of real players. Stay inside the fiction, never reveal anyone's secrets or invent history. If what swayed them doesn't fit who they are, find a reason that does.`;
+
+/** A townsperson's tavern line about their vote, in their own words. Null when the writer isn't about. */
+async function voteLine(p: Poll, name: string, o: PollOption, swayed: Appeal | null, said: string[]): Promise<string | null> {
+  const facts = { who: townsperson(name)?.persona ?? name, question: p.question, setting: p.about, they_voted_for: o.label,
+    the_other_choices: p.options.filter((x) => x.id !== o.id).map((x) => x.label), what_swayed_them: swayed, already_said_in_the_tavern: said.slice(-12) };
+  const text = await write({ system: VOTE_LINE, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${name} says.`, maxTokens: 400, trim: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
+  return text ? plain(text, 280).replace(/^["“]|["”]$/g, "") : null;
 }
 
 const INTERVIEW = `You write one exit-poll interview for a town meeting in Dragon's Door, a fantasy village text game. A townsperson has just voted and stops for a word on their way out of the square. Write only what they say: two or three short sentences, first person, in their own voice. Jump straight into their opinion, the way people actually talk: don't open with "I voted", don't announce or name their choice outright, and let what they think make it plain which way they went. Plain words, no stage directions, no quotation marks, no names of other real players. Stay inside the fiction. Never reveal anyone's secrets or invent history. If what swayed them doesn't fit who they are, find a reason that does fit them.`;
