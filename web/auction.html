@@ -147,6 +147,7 @@
         <option value="armor">Armor and clothes</option>
         <option value="trinket">Jewelry</option>
         <option value="ore">Ore and gems</option>
+        <option value="herb">Herbs and potions</option>
       </select>
     </label>
     <label>Who can use it
@@ -208,7 +209,7 @@
   const daysLeft = (today, d) => Math.max(0, Math.round((Date.parse(d) - Date.parse(today)) / 864e5));
   const statLine = (x) => x.power ? `power ${x.power}` : x.def ? `defense ${x.def}` : x.bonus ? esc(x.bonus) : "";
 
-  const TYPE = { weapon: "weapon", armor: "armor", trinket: "trinket", ore: "ore", gem: "ore" };
+  const TYPE = { weapon: "weapon", armor: "armor", trinket: "trinket", ore: "ore", gem: "ore", herb: "herb", potion: "herb" };
   const $ = (id) => document.getElementById(id);
   const F = { q: $("f-q"), kind: $("f-kind"), for: $("f-for"), sort: $("f-sort") };
   // Filters live in the address, so a filtered board can be shared.

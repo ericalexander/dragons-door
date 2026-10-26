@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, armorName, armorFamilyOf, weaponFamilyOf, carriedId, carriedName, familyLabel, familyOf, familyUsers, fits, itemName, tierOf, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec, casterItemName,
+  GAME, armor, weapon, effective, armorName, armorFamilyOf, weaponFamilyOf, carriedId, carriedName, familyLabel, familyOf, familyUsers, fits, itemName, tierOf, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec, casterItemName,
   type Player, type PlayerClass, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -28,6 +28,7 @@ import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, even
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
+import { FORAGE, FORAGES_PER_DAY, HERBS, POTIONS, SPOT_CHANCE, TEACHERS, boostAmount, extraChance, herb, herbsAt, pickHerb, potion } from "./herbs.js";
 import { exchange, fleeSucceeds, monsterAsFighter, pickMonster, playerAsFighter, resolveDuel, roll, type Duelist, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 
 export const api = new Hono();
@@ -138,12 +139,18 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const unreadMail = await unreadCount(ctx);
     const newsUnread = await unreadNews(ctx);
     const journal = ctx.p.role === "player" ? await questJournal(ctx) : [];
+    const potionRows = (await c.query<{ item_id: number; n: string }>("select item_id, count(*)::text as n from inventory where player_id = $1 and slot = 'potion' group by item_id order by item_id", [ctx.p.id])).rows;
+    const potions = potionRows.map((r) => ({ id: r.item_id, name: potion(r.item_id).name, count: Number(r.n) }));
+    const drankThisFight = inEnc && Boolean((await c.query("select 1 from encounters where player_id = $1 and drank", [ctx.p.id])).rowCount);
     const giftsWaiting = ctx.p.role === "player" ? Number((await c.query<{ n: string }>("select count(*)::text as n from gifts where to_player = $1 and state = 'sent' and arrives_day <= $2", [ctx.p.id, ctx.day])).rows[0].n) : 0;
     return {
       events: ctx.events,
-      state: { ...publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))), quests: journal, ...(giftsWaiting ? { gifts_waiting: giftsWaiting } : {}) },
+      state: { ...publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))), quests: journal, ...(giftsWaiting ? { gifts_waiting: giftsWaiting } : {}), ...(potions.length ? { potions } : {}) },
       actions: (() => {
-        const a = legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive);
+        let a = legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive);
+        if (!potions.length || drankThisFight) a = a.filter((x) => x !== "drink");
+        // Herbs and potions came with 0.25.0; older plugins have no tools for them.
+        if (info?.plugin && older(info.plugin, "0.25.0")) a = a.filter((x) => x !== "drink" && x !== "forage" && x !== "apothecary");
         // Plugins from before exploration have no way out of town: keep offering them the old forest.
         const v = info?.plugin;
         if (!info?.townsfolk && (!v || older(v, "0.5.0")) && a.includes("explore")) return a.map((x) => (x === "explore" ? "forest" : x)).filter((x) => x !== "map");
@@ -203,7 +210,7 @@ async function savePlayer(ctx: Ctx, patch: Partial<Player>) {
   const keys = Object.keys(patch) as (keyof Player)[];
   if (!keys.length) return;
   const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(", ");
-  const r = await ctx.c.query<Player>(`update players set ${sets} where id = $1 returning *`, [ctx.p.id, ...keys.map((k) => ((k === "ground" || k === "pending_event") && patch[k] !== null ? JSON.stringify(patch[k]) : patch[k]))]);
+  const r = await ctx.c.query<Player>(`update players set ${sets} where id = $1 returning *`, [ctx.p.id, ...keys.map((k) => ((k === "ground" || k === "pending_event" || k === "boost") && patch[k] !== null ? JSON.stringify(patch[k]) : patch[k]))]);
   ctx.p = numify(r.rows[0]);
 }
 
@@ -781,7 +788,7 @@ api.get("/public/auctions", async (c) => {
     const today = realmDay((await realmSettings(db)).resetHourUtc);
     await settleAuctions(db, today);
     const stats = (slot: ListSlot, id: number, r = 0) =>
-      slot === "weapon" ? { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}) } : slot === "armor" ? { def: boosted(armor(id).def, r), ...(r ? { rarity: rarity(r).name } : {}) } : slot === "trinket" ? { bonus: bonusText(trinket(id)) } : {};
+      slot === "weapon" ? { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}) } : slot === "armor" ? { def: boosted(armor(id).def, r), ...(r ? { rarity: rarity(r).name } : {}) } : slot === "trinket" ? { bonus: bonusText(trinket(id)) } : slot === "potion" ? { bonus: potion(id).what } : {};
     const open = (await db.query<ARow>(`${A_SELECT} where a.status = 'open' and s.is_test is not true order by a.ends_day, a.id limit 60`)).rows;
     const sold = (await db.query<ARow & { day: string }>(
       `${A_SELECT.replace("a.collected,", "a.collected, a.settled_at::date::text as day,")} where a.status = 'sold' and s.is_test is not true and b.is_test is not true order by a.settled_at desc limit 25`)).rows;
@@ -984,9 +991,17 @@ api.post("/forest", async (c) => c.json(await withPlayer(c.req.header("authoriza
 api.post("/fight", async (c) => {
   const body = z.object({ action: z.enum(["attack", "special", "staff", "heal", "run"]) }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    const was = { fighting: false };
+    try { await fightRound(ctx, body, was); } finally { if (was.fighting) await draughtWearsOff(ctx); }
+  }));
+});
+
+async function fightRound(ctx: Ctx, body: { action: "attack" | "special" | "staff" | "heal" | "run" }, was: { fighting: boolean }) {
+  {
     requireAlive(ctx);
     const r = await ctx.c.query<{ id: string; kind: string; monster: Monster; round: number; log: Event[] }>("select id, kind, monster, round, log from encounters where player_id = $1", [ctx.p.id]);
     if (!r.rowCount) throw new GameError("no_encounter", "you are not in a fight");
+    was.fighting = true;
     const enc = r.rows[0];
     const m = enc.monster;
 
@@ -1000,7 +1015,7 @@ api.post("/fight", async (c) => {
         return;
       }
       // failed to flee: monster gets a free swing
-      const pf = playerAsFighter(ctx.p);
+      const pf = fighterOf(ctx.p);
       const dmg = Math.max(0, roll(m.str) - roll(pf.def));
       await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
       ctx.events.push({ kind: "flee_failed", monster: m.name, damage: dmg, hp: ctx.p.hp });
@@ -1025,7 +1040,7 @@ api.post("/fight", async (c) => {
       const healed = Math.min(ctx.p.max_hp - ctx.p.hp, Math.ceil(ctx.p.max_hp * (mr.healPct ?? 0.3)));
       await savePlayer(ctx, { hp: ctx.p.hp + healed });
       ctx.events.push({ kind: "healed_self", healed, hp: ctx.p.hp, mana: ctx.t.mana, mana_max: manaMax(ctx.p) });
-      const pf0 = playerAsFighter(ctx.p);
+      const pf0 = fighterOf(ctx.p);
       const dmg = Math.max(0, roll(m.str) - roll(pf0.def));
       await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
       ctx.events.push(dmg > 0 ? { kind: "hit", attacker: m.name, defender: ctx.p.name, damage: dmg, defender_hp: ctx.p.hp } : { kind: "miss", attacker: m.name, defender: ctx.p.name });
@@ -1061,7 +1076,7 @@ api.post("/fight", async (c) => {
       dodge = specialDodges(ctx.p);
     }
 
-    const pf = playerAsFighter(ctx.p);
+    const pf = fighterOf(ctx.p);
     if (staff) pf.str = Math.round(pf.str * mr!.staff);
     const mf = monsterAsFighter(m);
     const evs = exchange(pf, mf, mult, dodge);
@@ -1083,8 +1098,24 @@ api.post("/fight", async (c) => {
     } else {
       await ctx.c.query("update encounters set monster = $2, round = round + 1, log = log || $3::jsonb where id = $1", [enc.id, m, JSON.stringify(evs)]);
     }
-  }));
-});
+  }
+}
+
+/** A player as they fight right now: their gear, and whatever draught they've had for this fight. */
+function fighterOf(p: Player) {
+  const f = playerAsFighter(p);
+  if (p.boost) { f.str += p.boost.str ?? 0; f.def += p.boost.def ?? 0; }
+  return f;
+}
+
+/** A draught lasts the fight it was drunk for (or the next, drunk between fights). Once that fight's over, it's gone. */
+async function draughtWearsOff(ctx: Ctx) {
+  if (!ctx.p.boost) return;
+  const still = await ctx.c.query("select 1 from encounters where player_id = $1", [ctx.p.id]);
+  if (still.rowCount) return;
+  ctx.events.push({ kind: "draught_worn_off", draught: ctx.p.boost.name });
+  await savePlayer(ctx, { boost: null });
+}
 
 async function win(ctx: Ctx, kind: string, m: Monster) {
   if (kind === "gate" && m.name === GATE_GUARDS.brightwater?.name) {
@@ -1611,6 +1642,7 @@ api.post("/move", async (c) => {
     if (t.poi === "shrine") await atShrine(ctx, t);
     if (!ctx.events.some((e) => e.kind === "quest")) await maybeEvent(ctx, x, y);
     if (!ctx.events.some((e) => e.kind === "quest" || e.kind === "wild_event")) await maybeJournal(ctx, "wild", t.ring);
+    if (!t.poi) await maybeSpotHerb(ctx);
   }));
 });
 
@@ -2085,6 +2117,188 @@ api.post("/mine", async (c) => c.json(await withPlayer(c.req.header("authorizati
   ctx.events.push({ kind: "mined", found: r.ore.name, weight: r.ore.weight, bag_used: usedNow + r.ore.weight, bag_capacity: cap, depth, finds_left_today: left.yours - 1, swings_left: SWINGS_PER_DAY - ctx.t.swings });
   await logEvent(ctx, "mine", { x: t.x, y: t.y, depth, found: r.ore.name, kept: true });
 })));
+
+// ---------- herbs and potions ----------
+
+/** How many of each herb (or potion) they carry, by id. */
+async function countOf(ctx: Ctx, slot: "herb" | "potion") {
+  const n: Record<number, number> = {};
+  for (const x of await Bag.contents(ctx.c, ctx.p.id)) if (x.slot === slot) n[x.item_id] = (n[x.item_id] ?? 0) + 1;
+  return n;
+}
+async function takeOut(ctx: Ctx, slot: "herb" | "potion", id: number, k: number) {
+  await ctx.c.query(`delete from inventory where id in (select id from inventory where player_id = $1 and slot = $2 and item_id = $3 order by id limit $4)`, [ctx.p.id, slot, id, k]);
+}
+/** Into the bag if there's room for it. */
+async function pocket(ctx: Ctx, slot: "herb" | "potion", id: number, k = 1) {
+  const w = Bag.item(slot, id).weight;
+  const usedNow = await Bag.used(ctx.c, ctx.p.id);
+  const cap = Bag.bag(ctx.p.bag_id).capacity;
+  const fit = Math.max(0, Math.min(k, Math.floor((cap - usedNow) / Math.max(1, w))));
+  for (let i = 0; i < fit; i++) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, slot, id]);
+  return { kept: fit, bag_used: usedNow + fit * w, bag_capacity: cap };
+}
+const herbsHere = (ctx: Ctx) => { const t = tileAt(ctx.p.pos_x!, ctx.p.pos_y!); return herbsAt(t.terrain, regionHere(ctx), t.ring); };
+
+/** Walking onto new ground: now and then something worth picking catches the eye. Free, and doesn't count as a search. */
+async function maybeSpotHerb(ctx: Ctx) {
+  if (ctx.p.role !== "player" || roll(99) >= SPOT_CHANCE) return;
+  const h = pickHerb(herbsHere(ctx));
+  if (!h) return;
+  const r = await pocket(ctx, "herb", h.id);
+  ctx.events.push({ kind: "spotted_herb", herb: h.name, stored: r.kept > 0, ...(r.kept ? {} : { reason: "bag_full" }), bag_used: r.bag_used, bag_capacity: r.bag_capacity });
+  await logEvent(ctx, "forage", { herb: h.name, spotted: true, kept: r.kept > 0 });
+}
+
+/** Search the ground where you stand for herbs. A few times a day, apart from turns; now and then something was watching. */
+api.post("/forage", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  requireAlive(ctx);
+  await requireNoEncounter(ctx);
+  if (!inWild(ctx.p) || townAt(ctx.p.pos_x, ctx.p.pos_y)) { ctx.events.push({ kind: "cannot_forage", reason: "nothing worth picking grows in the streets; go out into the wild" }); return; }
+  if (ctx.p.cave_depth) { ctx.events.push({ kind: "cannot_forage", reason: "nothing grows down here in the dark" }); return; }
+  const done = ctx.t.forages ?? 0;
+  if (done >= FORAGES_PER_DAY) { ctx.events.push({ kind: "no_forages_left", per_day: FORAGES_PER_DAY, refills: "at the reset" }); return; }
+  await saveTurns(ctx, { forages: done + 1 });
+  const left = FORAGES_PER_DAY - done - 1;
+  const t = tileAt(ctx.p.pos_x!, ctx.p.pos_y!);
+  const here = herbsHere(ctx);
+  const r = roll(99);
+  if (r < FORAGE.ambush) {
+    const m = pickMonster(t.level, regionHere(ctx), isNight());
+    await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, m]);
+    ctx.events.push({ kind: "encounter", monster: m, place: t.name, terrain: t.terrain, while_foraging: true });
+    await logEvent(ctx, "forage", { found: "ambush", terrain: t.terrain });
+    return;
+  }
+  const h = r < FORAGE.ambush + FORAGE.find ? pickHerb(here) : null;
+  if (!h) {
+    ctx.events.push({ kind: "foraged", found: null, grows_here: here.map((x) => x.name), forages_left: left });
+    await logEvent(ctx, "forage", { found: null, terrain: t.terrain });
+    return;
+  }
+  const got = await pocket(ctx, "herb", h.id);
+  ctx.events.push({ kind: "foraged", found: h.name, stored: got.kept > 0, ...(got.kept ? {} : { reason: "bag_full" }), bag_used: got.bag_used, bag_capacity: got.bag_capacity, grows_here: here.map((x) => x.name), forages_left: left });
+  await logEvent(ctx, "forage", { found: h.name, terrain: t.terrain, kept: got.kept > 0 });
+})));
+
+/** The healer's bench in whatever town you're in: recipes taught there, what you know, and what you could brew now. */
+api.get("/apothecary", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  const town = requireTown(ctx, "The healer's bench", ALL_TOWNS);
+  const teacher = TEACHERS[town];
+  const known = new Set((await ctx.c.query<{ potion: number }>("select potion from recipes where player_id = $1", [ctx.p.id])).rows.map((x) => x.potion));
+  const herbs = await countOf(ctx, "herb");
+  const potions = await countOf(ctx, "potion");
+  ctx.events.push({
+    kind: "apothecary", healer: teacher.name, bench: teacher.bench,
+    recipes: POTIONS.map((p) => {
+      const can = Math.min(...Object.entries(p.needs).map(([h, k]) => Math.floor((herbs[Number(h)] ?? 0) / k)));
+      const taught = teacher.teaches.includes(p.id);
+      if (!taught && !known.has(p.id)) return null;
+      return { id: p.id, name: p.name, does: p.what, needs: Object.entries(p.needs).map(([h, k]) => `${k} ${herb(Number(h)).name}`).join(", "), fee: p.fee * ctx.p.level,
+        known: known.has(p.id), ...(known.has(p.id) ? { can_brew_now: can } : { price: p.price }) };
+    }).filter(Boolean),
+    elsewhere: POTIONS.filter((p) => !teacher.teaches.includes(p.id) && !known.has(p.id)).length ? "other healers teach other recipes" : undefined,
+    your_herbs: Object.entries(herbs).map(([id, n]) => ({ name: herb(Number(id)).name, count: n })),
+    your_potions: Object.entries(potions).map(([id, n]) => ({ id: Number(id), name: potion(Number(id)).name, count: n })),
+  });
+})));
+
+api.post("/apothecary", async (c) => {
+  const body = z.object({ op: z.enum(["learn", "brew"]), potion: z.number().int(), count: z.number().int().min(1).max(10).optional(), confirm: z.boolean().optional() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    await requireNoEncounter(ctx);
+    const town = requireTown(ctx, "The healer's bench", ALL_TOWNS);
+    const teacher = TEACHERS[town];
+    const p = POTIONS.find((x) => x.id === body.potion);
+    if (!p) throw new GameError("what", "no such recipe");
+    const row = (await ctx.c.query<{ brewed: number }>("select brewed from recipes where player_id = $1 and potion = $2", [ctx.p.id, p.id])).rows[0];
+    if (body.op === "learn") {
+      if (row) { ctx.events.push({ kind: "already_known", recipe: p.name }); return; }
+      if (!teacher.teaches.includes(p.id)) { ctx.events.push({ kind: "not_taught_here", recipe: p.name, healer: teacher.name, reason: "another healer teaches that one" }); return; }
+      if (!body.confirm) {
+        ctx.events.push({ kind: "recipe_quote", recipe: p.name, does: p.what, needs: Object.entries(p.needs).map(([h, k]) => `${k} ${herb(Number(h)).name}`).join(", "), price: p.price, purse: ctx.p.gold, healer: teacher.name });
+        ctx.hint = "A quote, nothing paid yet: say what the recipe does, what it needs, and the price, and ask them to confirm. Call again with confirm: true only on a yes.";
+        return;
+      }
+      if (!(await payFrom(ctx, p.price))) { ctx.events.push({ kind: "not_enough_gold", need: p.price, gold: ctx.p.gold }); return; }
+      await ctx.c.query("insert into recipes (player_id, potion, learned_day) values ($1,$2,$3) on conflict do nothing", [ctx.p.id, p.id, ctx.day]);
+      ctx.events.push({ kind: "recipe_learned", recipe: p.name, healer: teacher.name, price: p.price, needs: Object.entries(p.needs).map(([h, k]) => `${k} ${herb(Number(h)).name}`).join(", ") });
+      await logEvent(ctx, "spend", { on: "recipe", recipe: p.name, gold: p.price });
+      return;
+    }
+    // Brewing: any healer's bench will do for a recipe you know.
+    if (!row) { ctx.events.push({ kind: "recipe_unknown", recipe: p.name, ...(teacher.teaches.includes(p.id) ? { price: p.price, taught_here: true } : { taught_here: false }) }); return; }
+    const herbs = await countOf(ctx, "herb");
+    const want = body.count ?? 1;
+    const can = Math.min(...Object.entries(p.needs).map(([h, k]) => Math.floor((herbs[Number(h)] ?? 0) / k)));
+    if (can < 1) { ctx.events.push({ kind: "missing_herbs", recipe: p.name, needs: Object.entries(p.needs).map(([h, k]) => ({ herb: herb(Number(h)).name, need: k, have: herbs[Number(h)] ?? 0 })) }); return; }
+    const n = Math.min(want, can);
+    const fee = p.fee * ctx.p.level * n;
+    if (!(await payFrom(ctx, fee))) { ctx.events.push({ kind: "not_enough_gold", need: fee, gold: ctx.p.gold, reason: "the bench fee" }); return; }
+    for (const [h, k] of Object.entries(p.needs)) await takeOut(ctx, "herb", Number(h), k * n);
+    // Practice: each pot brewed makes the next a little likelier to give a draught more. Nobody tells you the odds.
+    let extra = 0;
+    for (let i = 0; i < n; i++) if (roll(9999) < Math.round(extraChance(row.brewed + i) * 10000)) extra++;
+    await ctx.c.query("update recipes set brewed = brewed + $3 where player_id = $1 and potion = $2", [ctx.p.id, p.id, n]);
+    const got = await pocket(ctx, "potion", p.id, n + extra);
+    ctx.events.push({ kind: "brewed", recipe: p.name, made: n + extra, ...(extra ? { extra, why: "practice: a steadier hand, less wasted" } : {}), fee, kept: got.kept,
+      ...(got.kept < n + extra ? { left_on_bench: n + extra - got.kept, reason: "bag_full" } : {}), ...(want > n ? { short_of_herbs_for: want - n } : {}),
+      bag_used: got.bag_used, bag_capacity: got.bag_capacity, healer: teacher.name });
+    await logEvent(ctx, "brew", { potion: p.name, n, extra, fee });
+  }));
+});
+
+/** Drink a potion from the bag: between fights, or in one (one a fight, and the thing you're fighting gets its swing). */
+api.post("/drink", async (c) => {
+  const body = z.object({ potion: z.number().int() }).parse(await c.req.json());
+  return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+    requireAlive(ctx);
+    const p = POTIONS.find((x) => x.id === body.potion);
+    if (!p) throw new GameError("what", "no such potion");
+    if (!(await countOf(ctx, "potion"))[p.id]) { ctx.events.push({ kind: "no_potion", potion: p.name }); return; }
+    const enc = (await ctx.c.query<{ id: string; kind: string; monster: Monster; drank: boolean; log: Event[] }>("select id, kind, monster, drank, log from encounters where player_id = $1", [ctx.p.id])).rows[0];
+    if (enc?.drank) { ctx.events.push({ kind: "already_drank", reason: "one draught a fight; any more and you'd be sick on your boots" }); return; }
+    if ((p.effect === "str" || p.effect === "def") && ctx.p.boost) { ctx.events.push({ kind: "already_drank", draught: ctx.p.boost.name, reason: "you've a draught in you already, waiting on the fight" }); return; }
+    if (p.effect === "mana" && !manaRules(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: "it'd taste of mint and do nothing; only those with the gift have mana" }); return; }
+    if (p.effect === "heal" && ctx.p.hp >= ctx.p.max_hp) { ctx.events.push({ kind: "no_need", reason: "you're whole already; save it" }); return; }
+    if (p.effect === "mana" && (ctx.t.mana ?? 0) >= manaMax(ctx.p)) { ctx.events.push({ kind: "no_need", reason: "your mana's full already; save it" }); return; }
+    await takeOut(ctx, "potion", p.id, 1);
+    if (p.effect === "heal") {
+      const healed = Math.min(ctx.p.max_hp - ctx.p.hp, Math.ceil(ctx.p.max_hp * p.amount));
+      await savePlayer(ctx, { hp: ctx.p.hp + healed });
+      ctx.events.push({ kind: "drank", potion: p.name, healed, hp: ctx.p.hp, max_hp: ctx.p.max_hp });
+    } else if (p.effect === "mana") {
+      const max = manaMax(ctx.p);
+      const before = ctx.t.mana ?? 0;
+      const back = Math.min(max - before, Math.ceil(max * p.amount));
+      await saveTurns(ctx, { mana: before + back });
+      ctx.events.push({ kind: "drank", potion: p.name, mana_back: back, mana: ctx.t.mana, mana_max: max });
+    } else {
+      const e = effective(ctx.p);
+      const add = boostAmount(p, p.effect === "str" ? e.str : e.def);
+      await savePlayer(ctx, { boost: { name: p.name, [p.effect]: add } });
+      ctx.events.push({ kind: "drank", potion: p.name, [p.effect === "str" ? "strength_added" : "defense_added"]: add, lasts: enc ? "the rest of this fight" : "your next fight" });
+    }
+    await logEvent(ctx, "drink", { potion: p.name, in_fight: Boolean(enc) });
+    if (!enc) return;
+    // In a fight, drinking is your round: the monster swings.
+    await ctx.c.query("update encounters set drank = true where id = $1", [enc.id]);
+    const m = enc.monster;
+    const pf = fighterOf(ctx.p);
+    const dmg = Math.max(0, roll(m.str) - roll(pf.def));
+    await savePlayer(ctx, { hp: Math.max(0, ctx.p.hp - dmg) });
+    ctx.events.push(dmg > 0 ? { kind: "hit", attacker: m.name, defender: ctx.p.name, damage: dmg, defender_hp: ctx.p.hp } : { kind: "miss", attacker: m.name, defender: ctx.p.name });
+    if (ctx.p.hp <= 0) {
+      await ctx.c.query("delete from encounters where id = $1", [enc.id]);
+      await logEvent(ctx, "fight_end", { encounter: enc.kind, monster: m.name, monster_level: m.level ?? null, outcome: enc.kind === "master" ? "master_won" : "died", while: "drinking", hp_left: 0, max_hp: ctx.p.max_hp, ...fightSummary(enc.log ?? [], [], ctx.p.name) });
+      await lose(ctx, enc.kind, m);
+      await draughtWearsOff(ctx);
+    } else {
+      await ctx.c.query("update encounters set round = round + 1 where id = $1", [enc.id]);
+    }
+  }));
+});
 
 // ---------- Odile's workshop ----------
 
@@ -2832,6 +3046,8 @@ api.post("/equip", async (c) => {
     const oldRar = slot === "weapon" ? ctx.p.weapon_rarity ?? 0 : slot === "armor" ? ctx.p.armor_rarity ?? 0 : 0;
     if (slot === "ore") { ctx.events.push({ kind: "cannot_equip", reason: "ore is for selling or for Odile to work" }); return; }
     if (slot === "quest") { ctx.events.push({ kind: "cannot_equip", reason: "it isn't something you wear; it belongs to a story" }); return; }
+    if (slot === "herb") { ctx.events.push({ kind: "cannot_equip", reason: "herbs are for brewing at a healer's bench, or for selling" }); return; }
+    if (slot === "potion") { ctx.events.push({ kind: "cannot_equip", reason: "you drink a potion, you don't wear it" }); return; }
     const oldWorn = slot === "weapon" ? ctx.p.weapon_id : slot === "armor" ? ctx.p.armor_id : ctx.p.trinket_id;
     // What comes off goes in the bag as its own family's piece.
     const oldId = (slot === "weapon" || slot === "armor") && oldWorn > 0 ? carriedId(slot, ctx.p.class, oldWorn) : oldWorn;
@@ -3215,6 +3431,7 @@ function lotStats(slot: ListSlot, id: number, cls: Player["class"], r = 0) {
   if (slot === "weapon") return { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}), ...fam("weapon") };
   if (slot === "armor") return { def: boosted(armor(id).def, r), ...(r ? { rarity: rarity(r).name } : {}), ...fam("armor") };
   if (slot === "trinket") return { bonus: bonusText(trinket(id), attributeName(cls)) };
+  if (slot === "potion") return { does: potion(id).what };
   return {};
 }
 function listingView(ctx: Ctx, r: ARow) {
@@ -3409,8 +3626,8 @@ api.post("/auction", async (c) => {
         const row = await ownRow(ctx, body.id);
         if (row.slot === "quest") { ctx.events.push({ kind: "auction_refused", reason: "Cass won't sell that; it isn't yours to sell" }); return; }
         slot = row.slot; itemId = row.item_id; rar = row.rarity ?? 0;
-        qty = row.slot === "ore" ? body.qty ?? 1 : 1;
-        rows = row.slot === "ore" ? (await Bag.contents(ctx.c, ctx.p.id)).filter((x) => x.slot === row.slot && x.item_id === row.item_id).map((x) => x.id).slice(0, qty) : [row.id];
+        qty = Bag.STACKS.includes(row.slot) ? body.qty ?? 1 : 1;
+        rows = Bag.STACKS.includes(row.slot) ? (await Bag.contents(ctx.c, ctx.p.id)).filter((x) => x.slot === row.slot && x.item_id === row.item_id).map((x) => x.id).slice(0, qty) : [row.id];
         if (rows.length < qty) { ctx.events.push({ kind: "auction_refused", reason: `you only have ${rows.length} of those` }); return; }
       }
       const problem = priceProblem(slot, itemId, qty, body.min_bid, body.buy_now ?? null, rar);

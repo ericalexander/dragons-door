@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.25.0",
+    "lore": "Rowan, Jessamy Crane and the doctor in Ashford will each teach you a draught for a price, though the herbs you'll have to get on your knees for yourself. Your first pots will be honest; after a while your hands start to know more than you do.",
+    "plain": "Forage for herbs in the wild (a few searches a day, apart from turns), learn recipes from any town's healer, brew potions at their bench, and drink them between fights or in one. Herbs and potions sell, auction and gift like anything else."
+  },
+  {
     "version": "0.24.2",
     "lore": "The fields have a new custom, and even Vesper keeps it: nobody lays a hand on a greenhorn. Until you've earned your second level, you can sleep under the stars with your purse on your chest and wake up with both.",
     "plain": "Level 1 characters can no longer be attacked in the fields, by players or townsfolk; the protection ends when you reach level 2."

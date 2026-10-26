@@ -602,7 +602,8 @@ var LOOKS = /* @__PURE__ */ new Set([
   "tavern",
   "mail",
   "square",
-  "weather"
+  "weather",
+  "apothecary"
 ]);
 var FINAL = /* @__PURE__ */ new Set(["drop", "sell", "respec", "admin", "characters"]);
 var TITLES = {
@@ -614,7 +615,8 @@ var TITLES = {
   install_statusline: "Install the status line",
   workshop_order: "Order from the workshop",
   forge_order: "Order from the forge",
-  auction_act: "Bid, buy or list at auction"
+  auction_act: "Bid, buy or list at auction",
+  apothecary_act: "Learn or brew at the healer's bench"
 };
 var titleOf = (name) => TITLES[name] ?? name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 {
@@ -820,6 +822,30 @@ server.tool(
   "Swing a pickaxe inside a cave. A few swings a day, apart from turns. Ore goes in the bag (heavy), gems in the pouch; sometimes something in the dark attacks. Each cave gives up only so much a day.",
   {},
   async () => text(await call("POST", "/v1/mine"))
+);
+server.tool(
+  "forage",
+  "Search the ground where the player stands in the wild for herbs. A few searches a day, apart from turns. What grows depends on the land (and how far out); a find goes in the bag. Now and then something was watching and it's a fight.",
+  {},
+  async () => text(await call("POST", "/v1/forage"))
+);
+server.tool(
+  "apothecary",
+  "The healer's bench in the town the player is in: the potion recipes that healer teaches (and their price), the ones the player knows with what each needs and the bench fee, how many they could brew now, and the herbs and potions they carry.",
+  {},
+  async () => text(await call("GET", "/v1/apothecary"))
+);
+server.tool(
+  "apothecary_act",
+  "At the healer's bench: learn a recipe by potion id (op: learn; without confirm it only quotes the price, call again with confirm: true only after the player says yes), or brew a known recipe from herbs in the bag (op: brew, optional count up to 10; pays a small fee per pot).",
+  { op: z.enum(["learn", "brew"]), potion: z.number().int(), count: z.number().int().min(1).max(10).optional(), confirm: z.boolean().optional() },
+  async ({ op, potion, count, confirm }) => text(await call("POST", "/v1/apothecary", { op, potion, ...count ? { count } : {}, ...confirm ? { confirm: true } : {} }))
+);
+server.tool(
+  "drink",
+  "Drink a potion from the bag by potion id (state.potions lists them). Between fights, or in one: one a fight, and drinking takes the round, so whatever they're fighting gets its swing.",
+  { potion: z.number().int() },
+  async ({ potion }) => text(await call("POST", "/v1/drink", { potion }))
 );
 server.tool(
   "library",

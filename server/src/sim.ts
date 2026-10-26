@@ -155,6 +155,15 @@ const FORGE = process.env.FORGE === "1";
 const FORGE_FROM = Number(process.env.FORGE_FROM ?? 5);
 const FORGED = { n: 0, top: 0 };
 const HEALER = { gold: 0 };
+// POTIONS=1: forage every day, learn the Healing Draught once it's affordable, brew what the herbs allow, and drink one
+// mid-fight when health runs low (POT_AT, a share of max HP) instead of running. WOUND: share of finds that are woundwort.
+const POTIONS_ON = process.env.POTIONS === "1";
+const POT_AT = Number(process.env.POT_AT ?? 0.35);
+const WOUND = Number(process.env.WOUND ?? 0.6);
+const POT = { drunk: 0, brewed: 0, saved: 0 };
+if (process.env.POT_AMT) (await import("./herbs.js")).POTIONS[0].amount = Number(process.env.POT_AMT);
+if (process.env.POT_WORT) (await import("./herbs.js")).POTIONS[0].needs[0] = Number(process.env.POT_WORT);
+const { FORAGES_PER_DAY: FPD, FORAGE: FRG, extraChance: xChance, POTIONS: POTS } = await import("./herbs.js");
 // MINE=1: from MINE_FROM onward, spend MINE_FIGHTS fights a day mining, and have Odile make the best jewelry you can.
 const MINE = process.env.MINE === "1";
 const MINE_FROM = Number(process.env.MINE_FROM ?? 4);
@@ -169,10 +178,20 @@ function fresh(cls: Cls): Player {
   return { id: "", name: "sim", class: cls, path: pathOfClass(cls), specialized: true, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, gold: 100, bank: 0, gems: 0, charm: 0, weapon_id: 0, armor_id: 0, alive: true, location: "inn", dragon_kills: 0, bag_id: 0, ground: null, mail_notified_upto: 0, news_seen_upto: 0, client: null, weather_off: false, is_bot: false, role: "player", spouse_id: null, pos_x: null, pos_y: null, trinket_id: 0, pickaxe: false, cave_depth: null, pending_event: null, admin: false, is_test: false, trial: false, banned_at: null, renamed_from: null, respec_at: null };
 }
 
-function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number): "won" | "fled" | "died" {
+function fight(p: Player, m: Monster, specials: { n: number }, runBelow: number, draughts?: { n: number }): "won" | "fled" | "died" {
   const pf = playerAsFighter(p);
   const mf = monsterAsFighter(m);
+  let drank = false;
   for (let r = 0; r < 200; r++) {
+    if (draughts && draughts.n > 0 && !drank && pf.hp / p.max_hp < Math.max(POT_AT, runBelow + 0.05)) {
+      // a Healing Draught: four tenths back, and the monster gets its swing
+      drank = true; draughts.n--; POT.drunk++;
+      pf.hp = Math.min(p.max_hp, pf.hp + Math.ceil(p.max_hp * POTS[0].amount));
+      const dmg = Math.max(0, roll(mf.str) - roll(pf.def));
+      pf.hp = Math.max(0, pf.hp - dmg);
+      if (pf.hp <= 0) { p.hp = 0; return "died"; }
+      continue;
+    }
     if (r > 0 && pf.hp / p.max_hp < runBelow && runBelow > 0) {
       const chance = p.class === "thief" ? 85 : 65;
       if (roll(99) < chance) { p.hp = pf.hp; return "fled"; }
@@ -265,6 +284,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
   let deaths = 0;
   let farthest = 0; // ring reached so far
   const ores: Record<number, number> = {};
+  const draughts = { n: 0 }; let wort = 0, learned = false, brewedN = 0;
   for (let day = 1; day <= maxDays; day++) {
     // morning: inn heal (we always sleep at the inn if we could afford it)
     if (p.location === "inn" || !p.alive) p.hp = p.max_hp;
@@ -279,6 +299,17 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
     CHARM.total += p.charm;
 
     shop(p);
+
+    if (POTIONS_ON) {
+      // the day's foraging (ambushes ignored) plus the odd herb spotted walking; brew at the bench in the morning
+      for (let k = 0; k < FPD; k++) if (roll(99) < FRG.find && Math.random() < WOUND) wort++;
+      if (Math.random() < 0.3) wort++;
+      if (!learned && p.gold + p.bank >= POTS[0].price + 100) { const c = POTS[0].price; if (p.gold < c) { p.bank -= c - p.gold; p.gold = c; } p.gold -= c; learned = true; }
+      if (learned) while (wort >= (POTS[0].needs[0] ?? 2) && p.gold + p.bank >= POTS[0].fee * p.level) {
+        wort -= POTS[0].needs[0] ?? 2; const fee = POTS[0].fee * p.level; if (p.gold < fee) { p.bank -= fee - p.gold; p.gold = fee; } p.gold -= fee;
+        draughts.n += 1 + (Math.random() < xChance(brewedN) ? 1 : 0); brewedN++; POT.brewed++;
+      }
+    }
 
     if (MINE && p.level >= MINE_FROM) {
       if (!p.pickaxe && p.gold + p.bank >= PICKAXE_COST + 200) { const need = PICKAXE_COST; if (p.gold < need) { p.gold += p.bank; p.bank = 0; } p.gold -= need; p.pickaxe = true; }
@@ -322,7 +353,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       if (next !== null && p.exp >= next) {
         const ms = master(p.level)!;
         { const want = p.max_hp - p.hp; const cost = healCost(p, want); const avail = p.gold + p.bank; if (avail >= cost) { if (p.gold < cost) { p.gold += p.bank; p.bank = 0; } p.gold -= cost; p.hp = p.max_hp; } }
-        const res = fight(p, { name: ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 }, specials, 0);
+        const res = fight(p, { name: ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 }, specials, 0, POTIONS_ON ? draughts : undefined);
         if (res === "won") {
           const g = levelGains(p.class, p.level + 1);
           p.level++; p.max_hp += g.hp; p.hp = p.max_hp; p.str += g.str; p.def += g.def;
@@ -351,7 +382,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       if (roll(99) < 10) { p.gold += roll(10 * p.level) + 5; continue; }
       // NIGHT=share of ordinary fights fought at night (0 by default; 1 = every fight in the dark).
       const m = pickMonster(p.level, undefined, NIGHT_SHARE > 0 && Math.random() < NIGHT_SHARE);
-      const res = fight(p, m, specials, 0.5);
+      const res = fight(p, m, specials, 0.5, POTIONS_ON ? draughts : undefined);
       if (res === "won") {
         p.gold += m.gold; p.exp += p.class === "mage" ? Math.round(m.exp * MAGE.expb) : m.exp;
         if (p.class === "mage" && MAGE.regen > 0) p.hp = Math.min(p.max_hp, p.hp + Math.round(p.max_hp * MAGE.regen));
@@ -416,6 +447,7 @@ if (process.env.BREAKDOWN) {
   console.log("  deaths by level:", Object.keys(DEATH_L).map(Number).sort((a, b) => a - b).map((l) => `L${l}:${(DEATH_L[l] / trials).toFixed(1)}`).join("  "));
 }
 
+if (POTIONS_ON) console.log(`  draughts brewed per run: ${(POT.brewed / trials).toFixed(0)}, drunk: ${(POT.drunk / trials).toFixed(0)}`);
 if (MINE) console.log(`  jewelry made per run: ${(MINED.trinkets / trials).toFixed(1)}, best ever: ${trinket(MINED.best).name}`);
 if (FORGE) console.log(`  forgings per run: ${(FORGED.n / trials).toFixed(1)}; best reached: ${RARITY[FORGED.top].name}`);
 console.log(`  healer gold per run: ${Math.round(HEALER.gold / trials)}${OOC.on ? `; prayers outside fights per run: ${(OOC.prayers / trials).toFixed(0)}` : ""}`);

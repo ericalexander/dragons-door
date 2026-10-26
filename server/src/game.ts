@@ -3,6 +3,7 @@ import { tileAt, townAt } from "./world.js";
 import { PATHS, SPECIALIZE_AT, pathOfClass } from "./paths.js";
 import { SWINGS_PER_DAY, trinket, bonusText } from "./caves.js";
 import { boosted, withRarity } from "./rarity.js";
+import { FORAGES_PER_DAY } from "./herbs.js";
 import data from "./data/game.json" with { type: "json" };
 
 export const GAME = data;
@@ -40,6 +41,8 @@ export interface Player {
   dragon_kills: number;
   bag_id: number;
   ground: { slot: "weapon" | "armor"; item_id: number; rarity?: number } | null;
+  /** A draught drunk for the fight: what it adds, until that fight is over. */
+  boost?: { name: string; str?: number; def?: number } | null;
   mail_notified_upto: number;
   news_seen_upto: number;
   client: unknown;
@@ -93,6 +96,8 @@ export interface Turns {
   events_seen: number;
   /** Mana left today (casters only). */
   mana: number;
+  /** Times they've searched the ground for herbs today. */
+  forages?: number;
 }
 
 export interface Monster {
@@ -166,6 +171,8 @@ export interface PublicState {
   mana_max?: number;
   /** Swings of the pick left today (only matters with a pickaxe). */
   swings_left: number;
+  forages_left: number;
+  draught?: { name: string; str?: number; def?: number };
   /** Who they're married to, if anyone. */
   spouse: string | null;
   /** People you could court who are around right now, and where. */
@@ -386,6 +393,8 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     },
     bank_trips_left: Math.max(0, GAME.bankTxPerDay - t.bank_tx),
     swings_left: Math.max(0, SWINGS_PER_DAY - (t.swings ?? 0)),
+    forages_left: Math.max(0, FORAGES_PER_DAY - (t.forages ?? 0)),
+    ...(p.boost ? { draught: p.boost } : {}),
     ...(casts(p.class) ? { mana: t.mana ?? 0, mana_max: manaMax(p) } : {}),
     special: specialName(p.class, p.weapon_id),
     attribute: attributeName(p.class),
@@ -406,8 +415,8 @@ export const needsSpec = (p: Player) => p.specialized === false && p.level >= SP
 export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAlive: boolean): string[] {
   if (!p.alive) return ["news", "tavern", "rankings", "status", "mail"];
   if (inEncounter) {
-    if (!casts(p.class)) return ["fight attack", "fight special", "fight run"];
-    return ["fight attack", "fight special", ...(manaRules(p.class)?.heal ? ["fight heal"] : []), "fight staff", "fight run"];
+    if (!casts(p.class)) return ["fight attack", "fight special", "drink", "fight run"];
+    return ["fight attack", "fight special", ...(manaRules(p.class)?.heal ? ["fight heal"] : []), "fight staff", "drink", "fight run"];
   }
   // Out in the wild: hunt where you stand, walk on, or head home. Town's services are back in town.
   if (p.pos_x !== null && p.pos_x !== undefined) {
@@ -423,7 +432,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
     // Inside another town's walls: its own services, no hunting; walking out still costs a turn.
     const town = townAt(p.pos_x, p.pos_y);
     if (town && town !== "brightwater") {
-      w.unshift("town", "healer", "auction", ...(town === "ironhold" ? ["forge"] : []), "shop", "bank", "tavern", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []), ...(t.player_fights > 0 ? ["challenge"] : []));
+      w.unshift("town", "healer", "apothecary", "auction", ...(town === "ironhold" ? ["forge"] : []), "shop", "bank", "tavern", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []), ...(t.player_fights > 0 ? ["challenge"] : []));
       const nextLvl = expForLevel(p.level + 1);
       if (p.class === "bard" && !t.performed) w.push("perform");
       // Ironhold's masters teach blades and bows; Ashford's only the Shadow path.
@@ -433,11 +442,12 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
       return w;
     }
     if (t.forest_fights > 0) w.unshift("forest", "move");
+    if ((t.forages ?? 0) < FORAGES_PER_DAY) w.push("forage");
     if (tileAt(p.pos_x, p.pos_y!).poi === "cave") w.unshift("descend");
     if (p.pending_event && p.pending_event.x === p.pos_x && p.pending_event.y === p.pos_y) w.unshift("event");
     return w;
   }
-  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "shop", "bank", "bag", "mail", "map", "workshop", "auction"];
+  const a: string[] = ["status", "news", "tavern", "rankings", "healer", "apothecary", "shop", "bank", "bag", "mail", "map", "workshop", "auction"];
   // Everyone can visit the library and the chapel; only their own class can learn there.
   a.push("library", "chapel");
   if (p.ground) a.unshift("take", "equip ground");

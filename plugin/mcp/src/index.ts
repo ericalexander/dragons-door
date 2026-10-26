@@ -18,11 +18,11 @@ const server = new McpServer({ name: "dragons-door", version: VERSION });
  * Looking includes marking things seen (news, mail). Everything here talks to the realm's server.
  */
 const LOOKS = new Set(["status", "news", "rankings", "map", "journal", "library", "specializations", "workshop", "town", "forge",
-  "auction", "shop", "bag", "tavern", "mail", "square", "weather"]);
+  "auction", "shop", "bag", "tavern", "mail", "square", "weather", "apothecary"]);
 const FINAL = new Set(["drop", "sell", "respec", "admin", "characters"]);
 const TITLES: Record<string, string> = { send_mail: "Send a letter", collect_gifts: "Collect gifts", learn_spell: "Learn a spell or buy an instrument",
   tavern_post: "Post on the tavern board", square_talk: "Talk in the square", install_statusline: "Install the status line",
-  workshop_order: "Order from the workshop", forge_order: "Order from the forge", auction_act: "Bid, buy or list at auction" };
+  workshop_order: "Order from the workshop", forge_order: "Order from the forge", auction_act: "Bid, buy or list at auction", apothecary_act: "Learn or brew at the healer's bench" };
 const titleOf = (name: string) => TITLES[name] ?? name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 {
   const register = server.tool.bind(server) as (...a: unknown[]) => { update: (u: { annotations: Record<string, unknown> }) => void };
@@ -191,6 +191,20 @@ server.tool("cave", "Caves, from a cave mouth in the wild. descend: go in (free)
 
 server.tool("mine", "Swing a pickaxe inside a cave. A few swings a day, apart from turns. Ore goes in the bag (heavy), gems in the pouch; sometimes something in the dark attacks. Each cave gives up only so much a day.", {},
   async () => text(await call("POST", "/v1/mine")));
+
+server.tool("forage", "Search the ground where the player stands in the wild for herbs. A few searches a day, apart from turns. What grows depends on the land (and how far out); a find goes in the bag. Now and then something was watching and it's a fight.", {},
+  async () => text(await call("POST", "/v1/forage")));
+
+server.tool("apothecary", "The healer's bench in the town the player is in: the potion recipes that healer teaches (and their price), the ones the player knows with what each needs and the bench fee, how many they could brew now, and the herbs and potions they carry.", {},
+  async () => text(await call("GET", "/v1/apothecary")));
+
+server.tool("apothecary_act", "At the healer's bench: learn a recipe by potion id (op: learn; without confirm it only quotes the price, call again with confirm: true only after the player says yes), or brew a known recipe from herbs in the bag (op: brew, optional count up to 10; pays a small fee per pot).",
+  { op: z.enum(["learn", "brew"]), potion: z.number().int(), count: z.number().int().min(1).max(10).optional(), confirm: z.boolean().optional() },
+  async ({ op, potion, count, confirm }) => text(await call("POST", "/v1/apothecary", { op, potion, ...(count ? { count } : {}), ...(confirm ? { confirm: true } : {}) })));
+
+server.tool("drink", "Drink a potion from the bag by potion id (state.potions lists them). Between fights, or in one: one a fight, and drinking takes the round, so whatever they're fighting gets its swing.",
+  { potion: z.number().int() },
+  async ({ potion }) => text(await call("POST", "/v1/drink", { potion })));
 
 server.tool("library", "Visit a caster's teacher: Mother Quill's library (place: library, mages), Prior Hale's chapel (place: chapel, priests), or Dunstan in the tavern (place: tavern, bards; he sells instruments, not spells). Anyone may visit and look; only that class can learn. Shows what's taught (each needs a level and costs gold; the old one trades in at half), and for the player's own class which they know and their mana. Defaults to the player's own teacher.",
   { place: z.enum(["library", "chapel", "tavern"]).optional() },

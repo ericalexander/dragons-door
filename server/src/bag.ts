@@ -8,9 +8,12 @@ import { roll } from "./combat.js";
 import { ore, trinket, bonusText } from "./caves.js";
 import { questByIndex } from "./quests.js";
 import { boosted, rarity, withRarity } from "./rarity.js";
+import { herb, potion, potionCost } from "./herbs.js";
 
 /** Gear you can wear (weapon, armor, jewelry), plus ore, which you can only carry and sell. */
-export type Slot = "weapon" | "armor" | "ore" | "trinket" | "quest";
+export type Slot = "weapon" | "armor" | "ore" | "trinket" | "quest" | "herb" | "potion";
+/** Things that come by the handful: listed, sent and counted together. */
+export const STACKS: Slot[] = ["ore", "herb", "potion"];
 export type GearSlot = "weapon" | "armor";
 
 export function item(slot: Slot, id: number, r = 0): { name: string; weight: number; cost: number } {
@@ -20,6 +23,8 @@ export function item(slot: Slot, id: number, r = 0): { name: string; weight: num
   }
   if (slot === "ore") return ore(id);
   if (slot === "trinket") return trinket(id);
+  if (slot === "herb") { const h = herb(id); return { name: h.name, weight: h.weight, cost: h.cost }; }
+  if (slot === "potion") { const p = potion(id); return { name: p.name, weight: p.weight, cost: potionCost(p) }; }
   if (slot === "quest") { const q = questByIndex(id); return { name: q?.item?.name ?? "something odd", weight: 1, cost: (q?.item?.sell ?? 0) * 2 }; }
   return slot === "weapon" ? weapon(id) : armor(id);
 }
@@ -59,7 +64,8 @@ export async function describe(c: Client, p: Player) {
       const stats = x.slot === "weapon" ? { power: boosted(weapon(x.item_id).str, x.rarity) }
         : x.slot === "armor" ? { def: boosted(armor(x.item_id).def, x.rarity) }
         : x.slot === "trinket" ? { bonus: bonusText(trinket(x.item_id), attributeName(p.class)) }
-        : x.slot === "quest" ? { quest_item: true } : {};
+        : x.slot === "quest" ? { quest_item: true }
+        : x.slot === "potion" ? { does: potion(x.item_id).what } : {};
       const gear = x.slot === "weapon" || x.slot === "armor";
       const usable = !gear || fits(x.slot as "weapon" | "armor", x.item_id, p.class);
       const upgrade = !usable ? false : x.slot === "weapon" ? boosted(weapon(x.item_id).str, x.rarity) > boosted(weapon(p.weapon_id).str, p.weapon_rarity)
