@@ -33,6 +33,9 @@ const CARES: Record<Personality, Partial<Record<Appeal, number>>> = {
   pickpocket: { profit: 3, bold: 1 },
   watchman: { order: 3, mercy: 1 },
   prelate: { faith: 3, order: 2 },
+  student: { curiosity: 3, mercy: 1 },
+  greenhorn: { kin: 3, careful: 2 },
+  clerk: { careful: 3, order: 1 },
 };
 
 /** Why they'd say they voted that way, by what swayed them. {choice} is the option's label. */

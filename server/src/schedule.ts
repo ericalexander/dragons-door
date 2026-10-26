@@ -8,7 +8,9 @@ export type Personality = "banker" | "drunk" | "raider" | "gossip" | "pious" | "
   // Ironhold's townsfolk
   | "veteran" | "scout" | "scholar"
   // Ashford's townsfolk
-  | "pickpocket" | "watchman" | "prelate";
+  | "pickpocket" | "watchman" | "prelate"
+  // Newcomers, one per town, who arrived this season at level 1 like everyone else
+  | "student" | "greenhorn" | "clerk";
 export type Doing = "forest" | "tavern" | "shop" | "fields";
 export interface Slot { at: string; doing: Doing[]; sleeps?: "inn" | "fields" }
 
@@ -29,6 +31,10 @@ export const PLAN: Record<Personality, Slot[]> = {
   pickpocket: [{ at: "09:00", doing: ["shop", "forest"] }, { at: "14:00", doing: ["forest"] }, { at: "20:00", doing: ["tavern"], sleeps: "inn" }],
   watchman: [{ at: "07:00", doing: ["forest"] }, { at: "13:00", doing: ["forest"] }, { at: "19:00", doing: ["tavern", "forest"], sleeps: "inn" }],
   prelate:  [{ at: "06:30", doing: ["forest"] }, { at: "11:00", doing: ["tavern"] }, { at: "16:00", doing: ["forest"], sleeps: "inn" }],
+  // Newcomers: Goldie in Brightwater, Tilly in Ironhold, Piers in Ashford.
+  student:  [{ at: "09:00", doing: ["forest"] }, { at: "15:00", doing: ["tavern", "forest"] }, { at: "21:00", doing: ["tavern"], sleeps: "inn" }],
+  greenhorn: [{ at: "05:30", doing: ["forest"] }, { at: "11:00", doing: ["forest"] }, { at: "17:00", doing: ["forest", "tavern"], sleeps: "inn" }],
+  clerk:    [{ at: "08:00", doing: ["shop", "forest"] }, { at: "13:00", doing: ["forest"] }, { at: "19:30", doing: ["tavern"], sleeps: "inn" }],
 };
 
 /** When they get up and turn in. Default: up an hour before their first session, in bed when the last one ends. */
@@ -43,6 +49,9 @@ export const HOURS: Partial<Record<Personality, { wakes?: string; beds?: string 
   veteran:  { wakes: "05:00", beds: "22:00" },
   scholar:  { wakes: "09:00", beds: "23:30" },
   pickpocket: { wakes: "08:30", beds: "23:30" },
+  student:  { wakes: "08:00", beds: "23:30" },   // reads by candle until she falls asleep on the book
+  greenhorn: { wakes: "05:00", beds: "21:00" },  // shepherd's hours
+  clerk:    { wakes: "07:00", beds: "22:30" },
   watchman: { wakes: "06:00", beds: "22:30" },
   prelate:  { wakes: "05:30", beds: "21:00" },
 };

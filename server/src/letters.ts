@@ -42,6 +42,9 @@ export const TOWNSFOLK: Record<Personality, string> = {
   pickpocket: "Tansy Rook, a nineteen-year-old thief from Ashford's orphanage who works the Exchange crowds; quick, cheeky, sharp-eyed, writes in a rush with bad spelling and good jokes. She/her.",
   watchman: "Lucan Strand, a captain of Ashford's watch who would rather be out in the wild; easy, friendly, a born storyteller, signs off like a drummer keeping time. He/him.",
   prelate: "Brother Wystan of Ashford's Lamphouse, a priest; grand, certain, eloquent, a little pleased with himself, writes in long rolling sentences full of the Lamp. He/him.",
+  student: "Goldie Teague, a young mage just arrived in Brightwater from Ashford to study at Mother Quill's library; eager, bookish, over-explains, apologises a lot, writes long letters with afterthoughts. She/her.",
+  greenhorn: "Tilly Brook, a shepherd from the hill farms who has just signed Ironhold's register to learn the sword; plain-spoken, steady, a bit homesick, measures things in sheep, short letters. She/her.",
+  clerk: "Piers Calloway, a clerk in his forties who left his post this autumn to learn the Shadow path in Ashford's Undercroft; precise, polite, dry, writes in a neat hand and dates every letter. He/him.",
 };
 
 function characterPersona(name: string): string | null {
@@ -172,6 +175,9 @@ function note(p: Pending): string {
     "Madam Orsolya": "The cards knew you would write. They know what comes next, too.\n\nMadam Orsolya",
     "Sir Pomfrey": "Sir Pomfrey acknowledges receipt of your correspondence and will consider it at length.\n\nSir Pomfrey",
     Odile: "Read it. Bring ore.\n\nOdile",
+    "Goldie Teague": "Your letter came! I'll write back properly when I've finished this chapter. Possibly two chapters.\n\nGoldie",
+    "Tilly Brook": "Got your letter. Kind of you. Back to the yard.\n\nTilly",
+    "Piers Calloway": "Received, read and filed. With thanks.\n\nP. Calloway",
   };
   return lines[p.to_name] ?? `Thank you for your letter.\n\n${p.to_name}`;
 }

@@ -85,6 +85,9 @@ const LEANS: Record<Personality, [GoalKind, number][]> = {
   pickpocket: [["rich", 4], ["save", 2], ["explore", 1]],
   watchman: [["level", 3], ["far", 2], ["explore", 2]],
   prelate:  [["gear", 3], ["level", 2], ["save", 1]],
+  student:  [["level", 3], ["explore", 2], ["cave", 1]],
+  greenhorn: [["level", 4], ["save", 2], ["gear", 1]],
+  clerk:    [["save", 3], ["level", 2], ["explore", 1]],
 };
 
 const round100 = (n: number) => Math.max(100, Math.round(n / 100) * 100);
@@ -164,6 +167,7 @@ export function pickGoal(f: Facts, mind: Mind, day: string, r: () => number): Go
 
 const PRONOUN: Record<string, ["he" | "she" | "they", "his" | "her" | "their"]> = {
   Hilde: ["she", "her"], Vesper: ["she", "her"], "Madam Orsolya": ["she", "her"],
+  "Nell Thorne": ["she", "her"], "Sabine Ashe": ["she", "her"], "Tansy Rook": ["she", "her"], "Goldie Teague": ["she", "her"], "Tilly Brook": ["she", "her"],
 };
 const pro = (name: string) => PRONOUN[name] ?? ["he", "his"];
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -324,6 +328,9 @@ const BASE: Record<Personality, Partial<Record<Activity, number>>> = {
   pickpocket: { hunt: 2, explore: 1, tavern: 1.5, shop: 0.8, rest: 0.1 },
   watchman: { hunt: 3, explore: 1.5, tavern: 1, rest: 0.1 },
   prelate:  { hunt: 1.5, explore: 0.4, tavern: 1.5, shop: 0.6, rest: 0.2 },
+  student:  { hunt: 2, explore: 1, tavern: 1.5, shop: 0.3, bard: 0.5, rest: 0.2 },
+  greenhorn: { hunt: 3, explore: 0.6, tavern: 0.6, shop: 0.4, rest: 0.2 },
+  clerk:    { hunt: 2, explore: 0.5, tavern: 1, shop: 0.6, bank: 0.6, rest: 0.2 },
 };
 
 const FIGHTING: Activity[] = ["hunt", "explore", "mine"];
@@ -416,6 +423,9 @@ const AWAY: Record<Personality, string[]> = {
   pickpocket: ["off on an errand for someone she won't name", "gone down the river on a barge; back when she's back"],
   watchman: ["on the watch all day and all night; it's his turn at the ford", "riding the south road with a patrol"],
   prelate: ["at a council dinner, saying grace at length", "in retreat at the Lamphouse; the door is shut"],
+  student: ["copying out a book at the library; Mother Quill locked her in, by request", "gone home to Ashford for a family dinner she was dreading"],
+  greenhorn: ["gone up to the hill farms to see her gran", "out on the ridge all day after a stray ewe that isn't even hers"],
+  clerk: ["balancing someone's books for a fee; he won't say whose", "kept late in the Undercroft; the Magpie is making him practise"],
 };
 
 /** About one day in thirty, each townsperson is simply gone for the day. Stable per day, so the square agrees. */
