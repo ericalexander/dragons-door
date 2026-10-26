@@ -141,7 +141,7 @@ Places: arriving in Brightwater (the start, or coming back), call square first; 
 
 The trial: things that reach other players aren't open here: mail, chat, challenging other players, courting, trading at the auction house, posting in the tavern, gifts and the town meetings (if a meeting comes up, say what it's about, and that trial characters don't vote; never mention a level for it). If they ask for one, say in a line, in the world, that it opens to those who join the realm properly, then one plain line: the full game runs in Claude Code, and the install steps are on this page. Don't pitch otherwise; let the game do it. If they ask how the game works or what this is, answer plainly and briefly. If they try to take you out of the game (write code, essays, anything else), decline in a line and offer the menu.
 
-Each message from the player may start with [trial: ...] notes from the website (the trial's moves left, the character's last state). Those are facts, not the player's words. The trial's moves are the website's limit, not the game's Turns (state.forest_fights, the day's turns for hunting and walking); never mix them up, and don't mention the trial's moves at all until three or fewer are left. When the notes say it's the last turn, finish the scene, then close with a short send-off.{CLAIM}`;
+Each message from the player may start with [trial: ...] notes from the website (the trial's moves left, the character's last state). Those are facts, not the player's words. The trial's moves are the website's limit, not the game's Turns (state.forest_fights, the day's turns for hunting and walking); never mix them up, and don't mention the trial's moves at all until three or fewer are left. When the notes say it's the last turn, finish the scene on something left open that their character could pick up next (someone waiting on them, a quest's next step, a road they haven't walked yet), then close with a short send-off.{CLAIM}`;
 const CLAIM_YES = ` They can keep this character. Below the terminal is a claim code; in Claude Code, with the game installed, they say "claim my character" and the code, and they carry on from here as a real member of the realm: the townsfolk will remember them, and tomorrow's news will carry what everyone did. If they ask before then how to keep their character, say the same in a line.`;
 const CLAIM_NOT_YET = ` In the real realm their day would carry over, the townsfolk would remember them, and tomorrow's news would carry what everyone did; the install steps are on this page. Keeping a trial character isn't open yet; if they ask, say it's coming soon.`;
 export const system = () => SYSTEM.replace("{CLAIM}", TRIAL.claimOpen() ? CLAIM_YES : CLAIM_NOT_YET);
@@ -221,20 +221,37 @@ function brief(s: Record<string, unknown> | undefined) {
 }
 
 /** One thing the visitor said: let the narrator play it out (a few game calls at most) and tell it. */
-type Told = { text: string; state: Record<string, unknown> | null; usage: Usage; tools: string[]; kinds: string[]; stop: string; failed: number };
+type Told = { text: string; state: Record<string, unknown> | null; usage: Usage; tools: string[]; kinds: string[]; stop: string; failed: number; rolls: Roll[] };
+/** What the server rolled this turn, for the page to show under the telling: the dice, not the narrator, decide. */
+export type Roll = { k: "hit" | "miss" | "slain" | "died" | "fled" | "loot" | "level"; by?: string; at?: string; dmg?: number; crit?: boolean; item?: string; level?: number };
+export function rollsOf(events: Record<string, unknown>[]): Roll[] {
+  const out: Roll[] = [];
+  for (const e of events) {
+    const s = (k: string) => (typeof e[k] === "string" ? (e[k] as string) : undefined);
+    if (e.kind === "hit") out.push({ k: "hit", by: s("attacker"), at: s("defender"), dmg: Number(e.damage) || 0, ...(e.crit ? { crit: true } : {}) });
+    else if (e.kind === "miss") out.push({ k: "miss", by: s("attacker"), at: s("defender") });
+    else if (e.kind === "monster_slain") out.push({ k: "slain", at: s("monster") });
+    else if (e.kind === "player_died") out.push({ k: "died" });
+    else if (e.kind === "fled") out.push({ k: "fled" });
+    else if (e.kind === "loot") out.push({ k: "loot", item: s("item") });
+    else if (e.kind === "level_up") out.push({ k: "level", level: Number(e.level) || undefined });
+  }
+  return out.slice(0, 40);
+}
 async function narrate(which: string, key: string, history: Msg[], said: string, notes: string): Promise<Told> {
   const messages: Msg[] = [...history, { role: "user", content: `[trial: ${notes}]\n${said}` }];
   const usage: Usage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
   let state: Record<string, unknown> | null = null;
   const tools: string[] = [], kinds: string[] = [];
+  const rolls: Roll[] = [];
   let failed = 0;
   const add = (u: Usage) => { for (const k of Object.keys(usage) as (keyof Usage)[]) usage[k] = (usage[k] ?? 0) + (u[k] ?? 0); };
   const textOf = (c: Block[]) => c.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text").map((b) => b.text).join("\n");
   const deadline = Date.now() + 150_000; // a turn gets two and a half minutes, then it's told to wrap up
   for (let calls = 0, rounds = 0; ; rounds++) {
-    if (rounds >= MAX_CALLS + 3) return { text: "", state, usage, tools, kinds, stop: "loop", failed };
+    if (rounds >= MAX_CALLS + 3) return { text: "", state, usage, tools, kinds, stop: "loop", failed, rolls };
     const r = await model(which, messages, { noTools: calls >= MAX_CALLS || Date.now() > deadline });
-    if (!r) return { text: "", state, usage, tools, kinds, stop: "error", failed };
+    if (!r) return { text: "", state, usage, tools, kinds, stop: "error", failed, rolls };
     add(r.usage);
     const uses = r.content.filter((b): b is Extract<Block, { type: "tool_use" }> => b.type === "tool_use");
     if (r.stop_reason === "tool_use" && uses.length > 0) {
@@ -248,8 +265,10 @@ async function narrate(which: string, key: string, history: Msg[], said: string,
         const st = (out as { state?: Record<string, unknown> }).state;
         if (st) state = st;
         tools.push(u.name);
-        if ((out as { error?: string }).error) failed++;
-        for (const e of ((out as { events?: { kind?: string }[] }).events ?? [])) if (e?.kind) kinds.push(e.kind);
+        if ((out as { error?: string }).error) { failed++; console.error("trial call refused:", u.name, (out as { error?: string }).error); }
+        const evs = ((out as { events?: Record<string, unknown>[] }).events ?? []).filter((e) => e && typeof e === "object");
+        for (const e of evs) if (typeof e.kind === "string") kinds.push(e.kind);
+        rolls.push(...rollsOf(evs));
         results.push({ type: "tool_result", tool_use_id: u.id, content: JSON.stringify(out).slice(0, RESULT_MAX) });
       }
       messages.push({ role: "user", content: results });
@@ -266,7 +285,7 @@ async function narrate(which: string, key: string, history: Msg[], said: string,
       stop = r2.stop_reason;
     }
     if (stop !== "end_turn") console.error("trial narrator stopped:", stop, "calls", calls, "chars", text.length);
-    return { text: text.trim(), state, usage, tools, kinds, stop: stop ?? "unknown", failed };
+    return { text: text.trim(), state, usage, tools, kinds, stop: stop ?? "unknown", failed, rolls };
   }
 }
 
@@ -288,8 +307,10 @@ trial.get("/", async (c) => {
 /** Start a trial: a new character of their own (a name and a path), and the narrator's opening. */
 trial.post("/start", async (c) => {
   if (process.env.TRIAL_OFF === "1" || !process.env.ANTHROPIC_API_KEY) return c.json(closed("trial_closed", "The trial is closed for now."), 503);
-  const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; path?: unknown };
+  const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; path?: unknown; visitor?: unknown };
   const name = typeof body.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";
+  // The page's anonymous analytics id, if it sent one: only so a later claim can count toward the same visit.
+  const visitor = typeof body.visitor === "string" && /^[A-Za-z0-9._-]{8,100}$/.test(body.visitor) ? body.visitor : null;
   const path = (["steel", "shadow", "gift"] as const).find((x) => x === body.path);
   if (!path) return c.json(closed("bad_request", "Choose a path: Steel, Shadow or the gift."), 400);
   if (name.length < 2 || name.length > 20 || !NAME_RE.test(name)) return c.json(closed("bad_name", "A name is 2 to 20 letters, digits, apostrophes, periods or hyphens, with single spaces."), 400);
@@ -319,7 +340,7 @@ trial.post("/start", async (c) => {
     const which = await pickModel(db);
     await db.query("insert into trials (player_id, addr_hash, expires_at, claim_hash, model) values ($1, $2, now() + make_interval(hours => $3), $4, $5)", [p.id, addrHash, TRIAL.hours(), hash(normalize(code)), which]);
     await db.query("insert into trial_usage (day, trials) values ($1, 1) on conflict (day) do update set trials = trial_usage.trials + 1", [today()]);
-    await db.query("insert into trial_log (id, path, model) values ($1, $2, $3) on conflict do nothing", [p.id, path, which]);
+    await db.query("insert into trial_log (id, path, model, visitor) values ($1, $2, $3, $4) on conflict do nothing", [p.id, path, which, visitor]);
     return p;
   }).catch((e: Error & { code?: string }) => (e.code === "23505" ? ("taken" as const) : Promise.reject(e)));
   if (made === "taken") return c.json(closed("name_taken", "That name's taken. Try another."), 409);
@@ -363,6 +384,7 @@ trial.post("/claim", async (c) => {
   if (code.length !== 12) return c.json(closed("bad_code", "That doesn't look like a claim code (DOOR- and twelve letters and digits)."), 400);
   const addr = fromHeaders((n) => c.req.header(n)).addr;
   const key = "door_" + randomBytes(24).toString("base64url");
+  const claimed: { visitor: { id: string; moves: number; path: string } | null } = { visitor: null };
   const out = await tx(async (db) => {
     const t = (await db.query<{ player_id: string }>("select player_id from trials where claim_hash = $1 and expires_at > now() for update", [hash(code)])).rows[0];
     if (!t) return null;
@@ -376,16 +398,29 @@ trial.post("/claim", async (c) => {
     const p = (await db.query<{ name: string; class: string; level: number; path: string; start_town: string | null }>(
       "update players set api_key_hash = $2, trial = false, is_test = false, last_seen = now() where id = $1 returning name, class, level, path, start_town", [t.player_id, hash(key)])).rows[0];
     await db.query("delete from trials where player_id = $1", [t.player_id]);
-    await db.query("update trial_log set ended = 'claimed', ended_at = now() where id = $1", [t.player_id]);
+    const v = (await db.query<{ visitor: string | null; moves: number; path: string }>("update trial_log set ended = 'claimed', ended_at = now() where id = $1 returning visitor, moves, path", [t.player_id])).rows[0];
+    if (v?.visitor) claimed.visitor = { id: v.visitor, moves: v.moves, path: v.path };
     const day = realmDay((await realmSettings(db)).resetHourUtc);
     await db.query("insert into news (day, kind, actor) values ($1, 'join', $2)", [day, p.name]);
     return p;
   });
   if (out === "limit") return c.json(closed("too_many_signups", "The gatekeeper has let enough newcomers in from your road today; try again tomorrow."), 429);
   if (!out) return c.json(closed("no_such_claim", "No trial character waits under that code: it may have been claimed already, or it's older than a week."), 404);
+  if (claimed.visitor) await analytics("trial_claimed", claimed.visitor.id, { moves: claimed.visitor.moves, path: claimed.visitor.path });
   const where = out.start_town === "ironhold" ? "Ironhold" : out.start_town === "ashford" ? "Ashford" : "Brightwater";
   return c.json({ api_key: key, name: out.name, class: out.class, events: [{ kind: "claimed", name: out.name, class: out.class, level: out.level, path: PATHS[out.path as Path]?.name ?? out.path, home: where }] });
 });
+
+/** One event to the site's analytics (PostHog), for the trial funnel. Never fails the request. */
+async function analytics(event: string, distinctId: string, properties: Record<string, unknown>) {
+  const key = process.env.POSTHOG_KEY ?? "phc_J1rAmysu72Vfoxzo0cwd0Xb7CSfIbLoQmcERFGYMsAj";
+  if (process.env.POSTHOG_OFF === "1") return;
+  await fetch("https://us.i.posthog.com/capture/", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ api_key: key, event, distinct_id: distinctId, properties: { ...properties, site: "dragons-door", $process_person_profile: false } }),
+    signal: AbortSignal.timeout(3000),
+  }).catch(() => {});
+}
 
 /** Say something to the narrator. */
 trial.post("/say", async (c) => {
@@ -422,7 +457,7 @@ async function turn(token: string, playerId: string, said: string, opening: bool
     const history = [...t.history, { role: "user" as const, content: opening ? said : `[trial: ${notes}]\n${said}` }, { role: "assistant" as const, content: text }].slice(-KEEP * 2);
     await pool.query("update trials set turns = turns + $2, history = $3, last_state = coalesce($4, last_state) where player_id = $1",
       [playerId, counted ? 1 : 0, JSON.stringify(history), r.state ? JSON.stringify(r.state) : null]);
-    return { text, state: brief(r.state ?? t.last_state ?? undefined), turns_left: counted || opening ? left : left + 1 };
+    return { text, state: brief(r.state ?? t.last_state ?? undefined), turns_left: counted || opening ? left : left + 1, ...(r.rolls.length ? { rolls: r.rolls.slice(0, 40) } : {}) };
   } finally {
     await pool.query("update trials set busy_until = null where player_id = $1", [playerId]);
   }

@@ -71,6 +71,19 @@
   .term .key { color: var(--pane-gold); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(217, 168, 90, .35); text-underline-offset: 3px; }
   .term .key:hover, .term .key:focus-visible { text-decoration-color: var(--pane-gold); }
   .term .key:disabled { cursor: default; text-decoration: none; }
+  .term .dice { color: var(--pane-dim); font-size: 13px; border-left: 2px solid #5a4430; padding-left: 10px; margin-top: -.4em; }
+  .term .dice b { color: var(--pane-gold); font-weight: 500; }
+  .term .dice .die { color: var(--pane-gold); margin-right: 6px; }
+  .term .ending { border: 1px solid #5a4430; border-radius: 3px; padding: 14px 16px; margin: 4px 0 1em; }
+  .term .ending h3 { margin: 0 0 6px; font: inherit; color: var(--pane-gold); font-weight: 500; }
+  .term .ending p { margin: 0 0 10px; }
+  .term .ending ol { margin: 0 0 12px; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 8px; }
+  .term .ending li { counter-increment: s; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .term .ending li::before { content: counter(s); color: var(--pane-dim); width: 1.2em; }
+  .term .ending code { color: #f2e6cc; background: rgba(0,0,0,.25); padding: 2px 8px; border-radius: 3px; overflow-wrap: anywhere; }
+  .term .ending .cp { background: transparent; color: var(--pane-gold); border: 1px solid #5a4430; border-radius: 3px; font: inherit; font-size: 13px; padding: 2px 10px; cursor: pointer; }
+  .term .ending .cp:hover { border-color: var(--pane-gold); }
+  .term .ending .fine { color: var(--pane-dim); font-size: 13px; margin: 0; }
   .term .stir { color: var(--pane-dim); }
   .term .stir::after { content: "▍"; color: var(--pane-gold); animation: blink 1.1s steps(1) infinite; margin-left: 4px; }
   @keyframes blink { 50% { opacity: 0; } }
@@ -207,6 +220,9 @@
   const asked = new URLSearchParams(location.search).get("api");
   const API = asked && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(asked) ? asked : "https://api.dragonsdoor.gg";
   const KEY = "dd-trial";
+  // The trial funnel, in the site's anonymous analytics: started, finished, claim code copied, install copied.
+  const track = (event, props) => { try { window.posthog && window.posthog.capture(event, { ...(props || {}), trial_path: s && s.path }); } catch {} };
+  const visitor = () => { try { return window.posthog && typeof window.posthog.get_distinct_id === "function" ? window.posthog.get_distinct_id() : undefined; } catch { return undefined; } };
   const $ = (id) => document.getElementById(id);
   const screen = $("screen"), bar = $("bar"), form = $("say"), cmd = $("cmd"), gate = $("gate");
   let claimOpen = false;
@@ -234,6 +250,7 @@
     p.className = kind;
     if (kind === "you") p.textContent = "> " + text;
     else if (kind === "note") p.textContent = text;
+    else if (kind === "dice") { p.innerHTML = `<span class="die" aria-hidden="true">⚄</span>`; p.title = "Rolled by the game's server, not the narrator"; p.append(text); }
     else p.innerHTML = render(text);
     screen.appendChild(p);
     if (animate && !reduce && kind === "tell") { p.style.opacity = "0"; p.animate([{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], { duration: 260, fill: "forwards" }); }
@@ -257,6 +274,24 @@
     if (s.left !== null) bits.push(`<span class="left">${s.over ? "Trial over" : `Moves left <b>${esc(String(s.left))}</b>`}</span>`);
     bar.innerHTML = bits.join("");
   }
+  // What the server rolled this turn, in a line: the dice decide, the narrator only tells it.
+  function diceLine(rolls, me) {
+    if (!Array.isArray(rolls) || !rolls.length) return "";
+    const who = (n) => (n && me && n === me ? "you" : n || "it");
+    const bits = rolls.map((x) => {
+      if (x.k === "hit") return `${who(x.by)} hit ${x.at === me ? "you" : x.at || ""} for ${Number(x.dmg) || 0}${x.crit ? " (critical)" : ""}`.replace(/\s+/g, " ");
+      if (x.k === "miss") return `${who(x.by)} missed`;
+      if (x.k === "slain") return `${x.at || "it"} slain`;
+      if (x.k === "died") return "you fell";
+      if (x.k === "fled") return "you got away";
+      if (x.k === "loot") return `found ${x.item || "something"}`;
+      if (x.k === "level") return `level ${x.level || "up"}`;
+      return "";
+    }).filter(Boolean);
+    if (!bits.length) return "";
+    const shown = bits.length > 14 ? [...bits.slice(0, 6), `… ${bits.length - 12} more …`, ...bits.slice(-6)] : bits;
+    return "Server rolls: " + shown.join(" · ");
+  }
   function lockKeys() { screen.querySelectorAll(".key").forEach((b) => { b.disabled = true; }); }
 
   async function call(path, body) {
@@ -266,20 +301,38 @@
   }
   function take(r) {
     if (r.text) { lockKeys(); line("tell", r.text, true); s.log.push(["tell", r.text]); }
+    const d = diceLine(r.rolls, (r.state && r.state.name) || s.name);
+    if (d) { line("dice", d, false); s.log.push(["dice", d]); }
     if (r.state) s.state = r.state;
     if (typeof r.turns_left === "number") s.left = r.turns_left;
     if (r.error) {
       line("note", r.message || "Something went wrong."); s.log.push(["note", r.message || ""]);
-      if (["trial_over", "trial_done"].includes(r.error)) end();
-    } else if (s.left === 0) end();
+      if (["trial_over", "trial_done"].includes(r.error)) end(true);
+    } else if (s.left === 0) end(true);
     drawBar(); save();
   }
-  function end() {
+  const STEPS = ["/plugin marketplace add ericalexander/dragons-door", "/plugin install dragons-door@dragons-door", "/dragons-door:enter"];
+  function end(fresh) {
+    const first = !s.over;
     s.over = true; form.hidden = true; lockKeys();
-    const p = document.createElement("p"); p.className = "gate";
-    p.innerHTML = 'That\'s the trial. <a href="/#enter">Install the real thing</a>, or <button class="key" type="button" id="again">(start another)</button>.';
-    screen.appendChild(p); screen.scrollTop = screen.scrollHeight;
+    if (first && fresh) track("trial_finished", { moves: s.moves || null });
+    const keep = claimOpen && s.claim;
+    const box = document.createElement("div"); box.className = "ending";
+    const nm = esc(String((s.state && s.state.name) || s.name || "Your character"));
+    const steps = STEPS.map((c) => `<li><code>${esc(c)}</code><button class="cp" type="button" data-copy="${esc(c)}" data-what="install">Copy</button></li>`).join("") +
+      (keep ? `<li><span>Then say</span><code>claim my character ${esc(s.claim)}</code><button class="cp" type="button" data-copy="claim my character ${esc(s.claim)}" data-what="claim">Copy</button></li>` : "");
+    box.innerHTML = `<h3>That's the trial. ${keep ? `${nm} is waiting where you left them.` : "The realm goes on without you, for now."}</h3>
+      <p>${keep ? "Carry on in Claude Code, for real: everything you did here comes with you, and the townsfolk will remember you." : "The real thing runs in Claude Code: your day carries over, the townsfolk remember you, and the news tells what everyone did."}</p>
+      <ol>${steps}</ol>
+      <p class="fine">${keep ? "Your code is good for one week. " : ""}Or <button class="key" type="button" id="again">(start another trial)</button>.</p>`;
+    screen.appendChild(box); screen.scrollTop = screen.scrollHeight;
+    box.addEventListener("click", async (e) => {
+      const b = e.target.closest(".cp"); if (!b) return;
+      track(b.dataset.what === "claim" ? "claim_code_copied" : "install_copied", { where: "trial_end", step: b.dataset.copy.split(" ")[0] });
+      try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1600); } catch { b.textContent = "Select it"; }
+    });
     $("again").addEventListener("click", () => { forget(); location.reload(); });
+    $("claim").hidden = true;
   }
 
   async function start(e) {
@@ -291,11 +344,12 @@
     busy = true;
     $("start").disabled = true;
     stir(true);
-    const r = await call("/start", { name, path }).catch(() => ({ error: "offline", message: "Couldn't reach the realm. Check your connection and try again." }));
+    const r = await call("/start", { name, path, visitor: visitor() }).catch(() => ({ error: "offline", message: "Couldn't reach the realm. Check your connection and try again." }));
     stir(false); busy = false;
     if (r.error) { $("start").disabled = false; line("note", r.message || "The gate won't open just now."); return; }
     gate.remove(); $("term").classList.remove("fresh");
-    s = { token: r.token, name: r.name, claim: r.claim || null, log: [], state: null, left: null, over: false };
+    s = { token: r.token, name: r.name, claim: r.claim || null, log: [], state: null, left: null, over: false, path, moves: 0 };
+    track("trial_started", { path });
     showClaim();
     form.hidden = false;
     take(r);
@@ -305,7 +359,7 @@
     text = text.trim();
     if (!text || busy || s.over) return;
     busy = true; cmd.value = "";
-    line("you", text); s.log.push(["you", text]);
+    line("you", text); s.log.push(["you", text]); s.moves = (s.moves || 0) + 1;
     stir(true);
     const r = await call("/say", { text }).catch(() => ({ error: "offline", message: "Couldn't reach the realm. Try that again." }));
     stir(false); busy = false;
@@ -315,6 +369,7 @@
 
   gate.addEventListener("submit", start);
   $("copy").addEventListener("click", async () => {
+    track("claim_code_copied", { where: "claim_box" });
     try { await navigator.clipboard.writeText("claim my character " + s.claim); $("copy").textContent = "Copied"; setTimeout(() => { $("copy").textContent = "Copy"; }, 1800); }
     catch { const r = document.createRange(); r.selectNodeContents($("code")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
   });
@@ -330,7 +385,7 @@
     const keys = [...screen.querySelectorAll("p.tell")].pop();
     if (keys) keys.querySelectorAll(".key").forEach((b) => { b.disabled = false; });
     drawBar();
-    if (s.over) end(); else form.hidden = false;
+    if (s.over) { s.over = false; end(false); } else form.hidden = false;
   }
   fetch(API + "/v1/trial").then((r) => r.json()).then((d) => {
     if (d.turns) $("turns").textContent = d.turns;

@@ -339,6 +339,7 @@
   // Copy buttons for the commands.
   for (const b of document.querySelectorAll("button[data-copy]")) {
     b.addEventListener("click", async () => {
+      try { window.posthog && window.posthog.capture("install_copied", { where: "home", step: b.dataset.copy.split(" ")[0] }); } catch {}
       try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied"; b.dataset.done = "1"; }
       catch { b.textContent = "Select it"; }
       setTimeout(() => { b.textContent = "Copy"; delete b.dataset.done; }, 1600);
