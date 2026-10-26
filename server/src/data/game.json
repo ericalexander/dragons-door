@@ -72,7 +72,7 @@
       "specialsPerDay": 3,
       "hpPerLevel": 10,
       "strPerLevel": 3,
-      "defPerLevel": 3,
+      "defPerLevel": 4,
       "specialDodge": 0.75,
       "critChance": 0.02,
       "attribute": "Strength"
@@ -156,77 +156,77 @@
       "name": "the Watchman",
       "hp": 15,
       "str": 4,
-      "def": 2
+      "def": 1
     },
     {
       "level": 2,
       "name": "the Yard-Keeper",
       "hp": 30,
       "str": 7,
-      "def": 4
+      "def": 3
     },
     {
       "level": 3,
       "name": "the Old Soldier",
       "hp": 50,
       "str": 14,
-      "def": 7
+      "def": 5
     },
     {
       "level": 4,
       "name": "the Mine Foreman",
       "hp": 80,
       "str": 21,
-      "def": 10
+      "def": 6
     },
     {
       "level": 5,
       "name": "the Duelist",
       "hp": 120,
       "str": 29,
-      "def": 14
+      "def": 9
     },
     {
       "level": 6,
       "name": "the Fen-Hunter",
       "hp": 170,
       "str": 40,
-      "def": 18
+      "def": 12
     },
     {
       "level": 7,
       "name": "the Warrior-Monk",
       "hp": 240,
       "str": 55,
-      "def": 23
+      "def": 15
     },
     {
       "level": 8,
       "name": "the Captain",
       "hp": 320,
       "str": 74,
-      "def": 28
+      "def": 18
     },
     {
       "level": 9,
       "name": "the Sellsword",
       "hp": 420,
       "str": 96,
-      "def": 34
+      "def": 22
     },
     {
       "level": 10,
       "name": "the Hermit",
       "hp": 550,
       "str": 125,
-      "def": 40
+      "def": 26
     },
     {
       "level": 11,
       "name": "the Last Master",
       "hp": 700,
       "str": 162,
-      "def": 47
+      "def": 31
     }
   ],
   "weapons": [
@@ -457,7 +457,7 @@
       "name": "Mad Hermit",
       "hp": 20,
       "str": 6,
-      "def": 2,
+      "def": 1,
       "gold": 120,
       "exp": 50
     },
@@ -466,7 +466,7 @@
       "name": "Pack of Wolves",
       "hp": 25,
       "str": 8,
-      "def": 2,
+      "def": 1,
       "gold": 140,
       "exp": 60
     },
@@ -475,7 +475,7 @@
       "name": "Bandit",
       "hp": 22,
       "str": 8,
-      "def": 3,
+      "def": 2,
       "gold": 180,
       "exp": 64
     },
@@ -484,7 +484,7 @@
       "name": "Giant Spider",
       "hp": 40,
       "str": 14,
-      "def": 5,
+      "def": 3,
       "gold": 400,
       "exp": 150
     },
@@ -493,7 +493,7 @@
       "name": "Enraged Ogre",
       "hp": 50,
       "str": 15,
-      "def": 6,
+      "def": 4,
       "gold": 500,
       "exp": 180
     },
@@ -502,7 +502,7 @@
       "name": "Goblin Chieftain",
       "hp": 45,
       "str": 16,
-      "def": 7,
+      "def": 5,
       "gold": 560,
       "exp": 190
     },
@@ -511,7 +511,7 @@
       "name": "Fire Imp",
       "hp": 70,
       "str": 22,
-      "def": 9,
+      "def": 6,
       "gold": 1000,
       "exp": 400
     },
@@ -520,7 +520,7 @@
       "name": "Troll",
       "hp": 90,
       "str": 23,
-      "def": 11,
+      "def": 7,
       "gold": 1200,
       "exp": 480
     },
@@ -529,7 +529,7 @@
       "name": "Werewolf",
       "hp": 120,
       "str": 33,
-      "def": 14,
+      "def": 9,
       "gold": 2400,
       "exp": 1200
     },
@@ -538,7 +538,7 @@
       "name": "Shadow Knight",
       "hp": 140,
       "str": 37,
-      "def": 16,
+      "def": 10,
       "gold": 3000,
       "exp": 1400
     },
@@ -547,7 +547,7 @@
       "name": "Wyvern",
       "hp": 180,
       "str": 48,
-      "def": 19,
+      "def": 12,
       "gold": 6000,
       "exp": 3000
     },
@@ -556,7 +556,7 @@
       "name": "Stone Golem",
       "hp": 220,
       "str": 44,
-      "def": 24,
+      "def": 16,
       "gold": 6400,
       "exp": 3400
     },
@@ -565,7 +565,7 @@
       "name": "Vampire",
       "hp": 260,
       "str": 62,
-      "def": 24,
+      "def": 16,
       "gold": 12000,
       "exp": 8000
     },
@@ -574,7 +574,7 @@
       "name": "Chimera",
       "hp": 300,
       "str": 66,
-      "def": 26,
+      "def": 17,
       "gold": 14000,
       "exp": 9000
     },
@@ -583,7 +583,7 @@
       "name": "Lich",
       "hp": 360,
       "str": 81,
-      "def": 30,
+      "def": 20,
       "gold": 24000,
       "exp": 18000
     },
@@ -592,7 +592,7 @@
       "name": "Frost Giant",
       "hp": 420,
       "str": 84,
-      "def": 33,
+      "def": 21,
       "gold": 28000,
       "exp": 20000
     },
@@ -601,7 +601,7 @@
       "name": "Hydra",
       "hp": 500,
       "str": 103,
-      "def": 36,
+      "def": 23,
       "gold": 50000,
       "exp": 50000
     },
@@ -610,7 +610,7 @@
       "name": "Demon Lord",
       "hp": 560,
       "str": 110,
-      "def": 38,
+      "def": 25,
       "gold": 56000,
       "exp": 56000
     },
@@ -619,7 +619,7 @@
       "name": "Ancient Wyrm",
       "hp": 650,
       "str": 118,
-      "def": 42,
+      "def": 27,
       "gold": 100000,
       "exp": 120000
     },
@@ -628,7 +628,7 @@
       "name": "Titan",
       "hp": 720,
       "str": 125,
-      "def": 45,
+      "def": 29,
       "gold": 110000,
       "exp": 130000
     },
@@ -637,7 +637,7 @@
       "name": "Elder Lich",
       "hp": 850,
       "str": 140,
-      "def": 50,
+      "def": 32,
       "gold": 240000,
       "exp": 360000
     },
@@ -646,7 +646,7 @@
       "name": "Balrog",
       "hp": 950,
       "str": 147,
-      "def": 54,
+      "def": 35,
       "gold": 280000,
       "exp": 400000
     },
@@ -655,7 +655,7 @@
       "name": "Death Knight",
       "hp": 1100,
       "str": 169,
-      "def": 60,
+      "def": 39,
       "gold": 600000,
       "exp": 1000000
     },
@@ -664,7 +664,7 @@
       "name": "Shadow Dragon",
       "hp": 1300,
       "str": 184,
-      "def": 65,
+      "def": 42,
       "gold": 700000,
       "exp": 1200000
     }
@@ -673,7 +673,7 @@
     "name": "Vael the Watchful",
     "hp": 900,
     "str": 320,
-    "def": 120,
+    "def": 78,
     "gold": 0,
     "exp": 0
   },
@@ -882,5 +882,9 @@
       "def": 0.7,
       "str": 0.2
     }
+  },
+  "armorFormula": {
+    "kind": "share",
+    "k": 0.6
   }
 }

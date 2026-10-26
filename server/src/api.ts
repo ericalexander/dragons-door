@@ -2568,9 +2568,9 @@ api.post("/forge", async (c) => {
 
 /** What waits on the road below a town's walls the first time. Tough for level 5, a real fight at 6, safe by 7 (simulated). */
 const GATE_GUARDS: Partial<Record<TownId, Monster>> = {
-  ironhold: { name: "Old Grudge", level: 7, hp: 360, max_hp: 360, str: 70, def: 27, gold: 12000, exp: 9000 },
-  ashford: { name: "Nan Silt", level: 7, hp: 340, max_hp: 340, str: 68, def: 26, gold: 11000, exp: 8500 },
-  brightwater: { name: "Grey Hob", level: 7, hp: 360, max_hp: 360, str: 70, def: 27, gold: 12000, exp: 9000 },
+  ironhold: { name: "Old Grudge", level: 7, hp: 360, max_hp: 360, str: 70, def: 18, gold: 12000, exp: 9000 },
+  ashford: { name: "Nan Silt", level: 7, hp: 340, max_hp: 340, str: 68, def: 17, gold: 11000, exp: 8500 },
+  brightwater: { name: "Grey Hob", level: 7, hp: 360, max_hp: 360, str: 70, def: 18, gold: 12000, exp: 9000 },
 };
 const GATE_LINES: Partial<Record<TownId, { note: string; scene: string; hint: string }>> = {
   ironhold: { note: "the road to the gate runs under a broken bridge, and something lives there; it won't let anyone through who hasn't beaten it, and there's no running",
