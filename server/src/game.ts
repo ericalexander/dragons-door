@@ -439,6 +439,7 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
       w.unshift("town", "healer", "apothecary", "auction", ...(town === "ironhold" ? ["forge"] : []), "shop", "bank", "tavern", ...(t.inn_used ? [] : ["inn"]), ...(t.forest_fights > 0 ? ["move"] : []), ...(t.player_fights > 0 ? ["challenge"] : []));
       const nextLvl = expForLevel(p.level + 1);
       if (p.class === "bard" && !t.performed) w.push("perform");
+      if (!t.flirted) w.push("flirt");
       // Ironhold's masters teach blades and bows; Ashford's only the Shadow path.
       const teachesYou = !casts(p.class) && (town !== "ashford" || p.path === "shadow");
       if (needsSpec(p)) w.unshift("specialize");

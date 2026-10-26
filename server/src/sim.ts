@@ -263,7 +263,7 @@ function shop(p: SimPlayer) {
       const c = forgeCost(base.cost, r);
       if (!c) continue;
       const oreGold = Object.entries(c.ore).reduce((n, [o, k]) => n + ORES[Number(o)].cost * (k ?? 0), 0) + c.gems * GEM_SELL * 2;
-      const price = c.gold + oreGold;
+      const price = Math.ceil(c.gold * (ROMANCE && perkOf(p) === "forge" ? 0.8 : 1)) + oreGold;
       if (p.gold + p.bank - reserve * 3 < price) continue;
       if (p.gold < price) { p.bank -= price - p.gold; p.gold = price; }
       p.gold -= price;
@@ -292,6 +292,8 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
     p.gold += 0; // bank -> withdraw happens below
     // For casters this is the day's mana; for everyone else, specials.
     const specials = { n: manaRules(p.class) ? manaMax(p) : GAME.classes[p.class].specialsPerDay };
+    // Married to Corra: one more special a day (a Fireball's worth of mana for casters).
+    if (ROMANCE && perkOf(p) === "specials") specials.n += manaRules(p.class)?.fireball ?? 1;
     const extra = { n: 0 };
     const oocUsed = { n: 0 };
     dailyExtras(p, day, extra);

@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.27.0",
+    "lore": "Romance is no longer something you have to walk to Brightwater for. In Ironhold, Brannagh Steel will hear you out between strikes of the hammer, and Corra Bell might sing one for you in the Long Hall; in Ashford, Linnet hears everything at the Ford House, and Ysolde Fairweather would love to see your maps.",
+    "plain": "You can now court Brannagh Steel and Corra Bell in Ironhold, and Linnet and Ysolde Fairweather in Ashford, each with their own perk if you marry."
+  },
+  {
     "version": "0.26.0",
     "lore": "The bards were getting all the attention, so everyone else found their voice. Warriors fight like a Saturday-morning serial, thieves narrate their own crimes, mages say the words properly now, priests pray out loud, and guardians have an oath they will tell you about at length.",
     "plain": "Fights are told in each class's own style. If you'd rather have them plain, just ask the narrator; bards keep their songs either way."

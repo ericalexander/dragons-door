@@ -4,14 +4,17 @@
  */
 import { roll } from "./combat.js";
 import { TZ, realmHour } from "./schedule.js";
+import type { TownId } from "./world.js";
 
-export type Perk = "inn" | "healer" | "guard" | "charm";
+export type Perk = "inn" | "healer" | "guard" | "charm" | "forge" | "specials" | "rumor" | "auction";
 export interface Suitor {
   name: string;
   /** How the narrator refers to them. */
   pronouns: "she/her" | "he/him" | "they/them";
+  /** The town they live in (Brightwater if not said); you court them there. */
+  town?: TownId;
   /** Where to find them (for the narrator). */
-  where: "tavern" | "healer" | "square";
+  where: "tavern" | "healer" | "square" | "forge" | "Long Hall" | "Ford House" | "auction house";
   description: string;
   /** Realm hours (Eastern) they're around, [from, to); to may pass midnight (e.g. [19, 25] = 7pm-1am). */
   hours?: [number, number];
@@ -32,7 +35,20 @@ export const SUITORS: Suitor[] = [
     perkText: "robbers who find you in the fields get only half your gold" },
   { name: "Jory", pronouns: "they/them", where: "square", description: "a traveling juggler in town at the weekends, all grins and patter", days: [5, 6, 0], coy: -5, perk: "charm",
     perkText: "+1 charm every day" },
+  // Ironhold's.
+  { name: "Brannagh Steel", town: "ironhold", pronouns: "she/her", where: "forge", description: "who runs the great forge, soot to the elbows, and has turned down better offers than yours", hours: [6, 20], coy: 10, perk: "forge",
+    perkText: "the forge costs a fifth less" },
+  { name: "Corra Bell", town: "ironhold", pronouns: "she/her", where: "Long Hall", description: "who sings in the Long Hall most nights, and changes the words to make the garrison laugh", hours: [17, 25], coy: 0, perk: "specials",
+    perkText: "one more special every day (for casters, a Fireball's worth more mana)" },
+  // Ashford's.
+  { name: "Linnet", town: "ashford", pronouns: "she/her", where: "Ford House", description: "who serves at the Ford House, quick on her feet, with the best ears in Ashford", hours: [10, 23], coy: 5, perk: "rumor",
+    perkText: "each morning she tells you of somewhere you've never been, and it goes on your map" },
+  { name: "Ysolde Fairweather", town: "ashford", pronouns: "she/her", where: "auction house", description: "who runs Ashford's auction house, fussy and kind, and can't pass an old map without a look", hours: [9, 18], coy: 0, perk: "auction",
+    perkText: "the auction houses take half their usual cut of what you sell" },
 ];
+
+/** Where someone can be courted. */
+export const townOfSuitor = (s: Suitor): TownId => s.town ?? "brightwater";
 
 export const suitor = (name: string | null | undefined) => SUITORS.find((s) => s.name.toLowerCase() === (name ?? "").toLowerCase());
 

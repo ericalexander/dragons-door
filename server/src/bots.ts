@@ -29,7 +29,7 @@ import { HERBS, POTIONS, TEACHERS } from "./herbs.js";
 import { realmDay, realmSettings } from "./day.js";
 import { GAME, expForLevel, levelGains, type Envelope, type Event } from "./game.js";
 import { DIRS, TOWN_TILES, tileAt, type Dir, type TownId } from "./world.js";
-import { SUITORS, available } from "./romance.js";
+import { SUITORS, available, townOfSuitor } from "./romance.js";
 import { loadLore, lore } from "./lore.js";
 import { MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, canMake, caveLevel, trinket, type Trinket } from "./caves.js";
 import { awayToday, choose, doneLine, finished, fraction, goalLabel, goalTalk, pickGoal, type Activity, type Facts, type Mind } from "./minds.js";
@@ -916,8 +916,9 @@ async function donate(b: Bot, row: Row, mind: Mind) {
 }
 
 async function flirtSomeone(b: Bot) {
-  const around = SUITORS.filter((s) => available(s));
-  const who = around.length ? pick(around).name : "Violet";
+  const around = SUITORS.filter((s) => available(s) && townOfSuitor(s) === b.home);
+  if (!around.length) return;
+  const who = pick(around).name;
   const r = await b.post("/flirt", { with: who });
   if (!isErr(r)) {
     const out = r.events.find((e) => e.kind === "flirt") as { outcome?: string } | undefined;
@@ -1105,6 +1106,7 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
       const hall = b.home === "ashford" ? "the Ford House" : "the Long Hall";
       if (a === "shop") { if (b.home === "ironhold") await forgeVisit(b); await auctionBids(b); b.log.push(`looked round the shops`); }
       else if (a === "bank") { await b.post("/bank", { op: "deposit", amount: "all" }); b.log.push("banked"); }
+      else if (a === "flirt") await flirtSomeone(b);
       else if (a === "tavern" && b.errandLines.length && Math.random() < 0.5) { await say(b, pick(b.errandLines)); b.log.push(`said something in ${hall} about what's happened`); }
       // Each town's tavern has its own board, so they say their piece there like anyone in Brightwater's tavern.
       else if (a === "tavern" && Math.random() < 0.5) { f = await gatherFacts(row, mind); await tavernTalk(b, row, mind, f); }

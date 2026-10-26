@@ -17,7 +17,7 @@ import { weatherAt } from "./weather.js";
 import { bardFor, pickGift } from "./bards.js";
 import { pickVisitorGift, timeOfDay, visitorFor, type Rumor } from "./square.js";
 import { realmHour, whereabouts, type Personality } from "./schedule.js";
-import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor, weddingChance } from "./romance.js";
+import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor, townOfSuitor, weddingChance } from "./romance.js";
 import { draw } from "./luck.js";
 import { GEAR_ABOVE_LEVEL, GIFT_MIN_LEVEL, GOLD_PER_LEVEL, ITEMS_PER_DAY, courierFee, nextDay, townName, townOfCharacter, townOfPlayer } from "./gifts.js";
 import { PATHS, SPECIALIZE_AT, SPECS, SPEC_SWITCH_DAYS, SPEC_SWITCH_PER_LEVEL, pathOfClass, specsOf, type Path, type Spec } from "./paths.js";
@@ -104,6 +104,21 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
         await savePlayer(ctx, { charm: ctx.p.charm + 1 });
         ctx.events.push({ kind: "spouse_gift", spouse: ctx.spouse, charm: 1 });
       }
+      // Corra's songs: one more special today (for casters, a Fireball's worth of mana).
+      if (spousePerk(ctx.spouse) === "specials") {
+        const mr = manaRules(ctx.p.class);
+        if (mr) { await saveTurns(ctx, { mana: (ctx.t.mana ?? 0) + mr.fireball }); ctx.events.push({ kind: "spouse_gift", spouse: ctx.spouse, mana: mr.fireball }); }
+        else { await saveTurns(ctx, { specials: ctx.t.specials + 1 }); ctx.events.push({ kind: "spouse_gift", spouse: ctx.spouse, specials: 1 }); }
+      }
+      // Linnet hears everything: one place a morning, somewhere they've never been.
+      if (spousePerk(ctx.spouse) === "rumor") {
+        const spot = (await c.query<{ x: number; y: number; name: string }>(
+          `select d.x, d.y, d.name from discoveries d where d.poi is not null and d.poi <> 'town'
+             and not exists (select 1 from explored e where e.player_id = $1 and e.x = d.x and e.y = d.y)
+             and not exists (select 1 from rumors r where r.player_id = $1 and r.x = d.x and r.y = d.y)
+           order by random() limit 1`, [ctx.p.id])).rows[0];
+        if (spot && await hearOf(ctx, spot.x, spot.y, ctx.spouse!)) ctx.events.push({ kind: "spouse_gift", spouse: ctx.spouse, rumor: { place: spot.name, where: directions(spot.x, spot.y) } });
+      }
       await logEvent(ctx, "day_start", { hp: ctx.p.hp, max_hp: ctx.p.max_hp, gold: ctx.p.gold, bank: ctx.p.bank, exp: ctx.p.exp });
       if (ctx.p.ground) await savePlayer(ctx, { ground: null });
     }
@@ -146,7 +161,7 @@ async function withPlayer(authHeader: string | undefined, fn: (ctx: Ctx) => Prom
     const giftsWaiting = ctx.p.role === "player" ? Number((await c.query<{ n: string }>("select count(*)::text as n from gifts where to_player = $1 and state = 'sent' and arrives_day <= $2", [ctx.p.id, ctx.day])).rows[0].n) : 0;
     return {
       events: ctx.events,
-      state: { ...publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x)).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))), quests: journal, ...(giftsWaiting ? { gifts_waiting: giftsWaiting } : {}), ...(potions.length ? { potions } : {}) },
+      state: { ...publicState(ctx.p, ctx.t, inEnc, ctx.dragonAlive, bagUsed, unreadMail, newsUnread, ctx.spouse, SUITORS.filter((x) => available(x) && townOfSuitor(x) === (townAt(ctx.p.pos_x, ctx.p.pos_y) ?? "")).map((x) => ({ name: x.name, pronouns: x.pronouns, where: x.where }))), quests: journal, ...(giftsWaiting ? { gifts_waiting: giftsWaiting } : {}), ...(potions.length ? { potions } : {}) },
       actions: (() => {
         let a = legalActions(ctx.p, ctx.t, inEnc, ctx.dragonAlive);
         if (!potions.length || drankThisFight) a = a.filter((x) => x !== "drink");
@@ -2476,11 +2491,15 @@ async function forgeables(ctx: Ctx): Promise<ForgeTarget[]> {
   for (const x of await Bag.contents(ctx.c, ctx.p.id)) if ((x.slot === "weapon" || x.slot === "armor") && !magic(x)) out.push({ target: x.id, slot: x.slot, item_id: x.item_id, rarity: x.rarity ?? 0, row: x.id });
   return out;
 }
+/** Married to Brannagh: the forge's gold costs a fifth less (the ore and gems are what they are). */
+function forgeDeal<T extends { gold: number } | null>(ctx: Ctx, cost: T): T {
+  return cost && spousePerk(ctx.spouse) === "forge" ? { ...cost, gold: Math.ceil(cost.gold * 0.8) } : cost;
+}
 async function forgeQuote(ctx: Ctx, f: ForgeTarget, ore: Record<number, number>) {
   const base = f.slot === "weapon" ? weapon(f.item_id) : armor(f.item_id);
   const baseName = f.row ? carriedName(f.slot, f.item_id) : itemName(f.slot, f.item_id, ctx.p.class);
   const stat = (r: number) => f.slot === "weapon" ? { power: boosted((base as { str: number }).str, r) } : { def: boosted((base as { def: number }).def, r) };
-  const cost = forgeCost(base.cost, f.rarity);
+  const cost = forgeDeal(ctx, forgeCost(base.cost, f.rarity));
   const missing: string[] = [];
   if (cost) {
     if (ctx.p.gold + ctx.p.bank < cost.gold) missing.push(`${cost.gold - ctx.p.gold - ctx.p.bank} more gold`);
@@ -2530,7 +2549,7 @@ api.post("/forge", async (c) => {
       return;
     }
     const base = f.slot === "weapon" ? weapon(f.item_id) : armor(f.item_id);
-    const cost = forgeCost(base.cost, f.rarity)!;
+    const cost = forgeDeal(ctx, forgeCost(base.cost, f.rarity))!;
     if (!(await payFrom(ctx, cost.gold))) { ctx.events.push({ kind: "forge_refused", reason: "not enough gold" }); return; }
     for (const [o, n] of Object.entries(cost.ore))
       await ctx.c.query("delete from inventory where id in (select id from inventory where player_id = $1 and slot = 'ore' and item_id = $2 order by id limit $3)", [ctx.p.id, Number(o), n]);
@@ -3005,9 +3024,12 @@ api.post("/flirt", async (c) => {
   const body = z.object({ with: z.string().trim().max(40).optional() }).parse(await c.req.json().catch(() => ({})));
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, "everyone you might court");
-    const who = suitor(body.with ?? "Violet");
-    if (!who) { ctx.events.push({ kind: "no_such_suitor", name: body.with }); return; }
+    const town = requireTown(ctx, "Everyone you might court", ALL_TOWNS);
+    const local = SUITORS.filter((x) => townOfSuitor(x) === town);
+    const who = body.with ? suitor(body.with) : (local.find((x) => available(x)) ?? local[0]);
+    if (!who) { ctx.events.push({ kind: "no_such_suitor", name: body.with, here: local.map((x) => x.name) }); return; }
+    // You court someone where they live.
+    if (townOfSuitor(who) !== town) { ctx.events.push({ kind: "not_here", name: who.name, reason: "they live in another town", here: local.map((x) => x.name) }); return; }
     if (!available(who)) {
       ctx.events.push({ kind: "not_around", name: who.name, hours: who.hours ?? null, days: who.days ?? null });
       return;
@@ -3516,7 +3538,9 @@ async function refundBid(c: Client, r: ARow, why: "outbid" | "bought_out") {
 /** Pay a seller for a sale, less the house's cut. Characters and the house itself aren't paid: that gold leaves the realm. */
 async function paySeller(c: Client, r: ARow, price: number, day: string) {
   if (!r.seller_id || r.seller_role === "npc") return;
-  const cut = houseCut(price);
+  // Married to Ysolde: the houses take half their usual cut.
+  const spouse = (await c.query<{ name: string }>("select s.name from players p join players s on s.id = p.spouse_id where p.id = $1", [r.seller_id])).rows[0]?.name;
+  const cut = Math.floor(houseCut(price) * (spousePerk(spouse) === "auction" ? 0.5 : 1));
   await c.query("update players set bank = bank + $2 where id = $1", [r.seller_id, price - cut]);
   await mail(c, r.seller_id, { kind: "auction_sold", item: lotName(r), price, house_cut: cut, paid_to_bank: price - cut, buyer: r.bidder });
   if (price >= 500) await c.query("insert into news (day, kind, actor, target, detail) select $1, 'auction_sale', s.name, b.name, $4 from players s, players b where s.id = $2 and b.id = $3 and not s.is_test and not b.is_test",
