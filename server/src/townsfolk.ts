@@ -23,6 +23,8 @@ export interface Townsperson {
   away: string[];
   /** A short reply when there's no letter-writer. */
   note?: string;
+  /** Herb-wise: "brew" forages, learns the healer's recipes and brews; "gather" forages to sell. */
+  herbs?: "brew" | "gather";
 }
 
 export const ROSTER: Townsperson[] = [
@@ -47,8 +49,8 @@ export const ROSTER: Townsperson[] = [
     away: ["visiting an old friend who is even older", "gone to Ashford for the market and the gossip"],
     note: "Got your letter. Read it twice. Told nobody. Mostly.\n\nOld Tam",
   },
-  { name: "Brother Ansel", class: "priest", habits: "pious", pronouns: ["he", "his"],
-    persona: "Brother Ansel, a monk and priest who rises before dawn and prays for the dead; gentle, proverbial, quietly funny. He/him.",
+  { name: "Brother Ansel", herbs: "brew", class: "priest", habits: "pious", pronouns: ["he", "his"],
+    persona: "Brother Ansel, a monk and priest who rises before dawn and prays for the dead; gentle, proverbial, quietly funny; keeps a physic garden and brews draughts at Rowan's bench. He/him.",
     away: ["on retreat at the monastery in the hills", "walking to a shrine with Sister Agathe's pilgrims"],
     note: "Your letter arrived safely, which is more than can be said for most travellers. Blessings.\n\nBrother Ansel",
   },
@@ -115,8 +117,8 @@ export const ROSTER: Townsperson[] = [
     away: ["brewing; the new batch needs watching all day", "gone down to the hill farms to buy barley"],
     note: "Got your letter. There's a cup waiting at the Long Hall.\n\nRufus",
   },
-  { name: "Mirela Sorn", class: "thief", habits: "nightowl", home: "ironhold", level: 4, pronouns: ["she", "her"],
-    persona: "Mirela Sorn, a trapper who works the forest below Ironhold by night and sleeps by day; quiet, dry, self-reliant, sharp-eyed, writes very short letters. She/her.",
+  { name: "Mirela Sorn", herbs: "gather", class: "thief", habits: "nightowl", home: "ironhold", level: 4, pronouns: ["she", "her"],
+    persona: "Mirela Sorn, a trapper who works the forest below Ironhold by night and sleeps by day; quiet, dry, self-reliant, sharp-eyed, writes very short letters; picks herbs along her trap lines and sells them. She/her.",
     away: ["out on a long trap line; back in a day or two", "asleep; she was out all night"],
     note: "Read it. Thanks.\n\nMirela",
   },
@@ -125,13 +127,13 @@ export const ROSTER: Townsperson[] = [
     away: ["on the road south with the cart", "on the road back from Brightwater, a day late as usual"],
     note: "Got your letter on the road. Write again, I've a long way to go.\n\nLew",
   },
-  { name: "Sister Junia", class: "priest", habits: "student", home: "ironhold", newcomer: true, pronouns: ["she", "her"],
-    persona: "Sister Junia, a young priest of the Lamp just sent up from Ashford's Lamphouse to Ironhold, which didn't ask for one; earnest, kind, a little nervous and brave about it, writes tidy hopeful letters. She/her.",
+  { name: "Sister Junia", herbs: "brew", class: "priest", habits: "student", home: "ironhold", newcomer: true, pronouns: ["she", "her"],
+    persona: "Sister Junia, a young priest of the Lamp just sent up from Ashford's Lamphouse to Ironhold, which didn't ask for one; earnest, kind, a little nervous and brave about it, writes tidy hopeful letters; learning Jessamy Crane's draughts so the garrison has something better than ale for a wound. She/her.",
     away: ["walked down to the hill farms to bless a new barn", "writing her weekly letter home to the Lamphouse; it's a long one"],
     note: "Your letter came safely. The lamp's still lit.\n\nSister Junia",
   },
-  { name: "Sister Orla", class: "priest", habits: "prelate", home: "ashford", level: 6, pronouns: ["she", "her"],
-    persona: "Sister Orla Finch, who runs the Lamphouse soup kitchen and feeds Ashford's orphanage; brisk, warm, unflappable, quietly funny about Brother Wystan, writes like a kind aunt. She/her.",
+  { name: "Sister Orla", herbs: "brew", class: "priest", habits: "prelate", home: "ashford", level: 6, pronouns: ["she", "her"],
+    persona: "Sister Orla Finch, who runs the Lamphouse soup kitchen and feeds Ashford's orphanage; brisk, warm, unflappable, quietly funny about Brother Wystan, writes like a kind aunt; brews the doctor's draughts for the orphanage and anyone else who needs one. She/her.",
     away: ["at the orphanage all day; it's bath day", "taking soup out to the barge-folk on the south bank"],
     note: "Thank you, dear. Come and eat something.\n\nSister Orla",
   },

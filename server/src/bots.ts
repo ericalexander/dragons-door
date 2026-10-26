@@ -24,7 +24,8 @@ import { settlePolls } from "./polls.js";
 import { sweepTrials } from "./trial.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
-import { ROSTER } from "./townsfolk.js";
+import { ROSTER, townsperson } from "./townsfolk.js";
+import { HERBS, POTIONS, TEACHERS } from "./herbs.js";
 import { realmDay, realmSettings } from "./day.js";
 import { GAME, expForLevel, levelGains, type Envelope, type Event } from "./game.js";
 import { DIRS, TOWN_TILES, tileAt, type Dir, type TownId } from "./world.js";
@@ -59,6 +60,8 @@ class Bot {
   native: TownId | null = null;
   /** Things they might say in the tavern while an errand (theirs, or a friend's) is on. */
   errandLines: string[] = [];
+  /** Draughts drunk in fights this session, for the log. */
+  drank = 0;
   constructor(public name: string, public personality: Personality, private key: string) {}
 
   async call(method: "GET" | "POST", path: string, body?: unknown): Promise<Envelope | { error: string; message?: string }> {
@@ -85,6 +88,12 @@ async function forestFight(b: Bot, opts: { runBelow?: number; useSpecial?: boole
   for (let i = 0; i < 60; i++) {
     const s = r.state;
     let action: "attack" | "special" | "heal" | "run" = "attack";
+    // Anyone carrying a Healing Draught drinks it when it's going badly, before praying or running.
+    const carried = (s as { potions?: { id: number; count: number }[] }).potions ?? [];
+    if (r.actions.includes("drink") && s.hp / s.max_hp < 0.35 && carried.some((p) => p.id === 0)) {
+      const d = await b.post("/drink", { potion: 0 });
+      if (!isErr(d)) { r = d; b.drank++; if (!r.state.alive || !r.state.in_encounter) break; continue; }
+    }
     // A priest prays before running.
     if (r.actions.includes("fight heal") && s.hp / s.max_hp < 0.4 && (s.mana ?? 0) >= 3) action = "heal";
     else if (opts.runBelow !== undefined && s.hp / s.max_hp < opts.runBelow && i > 0) action = "run";
@@ -176,7 +185,8 @@ async function tidyBag(b: Bot) {
   for (const it of bagEv.items) if (it.upgrade) await b.post("/equip", { id: it.id });
   const again = await b.get("/bag");
   if (isErr(again)) return;
-  const left = (again.events.find((e) => e.kind === "bag") as unknown as { items: BagItem[] }).items;
+  const kept = keeps(b, (again.events.find((e) => e.kind === "bag") as unknown as { items: BagItem[] }).items, !isErr(where) && where.state.mana_max !== undefined);
+  const left = (again.events.find((e) => e.kind === "bag") as unknown as { items: BagItem[] }).items.filter((it) => !kept.has(it.id));
   // Ore is kept while they're saving it up for Odile. The rest goes up at the auction house if it's worth it
   // and the board isn't already full of the same thing; otherwise to the smith.
   const listed = inTown ? await listSpares(b, left.filter((it) => !(b.keepOre && it.slot === "ore"))) : new Set<number>();
@@ -232,16 +242,18 @@ async function listSpares(b: Bot, items: BagItem[]): Promise<Set<number>> {
   const seen = new Set<string>();
   for (const it of items) {
     if (open >= BOT_LOTS) break;
-    if (!["weapon", "armor", "ore", "trinket"].includes(it.slot) || it.sells_for < 20) continue;
+    const stack = ["ore", "herb", "potion"].includes(it.slot);
+    const many = stack ? items.filter((x) => x.slot === it.slot && x.name === it.name) : [it];
+    if (!["weapon", "armor", "ore", "trinket", "herb", "potion"].includes(it.slot) || it.sells_for * Math.min(3, many.length) < 20) continue;
     if (seen.has(`${it.slot}:${it.name}`)) continue;
     seen.add(`${it.slot}:${it.name}`);
     // Don't flood the board: two lots of the same thing already up and they sell to the smith instead.
     if (board.listings.filter((l) => l.slot === it.slot && l.item.startsWith(it.name.replace(/^Scroll of /, ""))).length >= 2) continue;
-    const same = it.slot === "ore" ? items.filter((x) => x.slot === "ore" && x.name === it.name) : [it];
+    const same = many;
     const qty = Math.min(3, same.length);
     const ask = await askingPrice(b, it, qty);
     if (!ask) continue;
-    const r = await b.post("/auction", { op: "list", id: it.id, ...(it.slot === "ore" ? { qty } : {}), min_bid: ask.min_bid, buy_now: ask.buy_now, days: 3, confirm: true });
+    const r = await b.post("/auction", { op: "list", id: it.id, ...(stack ? { qty } : {}), min_bid: ask.min_bid, buy_now: ask.buy_now, days: 3, confirm: true });
     if (!isErr(r) && kinds(r).includes("auction_listed")) {
       for (const x of same.slice(0, qty)) done.add(x.id);
       open++;
@@ -346,6 +358,105 @@ async function fights(b: Bot, n: number, row?: Row, mind?: Mind) {
   }
   const where = await b.get("/status");
   b.log.push(`${done} fight${done === 1 ? "" : "s"}${!isErr(where) && where.state.place ? ` near ${where.state.place.name}` : ""}`);
+  if (b.drank) { b.log.push(`drank ${b.drank} healing draught${b.drank === 1 ? "" : "s"} mid-fight`); b.drank = 0; }
+  if (!isErr(where) && where.state.alive) await forageHere(b);
+}
+
+// ---------- herbs and potions ----------
+
+/** The herb-wise search the ground wherever their hunting left them, until their eyes are done for the day. */
+async function forageHere(b: Bot) {
+  if (!townsperson(b.name)?.herbs) return;
+  const st = STYLE[b.personality];
+  let found = 0;
+  for (let k = 0; k < 6; k++) {
+    const r = await b.post("/forage");
+    if (isErr(r)) break;
+    const ks = kinds(r);
+    if (ks.some((x) => ["no_forages_left", "cannot_forage"].includes(x))) break;
+    if (ks.includes("encounter")) {
+      let e: Envelope | null = r;
+      for (let i = 0; i < 60 && e && e.state.in_encounter; i++) {
+        const action = st.runBelow !== undefined && e.state.hp / e.state.max_hp < st.runBelow ? "run" : "attack";
+        const n = await b.post("/fight", { action });
+        e = isErr(n) ? null : n;
+      }
+      if (e && !e.state.alive) { b.log.push("killed while picking herbs"); return; }
+      if (e && e.state.hp / e.state.max_hp < Math.max(st.healBelow, 0.35)) break;
+      continue;
+    }
+    const f = r.events.find((x) => x.kind === "foraged") as { found?: string | null; stored?: boolean } | undefined;
+    if (f?.found && f.stored) found++;
+    if (f?.found && !f.stored) break; // bag's full
+  }
+  if (found) b.log.push(`picked ${found} herb${found === 1 ? "" : "s"}`);
+}
+
+/**
+ * At home at the end of the day, a brewer goes to the healer's bench: learns what's taught there if they can spare it
+ * (the Healing Draught first), then brews everything their herbs allow. What they don't keep goes to auction with the rest.
+ */
+async function brewAtBench(b: Bot) {
+  if (townsperson(b.name)?.herbs !== "brew") return;
+  const look = async () => {
+    const r = await b.get("/apothecary");
+    if (isErr(r)) return null;
+    return r.events.find((e) => e.kind === "apothecary") as unknown as { recipes: { id: number; known: boolean; price?: number; can_brew_now?: number }[] } | undefined;
+  };
+  let bench = await look();
+  if (!bench) return;
+  const s = await b.get("/status");
+  if (isErr(s)) return;
+  const purse = s.state.gold + s.state.bank;
+  const reserve = GEAR_RESERVE[b.personality];
+  for (const rec of bench.recipes.filter((x) => !x.known && x.price !== undefined).sort((a, z) => a.id - z.id)) {
+    // A recipe is worth it when it costs less than a fifth of what they'd spend anyway.
+    if (rec.price! > purse * Math.max(0.1, 0.4 - reserve)) continue;
+    const r = await b.post("/apothecary", { op: "learn", potion: rec.id, confirm: true });
+    if (!isErr(r) && kinds(r).includes("recipe_learned")) b.log.push(`learned the ${POTIONS[rec.id].name} from the healer`);
+    break; // one new recipe a day at most
+  }
+  // Short of an herb they use? Buy it off the board when it's going for no more than twice its worth.
+  const board = await readBoard(b);
+  if (board) {
+    const useful = herbsWanted(b);
+    const names = new Set(HERBS.filter((h) => useful.has(h.id)).map((h) => h.name));
+    let spend = Math.floor(purse * 0.1);
+    let bought = false;
+    for (const l of board.listings.filter((x) => x.slot === "herb" && !x.yours && x.buy_now && x.buy_now <= x.worth * 2)) {
+      if (![...names].some((n) => l.item.endsWith(n)) || l.buy_now! > spend) continue;
+      if (await buyLot(b, l)) { spend -= l.buy_now!; bought = true; }
+    }
+    if (bought) await b.post("/auction", { op: "collect" });
+  }
+  bench = await look();
+  if (!bench) return;
+  for (const rec of bench.recipes.filter((x) => x.known && (x.can_brew_now ?? 0) > 0)) {
+    const r = await b.post("/apothecary", { op: "brew", potion: rec.id, count: Math.min(10, rec.can_brew_now!) });
+    const ev = isErr(r) ? undefined : (r.events.find((e) => e.kind === "brewed") as { made?: number; extra?: number } | undefined);
+    if (ev?.made) b.log.push(`brewed ${ev.made} ${POTIONS[rec.id].name}${ev.made === 1 ? "" : "s"}${ev.extra ? " (a good pot)" : ""}`);
+  }
+}
+
+/** What a townsperson keeps of their herbs and potions rather than selling: a brewer's herbs, and a few draughts to drink. */
+/** The herbs a brewer's own healer's recipes call for. */
+const herbsWanted = (b: Bot) => new Set(TEACHERS[b.home].teaches.flatMap((id) => Object.keys(POTIONS[id].needs).map(Number)));
+
+function keeps(b: Bot, items: BagItem[], caster: boolean): Set<number> {
+  const keep = new Set<number>();
+  const herbs = townsperson(b.name)?.herbs;
+  const useful = herbsWanted(b);
+  const want: Record<number, number> = { 0: 3, 1: caster ? 2 : 0, 2: 0, 3: 0 };
+  const held: Record<number, number> = {};
+  for (const it of items) {
+    if (it.slot === "herb" && herbs === "brew" && useful.has(it.item_id ?? -1)) keep.add(it.id);
+    if (it.slot === "potion") {
+      const id = it.item_id ?? 0;
+      held[id] = (held[id] ?? 0) + 1;
+      if (held[id] <= (want[id] ?? 0)) keep.add(it.id);
+    }
+  }
+  return keep;
 }
 
 async function bedInn(b: Bot) {
@@ -1026,6 +1137,7 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
   if (now.state.place && camper && Math.random() < 0.4) { b.log.push(`camped out at ${now.state.place.name}`); return; }
   await home(b);
   await kitOut(b, row, mind, day);
+  await brewAtBench(b);
   if (b.home !== "brightwater") { await tidyBag(b); await b.post("/inn"); b.log.push(b.home === "ashford" ? "a room at the Ford House" : "a bunk in the Long Hall"); return; }
   if (row.personality === "drunk") return drunkNight(b);
   if (row.personality === "reckless") return sleepRough(b);
