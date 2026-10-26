@@ -25,6 +25,8 @@ const K = {
   ghp: process.env.GHP, gstr: process.env.GSTR, gdef: process.env.GDEF, // growth overrides
 };
 if (process.env.DROP !== undefined) GAME.drops.chance = Number(process.env.DROP);
+// ARMOR='{"heavy":{"def":1,"str":0},"light":{"def":1,"str":0}}' runs with armor as it was before families.
+if (process.env.ARMOR) (GAME as { armorProfiles: unknown }).armorProfiles = JSON.parse(process.env.ARMOR);
 const NIGHT_SHARE = Number(process.env.NIGHT ?? 0);
 // CLASSES='{"guardian":{"defPerLevel":3}}' overrides class numbers (nested objects such as mana merge one level deep).
 if (process.env.CLASSES) for (const [k, v] of Object.entries(JSON.parse(process.env.CLASSES) as Record<string, Record<string, unknown>>)) {

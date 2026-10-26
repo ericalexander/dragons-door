@@ -89,7 +89,7 @@ export const TOOLS: Tool[] = [
   { name: "journal", description: "What the player has learned: pieces of people's pasts and old journals found.", input_schema: none, call: () => ({ method: "GET", path: "/journal" }) },
   { name: "town", description: "Look around the town they're standing in when it isn't Brightwater (Ironhold or Ashford): who keeps there, who's about, what it offers.", input_schema: none, call: () => ({ method: "GET", path: "/town" }) },
   { name: "library", description: "A caster's teacher: Mother Quill's library (place: library, mages) or Prior Hale's chapel (place: chapel, priests). Shows what's taught.", input_schema: obj({ place: str({ enum: ["library", "chapel"] }) }), call: (a) => ({ method: "GET", path: `/library${a.place ? `?place=${a.place}` : ""}` }) },
-  { name: "learn_spell", description: "Learn a spell by id at the caster's teacher. Without confirm it only quotes; call again with confirm: true only after the player says yes.", input_schema: obj({ id: int, confirm: { type: "boolean" } }, ["id"]), call: (a) => ({ method: "POST", path: "/library", body: { id: a.id, ...(a.confirm ? { confirm: true } : {}) } }) },
+  { name: "learn_spell", description: "Learn a spell by id at the caster's teacher. Without confirm it only quotes, two ways when they have an old one: trade it in, or keep it (keep_old: true, full price) to sell later. Call again with confirm: true only after the player says yes.", input_schema: obj({ id: int, keep_old: { type: "boolean" }, confirm: { type: "boolean" } }, ["id"]), call: (a) => ({ method: "POST", path: "/library", body: { id: a.id, ...(a.keep_old ? { keep_old: true } : {}), ...(a.confirm ? { confirm: true } : {}) } }) },
   { name: "auction", description: "Look at the auction house board (looking only on the trial).", input_schema: none, call: () => ({ method: "GET", path: "/auction" }) },
 ];
 
@@ -102,6 +102,7 @@ How to narrate:
 - Never show ids, tool names, field names or anything else from inside the game's machinery; a bag item is its name.
 - Each menu item has one hotkey (Talk to (V)iolet, not (T)alk to (V)iolet).
 - Don't repeat yourself: a town meeting is mentioned once in a trial, and coming back to the square, give a fresh glance (one or two people, something new), not the same scene again.
+- Gear belongs to a path: what fits them comes back usable; anything marked not_for_you or not_for_your_path they can carry and sell but not use; say so in a few words.
 - Items, gear and rewards only as the server names them: what a quest hands over, what drops, what they wear (a Coat is a coat, not a leather one). When someone gives them something, it's exactly what got lists, nothing more.
 - Distances and directions only as the server gives them (map, where, known places): never invent how far something is or how long it takes.
 - Never talk about yourself, your own mistakes or your reasoning ("I got ahead of myself", "let me check"). If what you said before doesn't match what the server now says, put it right inside the scene in a few words and carry on.

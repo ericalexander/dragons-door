@@ -182,11 +182,80 @@ export interface PublicState {
   weather?: import("./weather.js").Weather;
 }
 
+// ---------- item families ----------
+/**
+ * Every weapon and piece of armor belongs to a family, and it's that family for good: a Long Sword is a Steel
+ * weapon, a Silver Flute a bard's instrument, a Wool Robe a caster's robe. A carried item's id says both:
+ * family × 100 + tier (tier 0 to 12). What a character wears is a plain tier, always of their own family.
+ * Stats go by tier, so a tier is as strong in every family; how armor fights differs (armorProfiles).
+ */
+export const WEAPON_FAMILIES = ["steel", "shadow", "mage", "priest", "bard"] as const;
+export const ARMOR_FAMILIES = ["heavy", "leathers", "robes", "performer"] as const;
+export type WeaponFamily = typeof WEAPON_FAMILIES[number];
+export type ArmorFamily = typeof ARMOR_FAMILIES[number];
+const FAM = 100;
+export const tierOf = (id: number) => id % FAM;
+export function weaponFamilyOf(cls: PlayerClass): WeaponFamily {
+  return cls === "thief" ? "shadow" : cls === "mage" || cls === "priest" || cls === "bard" ? cls : "steel";
+}
+export function armorFamilyOf(cls: PlayerClass): ArmorFamily {
+  return cls === "thief" ? "leathers" : cls === "bard" ? "performer" : cls === "mage" || cls === "priest" ? "robes" : "heavy";
+}
+/** The carried id of this tier in this class's own family. */
+export function carriedId(slot: "weapon" | "armor", cls: PlayerClass, tier: number): number {
+  const fams = slot === "weapon" ? WEAPON_FAMILIES as readonly string[] : ARMOR_FAMILIES as readonly string[];
+  return (fams.indexOf(slot === "weapon" ? weaponFamilyOf(cls) : armorFamilyOf(cls)) + 1) * FAM + tierOf(tier);
+}
+/** A carried item's family (null for a bare tier, which only what's worn uses). */
+export function familyOf(slot: "weapon" | "armor", id: number): string | null {
+  const i = Math.floor(id / FAM) - 1;
+  if (i < 0) return null;
+  return (slot === "weapon" ? WEAPON_FAMILIES : ARMOR_FAMILIES)[i] ?? null;
+}
+/** Whether this class can wear or wield it: their own family only. */
+export function fits(slot: "weapon" | "armor", id: number, cls: PlayerClass): boolean {
+  const f = familyOf(slot, id);
+  return f === null || f === (slot === "weapon" ? weaponFamilyOf(cls) : armorFamilyOf(cls));
+}
+const SPELL_FAMILIES = new Set(["mage", "priest", "bard"]);
+/** An item's name from its family and tier. A bare tier needs the wearer's class to say which family. */
+export function itemName(slot: "weapon" | "armor", id: number, cls?: PlayerClass): string {
+  const fam = familyOf(slot, id) ?? (cls ? (slot === "weapon" ? weaponFamilyOf(cls) : armorFamilyOf(cls)) : slot === "weapon" ? "steel" : "heavy");
+  const t = tierOf(id);
+  if (slot === "weapon") {
+    if (fam === "steel") return weapon(t).name;
+    if (SPELL_FAMILIES.has(fam)) return (GAME.spells as Record<string, string[]>)[fam]?.[t] ?? weapon(t).name;
+    return (GAME.itemNames.weapon as Record<string, string[]>)[fam]?.[t] ?? weapon(t).name;
+  }
+  if (fam === "heavy") return armor(t).name;
+  return (GAME.itemNames.armor as Record<string, string[]>)[fam]?.[t] ?? armor(t).name;
+}
+/** A carried item as it'd be named in a bag or on a board: a mage's or priest's spell comes as a scroll. */
+export function carriedName(slot: "weapon" | "armor", id: number, cls?: PlayerClass): string {
+  const fam = familyOf(slot, id) ?? (cls ? (slot === "weapon" ? weaponFamilyOf(cls) : armorFamilyOf(cls)) : null);
+  const name = itemName(slot, id, cls);
+  return slot === "weapon" && (fam === "mage" || fam === "priest") ? `Scroll of ${name}` : name;
+}
+/** What kind of thing it is, in a few words, for the board and the bag. */
+export function familyLabel(slot: "weapon" | "armor", id: number): string | null {
+  const f = familyOf(slot, id);
+  return f ? ({ steel: "a Steel weapon", shadow: "a Shadow weapon", mage: "a mage's spell", priest: "a priest's prayer", bard: "a bard's instrument",
+    heavy: "heavy armor", leathers: "light leathers", robes: "a caster's robes", performer: "a performer's clothes" } as Record<string, string>)[f] : null;
+}
+/** Who can use it, for a board or a gift: the paths and classes. */
+export function familyUsers(slot: "weapon" | "armor", id: number): string | null {
+  const f = familyOf(slot, id);
+  return f ? ({ steel: "warriors and guardians", shadow: "thieves", mage: "mages", priest: "priests", bard: "bards",
+    heavy: "warriors and guardians", leathers: "thieves", robes: "mages and priests", performer: "bards" } as Record<string, string>)[f] : null;
+}
+
 export function weapon(id: number) {
-  return GAME.weapons.find((w) => w.id === id) ?? GAME.weapons[0];
+  const t = tierOf(id);
+  return GAME.weapons.find((w) => w.id === t) ?? GAME.weapons[0];
 }
 export function armor(id: number) {
-  return GAME.armor.find((a) => a.id === id) ?? GAME.armor[0];
+  const t = tierOf(id);
+  return GAME.armor.find((a) => a.id === t) ?? GAME.armor[0];
 }
 export function expForLevel(level: number): number | null {
   return GAME.levels.find((l) => l.level === level)?.exp ?? null;
@@ -217,12 +286,15 @@ export function manaMax(p: Pick<Player, "class" | "level">): number {
 }
 /** What a weapon tier is called for this class: casters know spells at the same tiers. */
 export function weaponName(cls: PlayerClass, id: number): string {
-  const list = (GAME.spells as Record<string, string[]>)[cls];
-  return list ? (list[id] ?? weapon(id).name) : weapon(id).name;
+  return itemName("weapon", tierOf(id), cls);
+}
+/** What an armor tier is called for this class's own family. */
+export function armorName(cls: PlayerClass, id: number): string {
+  return itemName("armor", tierOf(id), cls);
 }
 
 /** What a caster carries for a weapon tier: a spell scroll, or for a bard the instrument itself. */
-export const casterItemName = (cls: PlayerClass, id: number) => cls === "bard" ? weaponName(cls, id) : `Scroll of ${weaponName(cls, id)}`;
+export const casterItemName = (cls: PlayerClass, id: number) => carriedName("weapon", tierOf(id), cls);
 
 /** Who teaches this class its spells, and where: Mother Quill's library for mages, Prior Hale's chapel for priests. */
 export const spellVendor = (cls: PlayerClass): { name: string; place: string } | null => (GAME.classes[cls] as { vendor?: { name: string; place: string } }).vendor ?? null;
@@ -239,7 +311,10 @@ export const attributeName = (cls: PlayerClass): string => (GAME.classes[cls] as
 /** Player's total strength and defense including gear. */
 export function effective(p: Player) {
   const j = trinket(p.trinket_id ?? 0);
-  return { str: p.str + boosted(weapon(p.weapon_id).str, p.weapon_rarity) + j.str, def: p.def + boosted(armor(p.armor_id).def, p.armor_rarity) + j.def };
+  // Heavy armor turns more of its rating into defense; light gives some of it up for a harder hit.
+  const prof = (GAME.armorProfiles as Record<string, { def: number; str: number }>)[armorFamilyOf(p.class) === "heavy" ? "heavy" : "light"];
+  const worn = boosted(armor(p.armor_id).def, p.armor_rarity);
+  return { str: p.str + boosted(weapon(p.weapon_id).str, p.weapon_rarity) + j.str + Math.round(worn * prof.str), def: p.def + Math.round(worn * prof.def) + j.def };
 }
 
 /** Charm as others feel it: your own, plus whatever your jewelry adds. */
@@ -286,7 +361,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     str: p.str,
     def: p.def,
     weapon: casts(p.class) ? weaponName(p.class, p.weapon_id) : withRarity(weaponName(p.class, p.weapon_id), p.weapon_rarity),
-    armor: withRarity(armor(p.armor_id).name, p.armor_rarity),
+    armor: withRarity(armorName(p.class, p.armor_id), p.armor_rarity),
     gold: p.gold,
     bank: p.bank,
     gems: p.gems,

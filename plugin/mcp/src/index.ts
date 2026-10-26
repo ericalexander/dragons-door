@@ -196,9 +196,9 @@ server.tool("library", "Visit a caster's teacher: Mother Quill's library (place:
   { place: z.enum(["library", "chapel", "tavern"]).optional() },
   async ({ place }) => text(await call("GET", `/v1/library${place ? `?place=${place}` : ""}`)));
 
-server.tool("learn_spell", "Learn a spell by id at the caster's teacher (Mother Quill's library for mages, Prior Hale's chapel for priests), or for a bard buy an instrument from Dunstan in the tavern. It replaces what they use now. Without confirm it only quotes the price (with the trade-in for the old one) and changes nothing; call again with confirm: true only after the player says yes to that quote.",
-  { id: z.number().int(), confirm: z.boolean().optional() },
-  async ({ id, confirm }) => text(await call("POST", "/v1/library", { id, ...(confirm ? { confirm: true } : {}) })));
+server.tool("learn_spell", "Learn a spell by id at the caster's teacher (Mother Quill's library for mages, Prior Hale's chapel for priests), or for a bard buy an instrument from Dunstan in the tavern. It replaces what they use now. Without confirm it only quotes the price two ways: trading the old one in, or keeping it (keep_old: true, full price) in the bag as a scroll or the instrument, to sell, auction or give away. It changes nothing until called again with confirm: true after the player says yes to that quote.",
+  { id: z.number().int(), keep_old: z.boolean().optional(), confirm: z.boolean().optional() },
+  async ({ id, keep_old, confirm }) => text(await call("POST", "/v1/library", { id, ...(keep_old ? { keep_old: true } : {}), ...(confirm ? { confirm: true } : {}) })));
 
 server.tool("respec", "Start over on a different path, in town: back to level 1 as that path's beginner class, specializing again at 5, for a fee. (To change specialization within the same path, use specialize instead.) Without confirm it only quotes the fee and what's kept and lost; call again with confirm: true only after the player has said yes to that quote.",
   { path: z.enum(["steel", "shadow", "gift"]), confirm: z.boolean().optional() },

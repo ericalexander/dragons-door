@@ -3,7 +3,7 @@
  * Lose one random carried item when you die.
  */
 import type { Client } from "./db.js";
-import { GAME, armor, weapon, weaponName, casts, casterItemName, attributeName, type Player } from "./game.js";
+import { GAME, armor, weapon, weaponName, armorName, casts, attributeName, carriedName, familyLabel, familyUsers, fits, type Player } from "./game.js";
 import { roll } from "./combat.js";
 import { ore, trinket, bonusText } from "./caves.js";
 import { questByIndex } from "./quests.js";
@@ -16,7 +16,7 @@ export type GearSlot = "weapon" | "armor";
 export function item(slot: Slot, id: number, r = 0): { name: string; weight: number; cost: number } {
   if (slot === "weapon" || slot === "armor") {
     const base = slot === "weapon" ? weapon(id) : armor(id);
-    return { name: withRarity(base.name, r), weight: base.weight, cost: Math.round(base.cost * rarity(r).value) };
+    return { name: withRarity(carriedName(slot, id), r), weight: base.weight, cost: Math.round(base.cost * rarity(r).value) };
   }
   if (slot === "ore") return ore(id);
   if (slot === "trinket") return trinket(id);
@@ -60,13 +60,17 @@ export async function describe(c: Client, p: Player) {
         : x.slot === "armor" ? { def: boosted(armor(x.item_id).def, x.rarity) }
         : x.slot === "trinket" ? { bonus: bonusText(trinket(x.item_id), attributeName(p.class)) }
         : x.slot === "quest" ? { quest_item: true } : {};
-      const upgrade = x.slot === "weapon" ? boosted(weapon(x.item_id).str, x.rarity) > boosted(weapon(p.weapon_id).str, p.weapon_rarity)
+      const gear = x.slot === "weapon" || x.slot === "armor";
+      const usable = !gear || fits(x.slot as "weapon" | "armor", x.item_id, p.class);
+      const upgrade = !usable ? false : x.slot === "weapon" ? boosted(weapon(x.item_id).str, x.rarity) > boosted(weapon(p.weapon_id).str, p.weapon_rarity)
         : x.slot === "armor" ? boosted(armor(x.item_id).def, x.rarity) > boosted(armor(p.armor_id).def, p.armor_rarity)
         : x.slot === "trinket" ? p.trinket_id === 0 : false;
-      const name = x.slot === "weapon" && casts(p.class) ? casterItemName(p.class, x.item_id) : it.name;
-      return { id: x.id, slot: x.slot, item_id: x.item_id, rarity_level: x.rarity ?? 0, name, ...(x.rarity ? { rarity: rarity(x.rarity).name } : {}), ...stats, weight: it.weight, sells_for: sellPrice(x.slot, x.item_id, x.rarity), upgrade };
+      const kind = gear ? familyLabel(x.slot as "weapon" | "armor", x.item_id) : null;
+      return { id: x.id, slot: x.slot, item_id: x.item_id, rarity_level: x.rarity ?? 0, name: it.name, ...(kind ? { what: kind } : {}),
+        ...(usable ? {} : { not_for_you: `only ${familyUsers(x.slot as "weapon" | "armor", x.item_id)} can use it; sell it, auction it or send it to someone who can` }),
+        ...(x.rarity ? { rarity: rarity(x.rarity).name } : {}), ...stats, weight: it.weight, sells_for: sellPrice(x.slot, x.item_id, x.rarity), upgrade };
     }),
-    equipped: { [casts(p.class) ? "spell" : "weapon"]: casts(p.class) ? weaponName(p.class, p.weapon_id) : withRarity(weapon(p.weapon_id).name, p.weapon_rarity), armor: withRarity(armor(p.armor_id).name, p.armor_rarity), jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id), attributeName(p.class))})` : null },
+    equipped: { [casts(p.class) ? "spell" : "weapon"]: casts(p.class) ? weaponName(p.class, p.weapon_id) : withRarity(weaponName(p.class, p.weapon_id), p.weapon_rarity), armor: withRarity(armorName(p.class, p.armor_id), p.armor_rarity), jewelry: p.trinket_id ? `${trinket(p.trinket_id).name} (${bonusText(trinket(p.trinket_id), attributeName(p.class))})` : null },
     gems: p.gems,
     pickaxe: p.pickaxe,
     ground: p.ground ? { slot: p.ground.slot, name: item(p.ground.slot, p.ground.item_id, p.ground.rarity ?? 0).name, weight: item(p.ground.slot, p.ground.item_id).weight } : null,

@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.24.0",
+    "lore": "The realm's smiths have stopped pretending a sword is a fiddle if you squint. Gear is what it is now: steel and plate for those who fight up front, leathers and bows for the quick, robes, scrolls and instruments for the gifted. Your old spellbook isn't just a memory any more, either; keep it, and someone will pay for it.",
+    "plain": "Each path now has its own weapons and armor (yours changed to match; nothing was lost), heavy armor guards more and light armor hits harder, and spells and instruments can be kept, sold and auctioned. Lots show what they are, and who can use them."
+  },
+  {
     "version": "0.23.0",
     "lore": "The town criers have started calling meetings in the square, and for once they want to hear from you. And if you've already wandered the realm as a stranger on the website, the clerk at the gate has kept your name in the register: give him your code and you can pick up where you left off.",
     "plain": "Vote in town meetings (ask the narrator about any meeting, from level 2). If you tried the game on dragonsdoor.gg/try, say \"claim my character\" with your code to keep that character. The side pane's \"In the realm now\" list now fills in by itself."

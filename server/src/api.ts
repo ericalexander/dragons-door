@@ -4,7 +4,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { pool, tx, type Client } from "./db.js";
 import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
-  GAME, armor, weapon, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec, casterItemName,
+  GAME, armor, weapon, armorName, carriedId, carriedName, familyLabel, familyOf, familyUsers, fits, itemName, tierOf, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec, casterItemName,
   type Player, type PlayerClass, type Turns, type Monster, type Event, type Envelope,
 } from "./game.js";
 import * as Bag from "./bag.js";
@@ -414,7 +414,7 @@ api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authoriza
 })));
 
 api.post("/library", async (c) => {
-  const body = z.object({ id: z.number().int(), confirm: z.boolean().optional() }).parse(await c.req.json());
+  const body = z.object({ id: z.number().int(), keep_old: z.boolean().optional(), confirm: z.boolean().optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     requireInTown(ctx, `the ${spellVendor(ctx.p.class)?.place ?? "library"}`);
@@ -429,15 +429,26 @@ api.post("/library", async (c) => {
     if (ctx.p.level < w.id) { ctx.events.push({ kind: "too_soon", spell: weaponName(ctx.p.class, w.id), needs_level: w.id }); return; }
     const tradeIn = Math.floor(weapon(ctx.p.weapon_id).cost / 2);
     const discount = charmDiscount(charmOf(ctx.p));
-    const cost = Math.ceil((w.cost - tradeIn) * (1 - discount));
+    const costTrading = Math.ceil((w.cost - tradeIn) * (1 - discount));
+    const costKeeping = Math.ceil(w.cost * (1 - discount));
+    // The old spell or instrument is a thing now: trade it in, or keep it (as a scroll, or the instrument) to sell or auction.
+    const oldCarried = ctx.p.weapon_id > 0 ? carriedId("weapon", ctx.p.class, ctx.p.weapon_id) : 0;
+    const room = Bag.bag(ctx.p.bag_id).capacity - await Bag.used(ctx.c, ctx.p.id);
+    const canKeep = oldCarried > 0 && Bag.item("weapon", oldCarried).weight <= room;
     if (!confirmed) {
       ctx.events.push({ kind: "learn_quote", teacher: spellVendor(ctx.p.class)?.name ?? null, item: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str,
-        replaces: weaponName(ctx.p.class, ctx.p.weapon_id), trade_in: tradeIn, cost, gold: ctx.p.gold, bank: ctx.p.bank, ...(ctx.p.gold < cost ? { short_by: cost - ctx.p.gold } : {}), ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
+        replaces: weaponName(ctx.p.class, ctx.p.weapon_id), trade_in: tradeIn, cost: costTrading, gold: ctx.p.gold, bank: ctx.p.bank, ...(ctx.p.gold < costTrading ? { short_by: costTrading - ctx.p.gold } : {}),
+        ...(oldCarried ? { keep: canKeep ? { as: Bag.item("weapon", oldCarried).name, cost: costKeeping, sells_for: Bag.sellPrice("weapon", oldCarried), ...(ctx.p.gold < costKeeping ? { short_by: costKeeping - ctx.p.gold } : {}) } : { possible: false, why: "no room in the bag" } } : {}),
+        ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
+      ctx.hint = oldCarried ? "Show the price both ways: trade the old one in (cheaper), or keep it in the bag to sell, auction or give away (full price). Ask which, then call again with confirm: true, and keep_old: true if they keep it." : undefined;
       return;
     }
-    if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: tradeIn }); return; }
+    const keep = body.keep_old === true && canKeep;
+    const cost = keep ? costKeeping : costTrading;
+    if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: keep ? 0 : tradeIn }); return; }
     await savePlayer(ctx, { gold: ctx.p.gold - cost, weapon_id: w.id });
-    ctx.events.push({ kind: "learned", spell: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str, cost, trade_in: tradeIn, ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
+    if (keep) await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,'weapon',$2)", [ctx.p.id, oldCarried]);
+    ctx.events.push({ kind: "learned", spell: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str, cost, ...(keep ? { kept: Bag.item("weapon", oldCarried).name } : { trade_in: tradeIn }), ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
     await logEvent(ctx, "spend", { on: "spell", item: weaponName(ctx.p.class, w.id), tier: w.id, gold: cost });
   }));
 });
@@ -501,7 +512,7 @@ api.post("/respec", async (c) => {
     const fromGold = Math.min(gold, fee); gold -= fromGold; bank -= fee - fromGold;
     await ctx.c.query("delete from inventory where player_id = $1 and slot in ('weapon','armor')", [ctx.p.id]);
     // What the smith bought back goes on his shelf: bagged gear, worn armor, and a worn weapon (a caster's "weapon" is a spell, not a thing).
-    if (!ctx.p.is_test) await toStorehouse(ctx.c, [...gear, { slot: "armor", item_id: ctx.p.armor_id, rarity: ctx.p.armor_rarity ?? 0 }, ...(casts(ctx.p.class) ? [] : [{ slot: "weapon", item_id: ctx.p.weapon_id, rarity: ctx.p.weapon_rarity ?? 0 }])]);
+    if (!ctx.p.is_test) await toStorehouse(ctx.c, [...gear, { slot: "armor", item_id: carriedId("armor", ctx.p.class, ctx.p.armor_id), rarity: ctx.p.armor_rarity ?? 0 }, ...(casts(ctx.p.class) ? [] : [{ slot: "weapon", item_id: carriedId("weapon", ctx.p.class, ctx.p.weapon_id), rarity: ctx.p.weapon_rarity ?? 0 }])]);
     const old = ctx.p.class;
     await savePlayer(ctx, { class: toClass, path: toPath, specialized: toSpecialized, level: 1, exp: 0, hp: 20, max_hp: 20, str: 10, def: 1, weapon_id: 0, armor_id: 0, weapon_rarity: 0, armor_rarity: 0, gold, bank, ground: null, respec_at: new Date().toISOString() });
     await saveTurns(ctx, { specials: GAME.classes[toClass].specialsPerDay, mana: manaMax(ctx.p) });
@@ -870,7 +881,8 @@ api.get("/shop", async (c) => {
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
     // A weapon's str is its power (a bonus on top of the class's attribute), so call it that.
-    const listed = kind === "weapon" ? (items as { str: number }[]).map(({ str, ...rest }) => ({ ...rest, power: str })) : items;
+    const named = (items as { id: number; name: string }[]).map((x) => ({ ...x, name: itemName(kind, x.id, ctx.p.class) }));
+    const listed = kind === "weapon" ? (named as unknown as { str: number }[]).map(({ str, ...rest }) => ({ ...rest, power: str })) : named;
     ctx.events.push({ kind: "catalog", shop: kind, owned, items: listed, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) });
   }));
 });
@@ -1057,15 +1069,18 @@ async function win(ctx: Ctx, kind: string, m: Monster) {
     await questTriggers(ctx, { win: true });
     const drop = rollDrop(m.level ?? ctx.p.level, ctx.p.class, await luck(ctx, "drop", dropChance(ctx.p.class)));
     if (drop) {
+      // A find is of the finder's own family: what the land gives up, it gives up for you.
+      const carried = carriedId(drop.kind, ctx.p.class, drop.tier);
+      drop.item = carriedName(drop.kind, carried);
       const w = Bag.item(drop.kind, drop.tier).weight;
       const usedNow = await Bag.used(ctx.c, ctx.p.id);
       const cap = Bag.bag(ctx.p.bag_id).capacity;
       const upgrade = drop.tier > (drop.kind === "weapon" ? ctx.p.weapon_id : ctx.p.armor_id);
       if (usedNow + w <= cap) {
-        await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, drop.kind, drop.tier]);
+        await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, drop.kind, carried]);
         ctx.events.push({ kind: "loot", monster: m.name, item: lootName(ctx.p, drop), slot: drop.kind, weight: w, stored: true, upgrade, bag_used: usedNow + w, bag_capacity: cap });
       } else {
-        await savePlayer(ctx, { ground: { slot: drop.kind, item_id: drop.tier } });
+        await savePlayer(ctx, { ground: { slot: drop.kind, item_id: carried } });
         ctx.events.push({ kind: "loot", monster: m.name, item: lootName(ctx.p, drop), slot: drop.kind, weight: w, stored: false, upgrade, bag_used: usedNow, bag_capacity: cap });
       }
       await post(ctx, "loot", ctx.p.name, null, { item: drop.item, monster: m.name });
@@ -1234,7 +1249,8 @@ api.post("/buy", async (c) => {
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current_ = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
     const curRar = body.kind === "weapon" ? ctx.p.weapon_rarity ?? 0 : ctx.p.armor_rarity ?? 0;
-    const old = Bag.item(body.kind, current_.id, curRar);
+    const old = Bag.item(body.kind, carriedId(body.kind, ctx.p.class, current_.id), curRar);
+    const itemLabel = itemName(body.kind, item.id, ctx.p.class);
     const hasOld = current_.id > 0;
     const tradeIn = hasOld ? Math.floor(old.cost / 2) : 0;
     const costTrading = Math.ceil((item.cost - tradeIn) * (1 - discount));
@@ -1245,7 +1261,7 @@ api.post("/buy", async (c) => {
     const stat = (x: { str?: number; def?: number }) => body.kind === "weapon" ? { power: x.str ?? 0 } : { defense: x.def ?? 0 };
     if (!confirmed) {
       ctx.events.push({
-        kind: "buy_quote", shop: body.kind, item: item.name, ...stat(item), gold: ctx.p.gold, bank: ctx.p.bank, ...pct,
+        kind: "buy_quote", shop: body.kind, item: itemLabel, ...stat(item), gold: ctx.p.gold, bank: ctx.p.bank, ...pct,
         ...(hasOld ? {
           old: { item: old.name, ...stat(current_) },
           trade_in: { value: tradeIn, cost: costTrading, ...(ctx.p.gold < costTrading ? { short_by: costTrading - ctx.p.gold } : {}) },
@@ -1264,10 +1280,11 @@ api.post("/buy", async (c) => {
     const cost = keep ? costKeeping : costTrading;
     if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, trade_in: keep ? 0 : tradeIn }); return; }
     await savePlayer(ctx, { gold: ctx.p.gold - cost, ...(body.kind === "weapon" ? { weapon_id: item.id, weapon_rarity: 0 } : { armor_id: item.id, armor_rarity: 0 }) });
-    if (keep) await ctx.c.query("insert into inventory (player_id, slot, item_id, rarity) values ($1,$2,$3,$4)", [ctx.p.id, body.kind, current_.id, curRar]);
-    else if (hasOld && !ctx.p.is_test) await toStorehouse(ctx.c, [{ slot: body.kind, item_id: current_.id, rarity: curRar }]);
-    ctx.events.push({ kind: "bought", shop: body.kind, item: item.name, cost, ...(keep ? { kept: old.name } : { trade_in: tradeIn }), ...pct });
-    await logEvent(ctx, "spend", { on: body.kind, item: item.name, tier: item.id, gold: cost });
+    const oldCarried = carriedId(body.kind, ctx.p.class, current_.id);
+    if (keep) await ctx.c.query("insert into inventory (player_id, slot, item_id, rarity) values ($1,$2,$3,$4)", [ctx.p.id, body.kind, oldCarried, curRar]);
+    else if (hasOld && !ctx.p.is_test) await toStorehouse(ctx.c, [{ slot: body.kind, item_id: oldCarried, rarity: curRar }]);
+    ctx.events.push({ kind: "bought", shop: body.kind, item: itemLabel, cost, ...(keep ? { kept: old.name } : { trade_in: tradeIn }), ...pct });
+    await logEvent(ctx, "spend", { on: body.kind, item: itemLabel, tier: item.id, gold: cost });
   }));
 });
 
@@ -1687,8 +1704,9 @@ async function questEffects(ctx: Ctx, q: QuestDef, row: QRow, effects: QEffect[]
       await ctx.c.query("update quests set data = $2 where id = $1", [row.id, JSON.stringify(row.data)]);
     } else if ("gear" in fx) {
       const { slot, tier } = fx.gear;
-      await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, slot, tier]);
-      gear.push(slot === "weapon" && casts(ctx.p.class) ? casterItemName(ctx.p.class, tier) : Bag.item(slot, tier).name);
+      const carried = carriedId(slot, ctx.p.class, tier);
+      await ctx.c.query("insert into inventory (player_id, slot, item_id) values ($1,$2,$3)", [ctx.p.id, slot, carried]);
+      gear.push(Bag.item(slot, carried).name);
     } else if ("mark_target" in fx) {
       if (row.data.target) await hearOf(ctx, row.data.target.x, row.data.target.y, q.title);
     } else if ("errand" in fx && ctx.p.trial) {
@@ -2148,11 +2166,14 @@ async function forgeables(ctx: Ctx): Promise<ForgeTarget[]> {
   const out: ForgeTarget[] = [];
   if (ctx.p.weapon_id > 0 && !casts(ctx.p.class)) out.push({ target: "weapon", slot: "weapon", item_id: ctx.p.weapon_id, rarity: ctx.p.weapon_rarity ?? 0 });
   if (ctx.p.armor_id > 0) out.push({ target: "armor", slot: "armor", item_id: ctx.p.armor_id, rarity: ctx.p.armor_rarity ?? 0 });
-  for (const x of await Bag.contents(ctx.c, ctx.p.id)) if (x.slot === "weapon" || x.slot === "armor") out.push({ target: x.id, slot: x.slot, item_id: x.item_id, rarity: x.rarity ?? 0, row: x.id });
+  // Spells and instruments aren't the forge's business, whoever's carrying them.
+  const magic = (x: { slot: string; item_id: number }) => x.slot === "weapon" && ["mage", "priest", "bard"].includes(String(familyOf("weapon", x.item_id)));
+  for (const x of await Bag.contents(ctx.c, ctx.p.id)) if ((x.slot === "weapon" || x.slot === "armor") && !magic(x)) out.push({ target: x.id, slot: x.slot, item_id: x.item_id, rarity: x.rarity ?? 0, row: x.id });
   return out;
 }
 async function forgeQuote(ctx: Ctx, f: ForgeTarget, ore: Record<number, number>) {
   const base = f.slot === "weapon" ? weapon(f.item_id) : armor(f.item_id);
+  const baseName = f.row ? carriedName(f.slot, f.item_id) : itemName(f.slot, f.item_id, ctx.p.class);
   const stat = (r: number) => f.slot === "weapon" ? { power: boosted((base as { str: number }).str, r) } : { def: boosted((base as { def: number }).def, r) };
   const cost = forgeCost(base.cost, f.rarity);
   const missing: string[] = [];
@@ -2162,9 +2183,9 @@ async function forgeQuote(ctx: Ctx, f: ForgeTarget, ore: Record<number, number>)
     if (ctx.p.gems < cost.gems) missing.push(`${cost.gems - ctx.p.gems} more gems`);
   }
   return {
-    target: f.target, worn: typeof f.target === "string", item: withRarity(base.name, f.rarity), rarity: rarity(f.rarity).name, ...stat(f.rarity),
+    target: f.target, worn: typeof f.target === "string", item: withRarity(baseName, f.rarity), rarity: rarity(f.rarity).name, ...stat(f.rarity),
     ...(cost ? {
-      next: { rarity: RARITY[f.rarity + 1].name, ...stat(f.rarity + 1), item: withRarity(base.name, f.rarity + 1) },
+      next: { rarity: RARITY[f.rarity + 1].name, ...stat(f.rarity + 1), item: withRarity(baseName, f.rarity + 1) },
       cost: { gold: cost.gold, ore: Object.entries(cost.ore).map(([o, n]) => `${n} ${oreOf(Number(o)).name}`), ...(cost.gems ? { gems: cost.gems } : {}) },
       can_forge: missing.length === 0, ...(missing.length ? { missing } : {}),
     } : { at_the_top: "Mythic is as far as any forge can take it" }),
@@ -2183,7 +2204,7 @@ api.get("/forge", async (c) => c.json(await withPlayer(c.req.header("authorizati
   const pieces = [];
   for (const f of await forgeables(ctx)) pieces.push(await forgeQuote(ctx, f, ore));
   ctx.events.push({ kind: "forge", smith: "Brannagh Steel", pieces, have: { gold: ctx.p.gold, bank: ctx.p.bank, gems: ctx.p.gems, ore: Object.entries(ore).map(([o, n]) => `${n} ${oreOf(Number(o)).name}`) },
-    tiers: RARITY.map((r) => ({ name: r.name, stat: `x${r.mult}` })), note: casts(ctx.p.class) ? "spells aren't things; armor can be forged" : undefined });
+    tiers: RARITY.map((r) => ({ name: r.name, stat: `x${r.mult}` })), note: casts(ctx.p.class) ? "spells and instruments aren't the forge's business; armor can be forged" : undefined });
 })));
 
 api.post("/forge", async (c) => {
@@ -2212,7 +2233,7 @@ api.post("/forge", async (c) => {
     const to = f.rarity + 1;
     if (f.row) await ctx.c.query("update inventory set rarity = $2 where id = $1", [f.row, to]);
     else await savePlayer(ctx, f.slot === "weapon" ? { weapon_rarity: to } : { armor_rarity: to });
-    const made = withRarity(base.name, to);
+    const made = withRarity(f.row ? carriedName(f.slot, f.item_id) : itemName(f.slot, f.item_id, ctx.p.class), to);
     ctx.events.push({ kind: "forged", ...q.next, item: made, from: q.item, rarity: RARITY[to].name, paid: q.cost, worn: !f.row });
     await logEvent(ctx, "forge", { slot: f.slot, item_id: f.item_id, to, gold: cost.gold });
     if (to >= 3) await post(ctx, "forged", ctx.p.name, null, { item: made });
@@ -2612,7 +2633,7 @@ api.post("/bard", async (c) => c.json(await withPlayer(c.req.header("authorizati
   const n = await ctx.c.query<{ kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
     "select kind, actor, target, detail from news order by id desc limit 15");
   const headline = n.rowCount ? n.rows[roll(n.rowCount - 1)] : null;
-  const you = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, exp: ctx.p.exp, weapon: weapon(ctx.p.weapon_id).name, armor: armor(ctx.p.armor_id).name, gold: ctx.p.gold, charm: ctx.p.charm };
+  const you = { name: ctx.p.name, class: ctx.p.class, level: ctx.p.level, exp: ctx.p.exp, weapon: weaponName(ctx.p.class, ctx.p.weapon_id), armor: armorName(ctx.p.class, ctx.p.armor_id), gold: ctx.p.gold, charm: ctx.p.charm };
   ctx.events.push({ kind: "song", bard: bard.name, style: bard.style, leans_toward: bard.sings_about, you, headline, gift, amount, ...(lucky ? { charm_luck: true } : {}) });
   await questTriggers(ctx, { song: true });
   await logEvent(ctx, "song", { bard: bard.name, gift, amount });
@@ -2749,20 +2770,27 @@ api.post("/equip", async (c) => {
     } else {
       const row = await ownRow(ctx, body.id); slot = row.slot; itemId = row.item_id; rowId = row.id; rar = row.rarity ?? 0;
     }
+    // Only your own family: a bard can't play a sword, a warrior can't wear robes.
+    if ((slot === "weapon" || slot === "armor") && !fits(slot, itemId, ctx.p.class)) {
+      ctx.events.push({ kind: "cannot_equip", item: Bag.item(slot, itemId, rar).name, reason: `only ${familyUsers(slot, itemId)} can use it; you could sell it, put it up at auction, or send it to someone who can` });
+      return;
+    }
     // A caster learns a scroll's spell; the scroll's rarity doesn't carry into the spell.
     if (slot === "weapon" && casts(ctx.p.class)) rar = 0;
     const oldRar = slot === "weapon" ? ctx.p.weapon_rarity ?? 0 : slot === "armor" ? ctx.p.armor_rarity ?? 0 : 0;
     if (slot === "ore") { ctx.events.push({ kind: "cannot_equip", reason: "ore is for selling or for Odile to work" }); return; }
     if (slot === "quest") { ctx.events.push({ kind: "cannot_equip", reason: "it isn't something you wear; it belongs to a story" }); return; }
-    const oldId = slot === "weapon" ? ctx.p.weapon_id : slot === "armor" ? ctx.p.armor_id : ctx.p.trinket_id;
+    const oldWorn = slot === "weapon" ? ctx.p.weapon_id : slot === "armor" ? ctx.p.armor_id : ctx.p.trinket_id;
+    // What comes off goes in the bag as its own family's piece.
+    const oldId = (slot === "weapon" || slot === "armor") && oldWorn > 0 ? carriedId(slot, ctx.p.class, oldWorn) : oldWorn;
     const usedNow = await Bag.used(ctx.c, ctx.p.id);
     const after = usedNow - (rowId !== null ? Bag.item(slot, itemId).weight : 0) + (oldId > 0 ? Bag.item(slot, oldId).weight : 0);
     const cap = Bag.bag(ctx.p.bag_id).capacity;
     if (after > cap) { ctx.events.push({ kind: "bag_full", need: after - cap, holding: Bag.item(slot, oldId).name }); return; }
     if (rowId !== null) await ctx.c.query("delete from inventory where id = $1", [rowId]);
     if (oldId > 0) await ctx.c.query("insert into inventory (player_id, slot, item_id, rarity) values ($1,$2,$3,$4)", [ctx.p.id, slot, oldId, oldRar]);
-    await savePlayer(ctx, { ...(slot === "weapon" ? { weapon_id: itemId, weapon_rarity: rar } : slot === "armor" ? { armor_id: itemId, armor_rarity: rar } : { trinket_id: itemId }), ...("ground" in body ? { ground: null } : {}) });
-    const label = (id: number, r: number) => slot === "weapon" && casts(ctx.p.class) ? weaponName(ctx.p.class, id) : Bag.item(slot, id, r).name;
+    await savePlayer(ctx, { ...(slot === "weapon" ? { weapon_id: tierOf(itemId), weapon_rarity: rar } : slot === "armor" ? { armor_id: tierOf(itemId), armor_rarity: rar } : { trinket_id: itemId }), ...("ground" in body ? { ground: null } : {}) });
+    const label = (id: number, r: number) => slot === "weapon" && casts(ctx.p.class) ? weaponName(ctx.p.class, tierOf(id)) : Bag.item(slot, id, r).name;
     ctx.events.push({ kind: "equipped", slot: slot === "weapon" && casts(ctx.p.class) ? "spell" : slot, item: label(itemId, rar), ...(slot === "weapon" && casts(ctx.p.class) ? { learned_from_scroll: true } : {}), stowed: oldId > 0 ? label(oldId, oldRar) : null });
   }));
 });
@@ -2849,7 +2877,7 @@ api.post("/mail", async (c) => {
         const row = await ownRow(ctx, body.item);
         if (row.slot === "quest") { ctx.events.push({ kind: "gift_refused", reason: "that's not yours to send" }); return; }
         // Gear far beyond someone would carry them past the early climb (top-tier gear on day one halves it, in the simulator).
-        if ((row.slot === "weapon" || row.slot === "armor") && to.role === "player" && row.item_id > to.level + GEAR_ABOVE_LEVEL) {
+        if ((row.slot === "weapon" || row.slot === "armor") && to.role === "player" && tierOf(row.item_id) > to.level + GEAR_ABOVE_LEVEL) {
           ctx.events.push({ kind: "gift_refused", reason: "too fine for them yet", their_level: to.level, finest_you_can_send: to.level + GEAR_ABOVE_LEVEL }); return;
         }
         slot = row.slot; itemId = row.item_id; rar = row.rarity ?? 0; itemName = Bag.item(row.slot, row.item_id, rar).name; itemWorth = Bag.item(row.slot, row.item_id, rar).cost;
@@ -3129,16 +3157,18 @@ const A_SELECT = `select a.id::text, a.town, a.seller_id, a.slot, a.item_id, a.q
   from auctions a left join players s on s.id = a.seller_id left join players b on b.id = a.high_bidder`;
 
 const lotName = (r: { slot: ListSlot; item_id: number; qty: number; rarity?: number }) => { const n = worth(r.slot, r.item_id, r.rarity ?? 0).name; return r.qty > 1 ? `${r.qty} × ${n}${r.slot === "gem" ? "s" : ""}` : n; };
+/** A lot is what it is: its family, and whether the one looking can use it (anyone may buy it, to sell on or give). */
 function lotStats(slot: ListSlot, id: number, cls: Player["class"], r = 0) {
-  if (slot === "weapon") return { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}), ...(casts(cls) ? { for_you: casterItemName(cls, id) } : {}) };
-  if (slot === "armor") return { def: boosted(armor(id).def, r), ...(r ? { rarity: rarity(r).name } : {}) };
+  const fam = (s: "weapon" | "armor") => ({ what: familyLabel(s, id), ...(fits(s, id, cls) ? {} : { not_for_your_path: `only ${familyUsers(s, id)} can use it` }) });
+  if (slot === "weapon") return { power: boosted(weapon(id).str, r), ...(r ? { rarity: rarity(r).name } : {}), ...fam("weapon") };
+  if (slot === "armor") return { def: boosted(armor(id).def, r), ...(r ? { rarity: rarity(r).name } : {}), ...fam("armor") };
   if (slot === "trinket") return { bonus: bonusText(trinket(id), attributeName(cls)) };
   return {};
 }
 function listingView(ctx: Ctx, r: ARow) {
   const w = worth(r.slot, r.item_id, r.rarity);
   return {
-    id: Number(r.id), item: lotName(r), slot: r.slot, tier: r.item_id, ...lotStats(r.slot, r.item_id, ctx.p.class, r.rarity), worth: w.value * r.qty,
+    id: Number(r.id), item: lotName(r), slot: r.slot, tier: r.slot === "weapon" || r.slot === "armor" ? tierOf(r.item_id) : r.item_id, ...lotStats(r.slot, r.item_id, ctx.p.class, r.rarity), worth: w.value * r.qty,
     town: TOWNS[r.town as Town] ?? r.town, seller: r.seller ?? "the house",
     min_bid: r.min_bid, ...(r.buy_now ? { buy_now: r.buy_now } : {}), high_bid: r.high_bid, next_bid: nextBid(r.min_bid, r.high_bid),
     closes_after: r.ends_day, days_left: Math.max(0, daysBetween(ctx.day, r.ends_day)),
@@ -3377,7 +3407,7 @@ api.post("/auction", async (c) => {
         price: final, pays: owed, can_pay: ctx.p.gold + ctx.p.bank >= owed,
         ...(ctx.p.gold + ctx.p.bank >= owed ? { after: { bank: ctx.p.bank - fromBank, purse: ctx.p.gold - (owed - fromBank) } } : {}),
         ...(buyingOut ? {} : { closes_after: r.ends_day, note: "held by the house until it closes; if you're outbid, it comes back to your bank" }) });
-      ctx.hint = `A quote, nothing done yet: name the lot and what it is, the price, and what they'd have left, and ask them to confirm (y/n). Call again with the same lot and confirm: true only on a yes.`;
+      ctx.hint = `A quote, nothing done yet: name the lot and what it is, the price, and what they'd have left, and ask them to confirm (y/n). If it's not_for_your_path, say plainly they couldn't use it themselves (they could sell it on or give it to someone who can). Call again with the same lot and confirm: true only on a yes.`;
       return;
     }
     if (!(await payFrom(ctx, owed))) { ctx.events.push({ kind: "auction_refused", reason: `that takes ${owed} gold and you have ${ctx.p.gold + ctx.p.bank} between purse and bank` }); return; }

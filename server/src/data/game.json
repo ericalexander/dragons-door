@@ -806,5 +806,81 @@
       "Lamplight Anthem",
       "Grand Finale"
     ]
+  },
+  "itemNames": {
+    "weapon": {
+      "shadow": [
+        "Fists",
+        "Sling",
+        "Skinning Knife",
+        "Short Bow",
+        "Twin Daggers",
+        "Ashwood Longbow",
+        "Fordwatch Crossbow",
+        "Undercroft Stilettos",
+        "Riverglass Bow",
+        "Nightvine Daggers",
+        "Silverstring Bow",
+        "Mistcutter Blades",
+        "Doorstone Bow"
+      ]
+    },
+    "armor": {
+      "leathers": [
+        "Coat",
+        "Padded Jerkin",
+        "Hide Vest",
+        "Studded Leathers",
+        "Boiled-Leather Cuirass",
+        "Scout's Brigandine",
+        "Ranger's Leathers",
+        "Fordrunner's Harness",
+        "Nightwalker's Leathers",
+        "Ashen Hide",
+        "Shadowsilk Jack",
+        "Riverdrake Leathers",
+        "Doorward Leathers"
+      ],
+      "robes": [
+        "Homespun Robe",
+        "Wool Robe",
+        "Scholar's Robe",
+        "Lined Robe",
+        "Warded Robe",
+        "Embroidered Robe",
+        "Silverthread Robe",
+        "Lampwoven Vestments",
+        "Starwoven Robe",
+        "Ashen Vestments",
+        "Moonsilk Robe",
+        "Sunthread Vestments",
+        "Doorward Robe"
+      ],
+      "performer": [
+        "Travelling Clothes",
+        "Patched Doublet",
+        "Minstrel's Jerkin",
+        "Bright Tabard",
+        "Player's Leathers",
+        "Velvet Doublet",
+        "Troubadour's Coat",
+        "Masquer's Leathers",
+        "Silver-Laced Coat",
+        "Ballad-Singer's Cloak",
+        "Starlight Doublet",
+        "Court Player's Finery",
+        "Doorward Motley"
+      ]
+    }
+  },
+  "armorProfiles": {
+    "heavy": {
+      "def": 1.3,
+      "str": -0.2
+    },
+    "light": {
+      "def": 0.7,
+      "str": 0.2
+    }
   }
 }

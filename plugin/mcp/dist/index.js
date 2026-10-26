@@ -829,9 +829,9 @@ server.tool(
 );
 server.tool(
   "learn_spell",
-  "Learn a spell by id at the caster's teacher (Mother Quill's library for mages, Prior Hale's chapel for priests), or for a bard buy an instrument from Dunstan in the tavern. It replaces what they use now. Without confirm it only quotes the price (with the trade-in for the old one) and changes nothing; call again with confirm: true only after the player says yes to that quote.",
-  { id: z.number().int(), confirm: z.boolean().optional() },
-  async ({ id, confirm }) => text(await call("POST", "/v1/library", { id, ...confirm ? { confirm: true } : {} }))
+  "Learn a spell by id at the caster's teacher (Mother Quill's library for mages, Prior Hale's chapel for priests), or for a bard buy an instrument from Dunstan in the tavern. It replaces what they use now. Without confirm it only quotes the price two ways: trading the old one in, or keeping it (keep_old: true, full price) in the bag as a scroll or the instrument, to sell, auction or give away. It changes nothing until called again with confirm: true after the player says yes to that quote.",
+  { id: z.number().int(), keep_old: z.boolean().optional(), confirm: z.boolean().optional() },
+  async ({ id, keep_old, confirm }) => text(await call("POST", "/v1/library", { id, ...keep_old ? { keep_old: true } : {}, ...confirm ? { confirm: true } : {} }))
 );
 server.tool(
   "respec",

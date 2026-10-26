@@ -588,7 +588,8 @@ async function auctionBids(b: Bot) {
   }
   const spare = Math.floor((ev.purse + ev.bank) * 0.6);
   // An upgrade is worth up to a quarter over shop price to them, and no more than they can spare.
-  const want = ev.listings.filter((l) => !l.yours && !l.you_lead && cats[l.slot] !== undefined && l.tier > cats[l.slot] && l.next_bid <= spare && l.next_bid <= Math.floor(((l as { worth?: number }).worth ?? Infinity) * 1.25))
+  // Only what they can use: a bard doesn't bid on a sword.
+  const want = ev.listings.filter((l) => !l.yours && !l.you_lead && !(l as { not_for_your_path?: string }).not_for_your_path && cats[l.slot] !== undefined && l.tier > cats[l.slot] && l.next_bid <= spare && l.next_bid <= Math.floor(((l as { worth?: number }).worth ?? Infinity) * 1.25))
     .sort((a, z) => z.tier - a.tier)[0];
   if (!want) return;
   const r = await b.post("/auction", { op: "bid", lot: want.id });
