@@ -241,7 +241,8 @@ function seasoned(ctx: Ctx, what: string): boolean {
 /** Names that would pass for a local. Compared after folding lookalike characters. */
 const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
   "violet", "odile", "mother quill", "quill", "prior hale", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon", "the dark dragon", "dark dragon", "vael", "vael the watchful", "the watchful",
-  "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic", "della moss", "goldie teague", "tilly brook", "piers calloway"];
+  "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic", "della moss", "goldie teague", "tilly brook", "piers calloway",
+  "rufus kell", "mirela sorn", "lew tanner", "sister junia", "sister orla", "bess tolley", "ione vash", "jem arkwright"];
 // i, l, 1, | and ! all fold to "l" (so "HiIde" and "Hi1de" read as "Hilde"); 0→o, 3→e, 5→s, rn→m, vv→w.
 const fold = (n: string) => n.toLowerCase().replace(/rn/g, "m").replace(/vv/g, "w").replace(/[il1|!]/g, "l").replace(/0/g, "o").replace(/3/g, "e").replace(/5/g, "s").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
 const RESERVED_FOLDED = new Set(RESERVED.map(fold));

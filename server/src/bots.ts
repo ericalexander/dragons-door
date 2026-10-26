@@ -24,6 +24,7 @@ import { settlePolls } from "./polls.js";
 import { sweepTrials } from "./trial.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
+import { ROSTER } from "./townsfolk.js";
 import { realmDay, realmSettings } from "./day.js";
 import { GAME, expForLevel, levelGains, type Envelope, type Event } from "./game.js";
 import { DIRS, TOWN_TILES, tileAt, type Dir, type TownId } from "./world.js";
@@ -35,28 +36,6 @@ import { awayToday, choose, doneLine, finished, fraction, goalLabel, goalTalk, p
 export const bots = new Hono();
 
 
-const ROSTER: { name: string; class: "warrior" | "thief" | "mage" | "priest"; personality: Personality; home?: "ironhold" | "ashford"; level?: number; newcomer?: boolean }[] = [
-  { name: "Hilde", class: "warrior", personality: "banker" },
-  { name: "Grimwald", class: "warrior", personality: "drunk" },
-  { name: "Vesper", class: "thief", personality: "raider" },
-  { name: "Old Tam", class: "mage", personality: "gossip" },
-  { name: "Brother Ansel", class: "priest", personality: "pious" },
-  { name: "Pip", class: "thief", personality: "reckless" },
-  { name: "Madam Orsolya", class: "mage", personality: "seer" },
-  { name: "Sir Pomfrey", class: "warrior", personality: "braggart" },
-  // Ironhold's own, who start seasoned: they've lived out there for years.
-  { name: "Hask the Unbowed", class: "warrior", personality: "veteran", home: "ironhold", level: 6 },
-  { name: "Nell Thorne", class: "thief", personality: "scout", home: "ironhold", level: 5 },
-  { name: "Sabine Ashe", class: "mage", personality: "scholar", home: "ironhold", level: 5 },
-  // Ashford's own, seasoned the same way.
-  { name: "Tansy Rook", class: "thief", personality: "pickpocket", home: "ashford", level: 4 },
-  { name: "Lucan Strand", class: "warrior", personality: "watchman", home: "ashford", level: 6 },
-  { name: "Brother Wystan", class: "priest", personality: "prelate", home: "ashford", level: 5 },
-  // Newcomers, one per town: they arrived this season with nothing, the same as the players, and start at level 1.
-  { name: "Goldie Teague", class: "mage", personality: "student", newcomer: true },
-  { name: "Tilly Brook", class: "warrior", personality: "greenhorn", home: "ironhold", newcomer: true },
-  { name: "Piers Calloway", class: "thief", personality: "clerk", home: "ashford", newcomer: true },
-];
 
 // ---------- auth ----------
 
@@ -343,6 +322,8 @@ const STYLE: Record<Personality, FightStyle> = {
   watchman: { useSpecial: true, runBelow: 0.25, healBelow: 0.5 },
   prelate: { useSpecial: true, runBelow: 0.5, healBelow: 0.7 },
   student: { useSpecial: true, runBelow: 0.5, healBelow: 0.6 },
+  regular: { runBelow: 0.4, healBelow: 0.55 },                    // would rather be back at the table
+  nightowl: { useSpecial: true, runBelow: 0.35, healBelow: 0.5 },
   greenhorn: { useSpecial: true, runBelow: 0.35, healBelow: 0.5 },
   clerk: { runBelow: 0.5, healBelow: 0.6 },                       // counts the odds and leaves early
 };
@@ -655,6 +636,8 @@ export const FIGHTS: Record<Personality, number[]> = {
   watchman: [4, 3, 3],
   prelate: [3, 3, 2],
   student: [3, 3, 2],
+  regular: [1, 4, 3, 2],
+  nightowl: [4, 4, 2],
   greenhorn: [4, 3, 3],
   clerk: [4, 4, 2],
 };
@@ -1054,7 +1037,7 @@ async function playSession(b: Bot, row: Row, mind: Mind, i: number, day: string)
 /** Of everything they have, what share they won't spend on gear. Savers keep a lot back; Pomfrey keeps nothing. */
 const GEAR_RESERVE: Record<Personality, number> = {
   banker: 0.5, drunk: 0.1, raider: 0.25, gossip: 0.3, pious: 0.3, reckless: 0.1, seer: 0.3, braggart: 0, veteran: 0.2, scout: 0.25, scholar: 0.3,
-  pickpocket: 0.2, watchman: 0.25, prelate: 0.15, student: 0.2, greenhorn: 0.4, clerk: 0.35,
+  pickpocket: 0.2, watchman: 0.25, prelate: 0.15, student: 0.2, greenhorn: 0.4, clerk: 0.35, regular: 0.3, nightowl: 0.25,
 };
 
 /**
@@ -1161,10 +1144,10 @@ async function ensureRoster(): Promise<Row[]> {
     const j = (await res.json()) as { api_key?: string; error?: string };
     if (!j.api_key) continue; // name taken by a human, or similar; skip rather than fight over it
     const p = await pool.query<{ id: string }>("update players set is_bot = true, role = 'townsfolk' where name = $1 returning id", [spec.name]);
-    await pool.query("insert into bots (player_id, personality, api_key, home) values ($1,$2,$3,$4)", [p.rows[0].id, spec.personality, j.api_key, spec.home ?? "brightwater"]);
+    await pool.query("insert into bots (player_id, personality, api_key, home) values ($1,$2,$3,$4)", [p.rows[0].id, spec.habits, j.api_key, spec.home ?? "brightwater"]);
     if (spec.home && spec.newcomer) await arrive(p.rows[0].id, spec.home);
     else if (spec.home) await settleIn(p.rows[0].id, spec.home, spec.class, spec.level ?? 5);
-    existing.rows.push({ player_id: p.rows[0].id, name: spec.name, personality: spec.personality, api_key: j.api_key, mind: {}, home: spec.home ?? "brightwater" });
+    existing.rows.push({ player_id: p.rows[0].id, name: spec.name, personality: spec.habits, api_key: j.api_key, mind: {}, home: spec.home ?? "brightwater" });
   }
   return existing.rows;
 }

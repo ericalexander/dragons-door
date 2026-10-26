@@ -7,7 +7,7 @@
 import type { PoolClient } from "pg";
 import type { Personality } from "./schedule.js";
 import type { TownId } from "./world.js";
-import { TOWNSFOLK } from "./letters.js";
+import { townsperson } from "./townsfolk.js";
 import { plain, write } from "./llm.js";
 
 export type Appeal = "careful" | "bold" | "faith" | "profit" | "kin" | "curiosity" | "order" | "mercy";
@@ -36,6 +36,8 @@ const CARES: Record<Personality, Partial<Record<Appeal, number>>> = {
   student: { curiosity: 3, mercy: 1 },
   greenhorn: { kin: 3, careful: 2 },
   clerk: { careful: 3, order: 1 },
+  regular: { kin: 2, mercy: 1, bold: 1 },
+  nightowl: { curiosity: 3, careful: 1 },
 };
 
 /** Why they'd say they voted that way, by what swayed them. {choice} is the option's label. */
@@ -135,7 +137,7 @@ async function exitPolls(c: PoolClient, p: Poll): Promise<string[]> {
       `select pl.name, b.personality, v.why from poll_votes v join players pl on pl.id = v.player_id join bots b on b.player_id = pl.id
        where v.poll_id = $1 and v.choice = $2 and v.townsfolk order by v.day, pl.name limit 1`, [p.id, o.id])).rows[0];
     if (!v) continue;
-    const facts = { who: TOWNSFOLK[v.personality] ?? v.name, question: p.question, setting: p.about, they_voted_for: o.label, the_other_choices: p.options.filter((x) => x.id !== o.id).map((x) => x.label), what_swayed_them: o.appeals ?? [], their_one_line_reason: v.why };
+    const facts = { who: townsperson(v.name)?.persona ?? v.name, question: p.question, setting: p.about, they_voted_for: o.label, the_other_choices: p.options.filter((x) => x.id !== o.id).map((x) => x.label), what_swayed_them: o.appeals ?? [], their_one_line_reason: v.why };
     const text = await write({ system: INTERVIEW, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${v.name} says.`, maxTokens: 300, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
     // No writer today: try again on the next run rather than fall back to a stock line.
     if (!text) continue;

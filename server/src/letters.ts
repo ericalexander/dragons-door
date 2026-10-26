@@ -18,6 +18,7 @@ import { write, plain } from "./llm.js";
 import { goalLabel, awayToday, type Mind } from "./minds.js";
 import { whereabouts, type Personality } from "./schedule.js";
 import { SUITORS } from "./romance.js";
+import { townsperson } from "./townsfolk.js";
 import { BARDS } from "./bards.js";
 import { tileAt } from "./world.js";
 import { loadLore, lore, heardOf } from "./lore.js";
@@ -26,26 +27,6 @@ import * as Bag from "./bag.js";
 const PER_RUN = 6;
 const PER_DAY = Number(process.env.MAIL_REPLIES_PER_DAY ?? 60);
 
-/** Who each townsperson is, for the letter-writer. */
-export const TOWNSFOLK: Record<Personality, string> = {
-  banker: "Hilde, a steady, careful warrior who banks every coin and sleeps at the inn; practical, dry, a little stern, kind underneath. She/her.",
-  drunk: "Grimwald, a big cheerful warrior who drinks, dies in the forest more than anyone, and sleeps in the fields; warm, rambling, misspells things, never holds a grudge long. He/him.",
-  raider: "Vesper, a thief who robs sleepers in the fields at night; cool, clipped, amused, never apologizes, never quite threatens. She/her.",
-  gossip: "Old Tam, an old mage who reads the paper and has an opinion on everyone; nosy, funny, affectionate, can't keep a secret. He/him.",
-  pious: "Brother Ansel, a monk and priest who rises before dawn and prays for the dead; gentle, proverbial, quietly funny. He/him.",
-  reckless: "Pip, the stable lad, a young thief who never runs from a fight and brags about everything; eager, breathless, cheerful. He/him.",
-  seer: "Madam Orsolya, a fortune teller who keeps night hours; theatrical, mysterious, reads omens into everything, signs off with a prophecy. She/her.",
-  braggart: "Sir Pomfrey, a pompous minor noble and warrior; grandiose, formal, vain, harmless, writes as if dictating to a scribe. He/him.",
-  veteran: "Hask the Unbowed, a grizzled warrior of Ironhold, a hillfort far out in the hills; few words, blunt, dry, loyal to whoever's earned it. He/him.",
-  scout: "Nell Thorne, a thief and scout from Ironhold who ranges far past anyone else; quick, restless, teasing, writes like she's already halfway out the door. She/her.",
-  scholar: "Sabine Ashe, a mage living in Ironhold to study the old ruins in the hills; precise, curious, a little absent-minded, footnotes everything. She/her.",
-  pickpocket: "Tansy Rook, a nineteen-year-old thief from Ashford's orphanage who works the Exchange crowds; quick, cheeky, sharp-eyed, writes in a rush with bad spelling and good jokes. She/her.",
-  watchman: "Lucan Strand, a captain of Ashford's watch who would rather be out in the wild; easy, friendly, a born storyteller, signs off like a drummer keeping time. He/him.",
-  prelate: "Brother Wystan of Ashford's Lamphouse, a priest; grand, certain, eloquent, a little pleased with himself, writes in long rolling sentences full of the Lamp. He/him.",
-  student: "Goldie Teague, a young mage just arrived in Brightwater from Ashford to study at Mother Quill's library; eager, bookish, over-explains, apologises a lot, writes long letters with afterthoughts. She/her.",
-  greenhorn: "Tilly Brook, a shepherd from the hill farms who has just signed Ironhold's register to learn the sword; plain-spoken, steady, a bit homesick, measures things in sheep, short letters. She/her.",
-  clerk: "Piers Calloway, a clerk in his forties who left his post this autumn to learn the Shadow path in Ashford's Undercroft; precise, polite, dry, writes in a neat hand and dates every letter. He/him.",
-};
 
 function characterPersona(name: string): string | null {
   const s = SUITORS.find((x) => x.name === name);
@@ -120,7 +101,7 @@ async function facts(p: Pending, letters: string[]) {
   const me = (await pool.query<{ spouse: string | null; personality: Personality | null; mind: Mind | null; level: number }>(
     `select (select s.name from players s where s.id = p.spouse_id) as spouse, b.personality, b.mind, p.level
      from players p left join bots b on b.player_id = p.id where p.id = $1`, [p.to_id])).rows[0];
-  const persona = me.personality ? TOWNSFOLK[me.personality] : characterPersona(p.to_name) ?? `${p.to_name}, who lives in town.`;
+  const persona = townsperson(p.to_name)?.persona ?? characterPersona(p.to_name) ?? `${p.to_name}, who lives in town.`;
   // Who married whom: npc spouses are stored on the player's row.
   const spouseOfMe = me.spouse ?? (await pool.query<{ name: string }>("select name from players where spouse_id = $1 limit 1", [p.to_id])).rows[0]?.name ?? null;
   const shared = (await pool.query<{ day: string; kind: string; actor: string | null; target: string | null; detail: Record<string, unknown> }>(
@@ -166,20 +147,9 @@ async function facts(p: Pending, letters: string[]) {
 /** A short note when there's no API key, or the writer couldn't manage. */
 function note(p: Pending): string {
   const lines: Record<string, string> = {
-    Hilde: "Got your letter. Bank your gold.\n\nHilde",
-    Grimwald: "GOT YOUR LETTER!! cant write much, the ink keeps spilling. see you in the tavern\n\nGrimwald",
-    Vesper: "Noted.\n\nV.",
-    "Old Tam": "Got your letter. Read it twice. Told nobody. Mostly.\n\nOld Tam",
-    "Brother Ansel": "Your letter arrived safely, which is more than can be said for most travellers. Blessings.\n\nBrother Ansel",
-    Pip: "got it!! thanks!!! \n\nPip",
-    "Madam Orsolya": "The cards knew you would write. They know what comes next, too.\n\nMadam Orsolya",
-    "Sir Pomfrey": "Sir Pomfrey acknowledges receipt of your correspondence and will consider it at length.\n\nSir Pomfrey",
     Odile: "Read it. Bring ore.\n\nOdile",
-    "Goldie Teague": "Your letter came! I'll write back properly when I've finished this chapter. Possibly two chapters.\n\nGoldie",
-    "Tilly Brook": "Got your letter. Kind of you. Back to the yard.\n\nTilly",
-    "Piers Calloway": "Received, read and filed. With thanks.\n\nP. Calloway",
   };
-  return lines[p.to_name] ?? `Thank you for your letter.\n\n${p.to_name}`;
+  return townsperson(p.to_name)?.note ?? lines[p.to_name] ?? `Thank you for your letter.\n\n${p.to_name}`;
 }
 
 export async function answerLetters(now = new Date()): Promise<string[]> {

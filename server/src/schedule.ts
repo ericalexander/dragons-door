@@ -10,7 +10,9 @@ export type Personality = "banker" | "drunk" | "raider" | "gossip" | "pious" | "
   // Ashford's townsfolk
   | "pickpocket" | "watchman" | "prelate"
   // Newcomers, one per town, who arrived this season at level 1 like everyone else
-  | "student" | "greenhorn" | "clerk";
+  | "student" | "greenhorn" | "clerk"
+  // Kinds anyone can share: the one who's always in the tavern, and the one who keeps night hours
+  | "regular" | "nightowl";
 export type Doing = "forest" | "tavern" | "shop" | "fields";
 export interface Slot { at: string; doing: Doing[]; sleeps?: "inn" | "fields" }
 
@@ -35,6 +37,8 @@ export const PLAN: Record<Personality, Slot[]> = {
   student:  [{ at: "09:00", doing: ["forest"] }, { at: "15:00", doing: ["tavern", "forest"] }, { at: "21:00", doing: ["tavern"], sleeps: "inn" }],
   greenhorn: [{ at: "05:30", doing: ["forest"] }, { at: "11:00", doing: ["forest"] }, { at: "17:00", doing: ["forest", "tavern"], sleeps: "inn" }],
   clerk:    [{ at: "08:00", doing: ["shop", "forest"] }, { at: "13:00", doing: ["forest"] }, { at: "19:30", doing: ["tavern"], sleeps: "inn" }],
+  regular:  [{ at: "10:30", doing: ["tavern"] }, { at: "13:30", doing: ["forest"] }, { at: "16:00", doing: ["tavern", "forest"] }, { at: "20:00", doing: ["tavern"], sleeps: "inn" }],
+  nightowl: [{ at: "14:00", doing: ["forest"] }, { at: "18:30", doing: ["forest"] }, { at: "22:30", doing: ["tavern", "forest"], sleeps: "inn" }],
 };
 
 /** When they get up and turn in. Default: up an hour before their first session, in bed when the last one ends. */
@@ -52,6 +56,8 @@ export const HOURS: Partial<Record<Personality, { wakes?: string; beds?: string 
   student:  { wakes: "08:00", beds: "23:30" },   // reads by candle until she falls asleep on the book
   greenhorn: { wakes: "05:00", beds: "21:00" },  // shepherd's hours
   clerk:    { wakes: "07:00", beds: "22:30" },
+  regular:  { wakes: "09:30", beds: "22:45" },   // first in, last out
+  nightowl: { wakes: "13:00", beds: "23:55" },
   watchman: { wakes: "06:00", beds: "22:30" },
   prelate:  { wakes: "05:30", beds: "21:00" },
 };
