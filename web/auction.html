@@ -86,6 +86,18 @@
   .key i { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--wax); vertical-align: 4px; margin-right: 6px; }
   .key b { display: inline-block; width: 18px; height: 0; border-top: 1px dashed var(--ink-faint); vertical-align: 4px; margin: 0 6px 0 14px; font-weight: normal; }
 
+  .filters { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; padding: 20px 0 18px; border-bottom: 1px solid var(--rule); }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); }
+  .filters label { min-width: 0; }
+  .filters input, .filters select { font: inherit; font-size: 16px; letter-spacing: 0; text-transform: none; color: var(--ink); background: var(--paper-hi); border: 1px solid var(--rule); padding: 0 10px; height: 38px; min-width: 0; max-width: 100%; }
+  .filters input { width: 16rem; max-width: 100%; }
+  .filters input:focus, .filters select:focus { outline: 2px solid var(--wax); outline-offset: 1px; }
+  .filters button { font: inherit; font-size: 15px; background: transparent; border: 0; color: var(--wax); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 6px 0; }
+  .filters button[hidden] { display: none; }
+  .more { font: inherit; font-size: 15px; background: transparent; border: 1px solid var(--rule); color: var(--ink); padding: 6px 14px; margin-top: 14px; cursor: pointer; }
+  td .for { color: var(--ink-faint); }
+  @media (max-width: 640px) { .filters { gap: 10px 12px; } .filters label { flex: 1 1 calc(50% - 6px); } .filters select, .filters input { width: 100%; } .filters .q { flex-basis: 100%; } }
+
   footer { border-top: 2px solid var(--ink); }
   footer .wrap { padding-top: 24px; padding-bottom: 32px; font-size: 14px; color: var(--ink-faint); }
   footer p { margin: 0; max-width: 90ch; }
@@ -123,6 +135,42 @@
 </div>
 
 <main class="wrap">
+  <form class="filters" id="filters" role="search" aria-label="Filter the auction house" onsubmit="return false">
+    <label class="q">Find
+      <input type="search" id="f-q" placeholder="Item name, or a seller" autocomplete="off">
+    </label>
+    <label>Kind
+      <select id="f-kind">
+        <option value="">Everything</option>
+        <option value="weapon">Weapons, spells and instruments</option>
+        <option value="armor">Armor and clothes</option>
+        <option value="trinket">Jewelry</option>
+        <option value="ore">Ore and gems</option>
+      </select>
+    </label>
+    <label>Who can use it
+      <select id="f-for">
+        <option value="">Anyone</option>
+        <option value="warrior">Warrior</option>
+        <option value="guardian">Guardian</option>
+        <option value="thief">Thief</option>
+        <option value="mage">Mage</option>
+        <option value="priest">Priest</option>
+        <option value="bard">Bard</option>
+      </select>
+    </label>
+    <label>Sort the board
+      <select id="f-sort">
+        <option value="closing">Closing soonest</option>
+        <option value="cheap">Lowest price</option>
+        <option value="dear">Highest price</option>
+        <option value="deal">Best deal (against the shop price)</option>
+        <option value="new">Newest first</option>
+      </select>
+    </label>
+    <button type="button" id="f-clear" hidden>Clear</button>
+  </form>
+
   <section class="part" aria-labelledby="board-h">
     <h2 id="board-h">On the board</h2>
     <p class="lede" id="board-lede">Lots close at the daily reset after their last day.</p>
@@ -149,19 +197,49 @@
 </footer>
 
 <script>
-  const API = new URLSearchParams(location.search).get("api") || "https://api.dragonsdoor.gg";
+  // ?api is for local testing only: never let a link point this page at someone else's server.
+  const API = (() => { const a = new URLSearchParams(location.search).get("api"); try { const u = new URL(a); if (["localhost", "127.0.0.1"].includes(u.hostname)) return a; } catch {} return "https://api.dragonsdoor.gg"; })();
   const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   const gold = (n) => n === null || n === undefined ? "—" : Number(n).toLocaleString("en-US");
   const short = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   const daysLeft = (today, d) => Math.max(0, Math.round((Date.parse(d) - Date.parse(today)) / 864e5));
   const statLine = (x) => x.power ? `power ${x.power}` : x.def ? `defense ${x.def}` : x.bonus ? esc(x.bonus) : "";
 
+  const TYPE = { weapon: "weapon", armor: "armor", trinket: "trinket", ore: "ore", gem: "ore" };
+  const $ = (id) => document.getElementById(id);
+  const F = { q: $("f-q"), kind: $("f-kind"), for: $("f-for"), sort: $("f-sort") };
+  // Filters live in the address, so a filtered board can be shared.
+  const params = new URLSearchParams(location.search);
+  for (const k of Object.keys(F)) if (params.get(k)) F[k].value = params.get(k);
+  let D = null, soldAll = false;
+  const priceOf = (x) => x.high_bid ?? x.min_bid;
+  function match(x, withSeller) {
+    const q = F.q.value.trim().toLowerCase();
+    if (q && !(String(x.item).toLowerCase().includes(q) || (withSeller && String(x.seller).toLowerCase().includes(q)) || String(x.kind ?? "").toLowerCase().includes(q))) return false;
+    if (F.kind.value && TYPE[x.slot] !== F.kind.value) return false;
+    if (F.for.value && x.classes && !x.classes.includes(F.for.value)) return false;
+    return true;
+  }
+  const forLine = (x) => x.for ? `<span class="for"> · ${esc(x.kind)}, for ${esc(x.for)}</span>` : "";
+  const SORTS = {
+    closing: (a, b) => a.closes_after.localeCompare(b.closes_after) || a.lot - b.lot,
+    cheap: (a, b) => priceOf(a) - priceOf(b),
+    dear: (a, b) => priceOf(b) - priceOf(a),
+    deal: (a, b) => priceOf(a) / (a.worth || 1) - priceOf(b) / (b.worth || 1),
+    new: (a, b) => b.lot - a.lot,
+  };
+
   function board(d) {
-    const box = document.getElementById("board");
-    if (!d.open.length) { box.innerHTML = '<p class="quiet">Nothing on the board right now. Cass is polishing the counter.</p>'; return; }
-    const rows = d.open.map((x) => {
+    const box = $("board");
+    if (!d.open.length) { box.innerHTML = '<p class="quiet">Nothing on the board right now. Cass is polishing the counter.</p>'; $("board-lede").textContent = "Lots close at the daily reset after their last day."; return; }
+    const list = d.open.filter((x) => match(x, true)).sort(SORTS[F.sort.value] || SORTS.closing);
+    const of = list.length === d.open.length ? `${d.open.length} lot${d.open.length === 1 ? "" : "s"} up` : `${list.length} of ${d.open.length} lots`;
+    $("board-lede").textContent = `${of}. Prices in gold. Lots close at the daily reset after their last day.`;
+    if (!list.length) { box.innerHTML = '<p class="quiet">Nothing on the board matches. Try fewer filters.</p>'; return; }
+    const rows = list.map((x) => {
       const left = daysLeft(d.day, x.closes_after);
-      return `<tr><td>${esc(x.item)}${statLine(x) ? `<span class="stat">${statLine(x)}</span>` : ""}</td>
+      const stat = statLine(x);
+      return `<tr><td>${esc(x.item)}${stat || x.for ? `<span class="stat">${stat}${forLine(x)}</span>` : ""}</td>
         <td class="who wide">${esc(x.seller)}</td>
         <td class="num">${x.high_bid ? gold(x.high_bid) : `<span class="quiet">min ${gold(x.min_bid)}</span>`}</td>
         <td class="num">${gold(x.buy_now)}</td>
@@ -169,15 +247,19 @@
         <td class="num">${left === 0 ? "tonight" : left === 1 ? "1 day" : left + " days"}</td></tr>`;
     }).join("");
     box.innerHTML = `<table><thead><tr><th>Item</th><th class="wide">Seller</th><th class="num">Bid</th><th class="num">Buy now</th><th class="num wide">Shop price</th><th class="num">Closes</th></tr></thead><tbody>${rows}</tbody></table>`;
-    document.getElementById("board-lede").textContent = `${d.open.length} lot${d.open.length === 1 ? "" : "s"} up. Prices in gold. Lots close at the daily reset after their last day.`;
   }
 
   function sold(d) {
-    const box = document.getElementById("sold");
+    const box = $("sold");
     if (!d.sold.length) { box.innerHTML = '<p class="quiet">Nothing has sold yet.</p>'; return; }
-    const rows = d.sold.slice(0, 15).map((x) => `<tr><td class="num">${esc(short(x.day))}</td><td>${esc(x.item)}${x.bought_outright ? '<span class="tag" title="bought at the buy-now price">outright</span>' : ""}</td>
+    const list = d.sold.filter((x) => match(x, true));
+    if (!list.length) { box.innerHTML = '<p class="quiet">Nothing that matches has sold lately.</p>'; return; }
+    const shown = soldAll ? list : list.slice(0, 15);
+    const rows = shown.map((x) => `<tr><td class="num">${esc(short(x.day))}</td><td>${esc(x.item)}${x.bought_outright ? '<span class="tag" title="bought at the buy-now price">outright</span>' : ""}${x.for ? `<span class="stat">${forLine(x).replace(' · ', '')}</span>` : ""}</td>
       <td class="who wide">${esc(x.seller)}</td><td class="who">${esc(x.buyer)}</td><td class="num">${gold(x.price)}</td></tr>`).join("");
-    box.innerHTML = `<table><thead><tr><th class="num">Day</th><th>Item</th><th class="wide">Seller</th><th>Buyer</th><th class="num">Price</th></tr></thead><tbody>${rows}</tbody></table>`;
+    box.innerHTML = `<table><thead><tr><th class="num">Day</th><th>Item</th><th class="wide">Seller</th><th>Buyer</th><th class="num">Price</th></tr></thead><tbody>${rows}</tbody></table>` +
+      (list.length > shown.length ? `<button type="button" class="more" id="sold-more">Show all ${list.length}</button>` : "");
+    const more = $("sold-more"); if (more) more.addEventListener("click", () => { soldAll = true; sold(D); });
   }
 
   // One small line chart per item: daily average per unit, with the shop price as a dashed reference.
@@ -225,8 +307,11 @@
   function prices(d) {
     const box = document.getElementById("prices");
     if (!d.trends.length) { box.innerHTML = '<p class="quiet">No sales in the last 30 days yet, so no prices to show.</p>'; return; }
+    // Prices follow the item filters; a trend line has no seller, so the search matches item names only.
+    const list = d.trends.filter((t) => match(t, false));
+    if (!list.length) { box.innerHTML = '<p class="quiet">No recent sales of anything that matches.</p>'; return; }
     box.innerHTML = "";
-    for (const t of d.trends) {
+    for (const t of list) {
       const card = document.createElement("article"); card.className = "card";
       const pct = Math.round((t.last / t.worth) * 100);
       card.innerHTML = `<h3>${esc(t.item)}</h3>
@@ -237,7 +322,22 @@
     }
   }
 
-  fetch(API + "/v1/public/auctions").then((r) => r.json()).then((d) => { board(d); sold(d); prices(d); })
+  function draw() {
+    if (!D) return;
+    board(D); sold(D); prices(D);
+    const p = new URLSearchParams();
+    for (const [k, el] of Object.entries(F)) if (el.value && !(k === "sort" && el.value === "closing")) p.set(k, el.value.trim());
+    const api = new URLSearchParams(location.search).get("api");
+    if (api) p.set("api", api);
+    history.replaceState(null, "", location.pathname + (p.toString() ? "?" + p : ""));
+    $("f-clear").hidden = !(F.q.value || F.kind.value || F.for.value);
+  }
+  let typing;
+  F.q.addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(draw, 120); });
+  for (const k of ["kind", "for", "sort"]) F[k].addEventListener("change", draw);
+  $("f-clear").addEventListener("click", () => { F.q.value = ""; F.kind.value = ""; F.for.value = ""; draw(); F.q.focus(); });
+
+  fetch(API + "/v1/public/auctions").then((r) => r.json()).then((d) => { D = d; draw(); })
     .catch(() => { document.getElementById("board").innerHTML = '<p class="quiet">The auction house isn\'t answering right now. Cass will be back.</p>'; document.getElementById("sold").innerHTML = ""; document.getElementById("prices").innerHTML = ""; });
 </script>
 <script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>

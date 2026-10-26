@@ -766,6 +766,15 @@ api.get("/public/rankings", async (c) => {
   return c.json(out);
 });
 
+/** For the website's board: what kind of gear a lot is and which classes can use it. Anyone can use everything else. */
+const FAMILY_CLASSES: Record<string, string[]> = { steel: ["warrior", "guardian"], shadow: ["thief"], mage: ["mage"], priest: ["priest"], bard: ["bard"],
+  heavy: ["warrior", "guardian"], leathers: ["thief"], robes: ["mage", "priest"], performer: ["bard"] };
+function whoFor(slot: ListSlot, id: number): { kind?: string; for?: string; classes?: string[] } {
+  if (slot !== "weapon" && slot !== "armor") return {};
+  const f = familyOf(slot, id);
+  return f ? { kind: familyLabel(slot, id) ?? undefined, for: familyUsers(slot, id) ?? undefined, classes: FAMILY_CLASSES[f] } : {};
+}
+
 /** The auction house, for the website: what's on the board, what sold lately, and prices over time. Names only. */
 api.get("/public/auctions", async (c) => {
   const out = await tx(async (db) => {
@@ -795,9 +804,9 @@ api.get("/public/auctions", async (c) => {
     }).sort((a, z) => z.sales - a.sales || a.item.localeCompare(z.item));
     return {
       day: today,
-      open: open.map((r) => ({ lot: Number(r.id), item: lotName(r), slot: r.slot, ...stats(r.slot, r.item_id, r.rarity), worth: worth(r.slot, r.item_id, r.rarity).value * r.qty,
+      open: open.map((r) => ({ lot: Number(r.id), item: lotName(r), slot: r.slot, ...stats(r.slot, r.item_id, r.rarity), ...whoFor(r.slot, r.item_id), worth: worth(r.slot, r.item_id, r.rarity).value * r.qty,
         seller: r.seller ?? "the house", town: TOWNS[r.town as Town] ?? r.town, min_bid: r.min_bid, high_bid: r.high_bid, buy_now: r.buy_now, closes_after: r.ends_day })),
-      sold: sold.map((r) => ({ item: lotName(r), slot: r.slot, price: r.high_bid, seller: r.seller ?? "the house", buyer: r.bidder, day: r.day, bought_outright: r.buy_now !== null && r.high_bid === r.buy_now })),
+      sold: sold.map((r) => ({ item: lotName(r), slot: r.slot, ...whoFor(r.slot, r.item_id), price: r.high_bid, seller: r.seller ?? "the house", buyer: r.bidder, day: r.day, bought_outright: r.buy_now !== null && r.high_bid === r.buy_now })),
       trends,
     };
   });
