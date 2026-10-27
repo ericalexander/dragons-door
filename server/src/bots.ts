@@ -26,6 +26,7 @@ import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { ROSTER, townsperson } from "./townsfolk.js";
 import { HERBS, POTIONS, TEACHERS } from "./herbs.js";
+import { plain, write } from "./llm.js";
 import { realmDay, realmSettings } from "./day.js";
 import { GAME, expForLevel, levelGains, type Envelope, type Event } from "./game.js";
 import { DIRS, TOWN_TILES, tileAt, type Dir, type TownId } from "./world.js";
@@ -579,13 +580,34 @@ async function yesterday(b: Bot): Promise<NewsEvent[]> {
   const news = await b.get("/news?day=yesterday");
   return isErr(news) ? [] : (news.events.filter((e) => e.kind === "news") as NewsEvent[]);
 }
-/** Say something in the tavern, unless they've already said exactly that lately: nobody repeats themselves word for word on the board. */
+/**
+ * Say something in the tavern, unless it's already on the board: nobody repeats themselves word for word, and
+ * nobody says exactly what someone else said this week either (stock lines are shared, people aren't).
+ */
+const SAID_DAYS = 7;
+const alreadySaid = async (body: string) =>
+  Boolean((await pool.query("select 1 from tavern where body = $1 and ts > now() - make_interval(days => $2) limit 1", [body, SAID_DAYS])).rowCount);
 const say = async (b: Bot, line: string) => {
   const body = line.slice(0, 280);
-  const said = await pool.query("select 1 from tavern where author = $1 and body = $2 and ts > now() - interval '3 days' limit 1", [b.name, body]);
-  if (said.rowCount) { b.log.push("had nothing new to say"); return; }
+  if (await alreadySaid(body)) { b.log.push("had nothing new to say"); return; }
   await b.post("/tavern", { body });
 };
+
+/** How many tavern lines the writer puts in townsfolk's own words per run; the rest fall back to the stock line. */
+const GOAL_LINES_PER_RUN = Number(process.env.GOAL_LINES_PER_RUN ?? 10);
+let goalLinesWritten = 0;
+const GOAL_LINE = `You write one tavern-board post by a townsperson in Dragon's Door, a fantasy village text game: what they say about something they're working toward. One or two short sentences, under 30 words, first person, in their own voice and the way they'd really talk. The gist gives the idea; say it your own way, not in its words. Say something none of the posts already on the board says: no repeating their words, their joke or their shape. Plain words, no quotation marks, no stage directions, no names of real players. Stay inside the fiction; never reveal anyone's secrets or invent history.`;
+
+/** A townsperson's goal, said their own way. Falls back to the stock line when the writer's away or the run's share is spent. */
+async function goalSaying(b: Bot, stock: string, goal: string, stage: string): Promise<string> {
+  if (goalLinesWritten >= GOAL_LINES_PER_RUN) return stock;
+  const board = (await pool.query<{ body: string }>("select body from tavern where ts > now() - interval '3 days' order by id desc limit 15")).rows.map((r) => r.body);
+  const mine = (await pool.query<{ body: string }>("select body from tavern where author = $1 order by id desc limit 5", [b.name])).rows.map((r) => r.body);
+  const facts = { who: townsperson(b.name)?.persona ?? b.name, working_toward: goal, how_far_along: stage, gist: stock, already_on_the_board: board, their_own_last_posts: mine };
+  goalLinesWritten++;
+  const text = await write({ system: GOAL_LINE, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${b.name} posts.`, maxTokens: 400, trim: true, quick: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
+  return text ? plain(text, 280).replace(/^["“]|["”]$/g, "") : stock;
+}
 
 async function prayers(b: Bot) {
   // Brother Ansel: a word for the dead, or a proverb nobody asked for.
@@ -893,7 +915,8 @@ async function tavernTalk(b: Bot, row: Row, mind: Mind, f: Facts) {
   if (g && (!own || Math.random() < 0.5)) {
     const frac = fraction(g, f, mind);
     const stage = (frac >= 0.8 ? 2 : frac >= 0.5 ? 1 : 0) as 0 | 1 | 2;
-    await say(b, goalTalk(row.name, row.personality, g, stage, Math.random));
+    const stock = goalTalk(row.name, row.personality, g, stage, Math.random);
+    await say(b, await goalSaying(b, stock, goalLabel(row.name, row.personality, g), ["just starting", "about halfway", "nearly there"][stage]));
     mind.told = Math.max(mind.told ?? 0, stage);
     b.log.push("talked about their goal");
     return;
@@ -1294,6 +1317,7 @@ async function settleIn(id: string, town: "ironhold" | "ashford", cls: "warrior"
 
 export async function runBots(now = new Date()): Promise<{ day: string; now: string; results: Record<string, string[]> }> {
   await loadLore();
+  goalLinesWritten = 0;
   const roster = await ensureRoster();
   const c = await pool.connect();
   let day: string;
