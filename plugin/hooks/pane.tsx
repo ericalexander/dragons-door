@@ -24,6 +24,8 @@ const chat = atom({ plugin: 'dragons-door', key: 'chat' } as const,
   { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '', isOpen: false, unread: 0, seen: { status: false, chat: false } } as Chat, { shape: 'chat-4' })
 /** Whether this terminal shows pictures (worked out at the start of each session; DRAGONS_DOOR_PICTURES=0 or 1 overrides). */
 let pictures = false
+/** What the pane has seen of the conversation's game rows, for /door-pane debug: whether its row hook runs, and why not. */
+const diag = { groups: 0, ours: 0, drawn: 0, lastTools: [] as string[], lastFlags: '', lastError: '' }
 /** Which surface started the session (terminal, desktop, ...): the title picture is drawn where it can be. */
 let startedOn = 'terminal'
 const LOGO_NOTE = "The Dragon's Door title screen is drawn as a picture right above this reply, with the version under it. Don't print the title screen; start with anything that comes after it (an update notice, what's new, the game)."
@@ -171,6 +173,11 @@ async function show($: EngineInterface) {
   if (c?.isPlaced) void pollChat($).catch(() => undefined)
 }
 
+/** A hook failure in a few words, for /door-pane debug. */
+function describeError(err: unknown): string {
+  try { return (typeof err === 'object' && err && 'message' in err ? String((err as { message: unknown }).message) : JSON.stringify(err)).slice(0, 240) } catch { return 'unreadable' }
+}
+
 type Els = Pick<Elements['terminal'], 'Box' | 'Text'> & { Image?: Elements['terminal']['Image']; Svg?: Elements['desktop']['Svg'] }
 /** The pane's map around you as a picture (pixels in a terminal that shows them, SVG in the desktop app), or null for the text map. */
 function smallMap(els: Els, surface: string, lines: string[], maxColumns: number): RenderChildren | null {
@@ -245,7 +252,16 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'door-pane' }, async $ => {
+  on('command.run', { command: 'door-pane' }, async ($, e) => {
+    if (/\bdebug\b/.test(e.args ?? '')) {
+      const drawn = (await $.store.get('rows-drawn').catch(() => null)) === true
+      return { text: [
+        `pictures in this terminal: ${pictures} (started on ${startedOn})`,
+        `game rows: ${diag.groups} groups seen, ${diag.ours} ours, ${diag.drawn} drawn; ever drawn: ${drawn}`,
+        `last group: ${diag.lastTools.join(', ') || 'none'} (${diag.lastFlags || 'no flags'})`,
+        `last error: ${diag.lastError || 'none'}`,
+      ].join('\n') }
+    }
     const g = await read($, game)
     if (!g.isPlaying) return { text: "The pane opens once you've entered the realm (/dragons-door:enter)." }
     await show($)
@@ -283,7 +299,9 @@ export const register: Register = on => {
     }))
     if (first) await show($)
     // Right beside the result, where the narrator reads it, not just in the system prompt: the pane has the numbers.
-    const notes = [...(logo ? [LOGO_NOTE] : []), ...((await read($, game)).isShown ? [RESULT_NOTE] : []), ...(hasChart ? [MAP_NOTE] : [])]
+    // Only once this Claude Code has been seen drawing the game's rows is the narrator told a picture stands in for its own.
+    const rowsDrawn = (await $.store.get('rows-drawn').catch(() => null)) === true
+    const notes = [...(logo && rowsDrawn ? [LOGO_NOTE] : []), ...((await read($, game)).isShown ? [RESULT_NOTE] : []), ...(hasChart && rowsDrawn ? [MAP_NOTE] : [])]
     if (ran.deny === undefined && notes.length) return { ...ran, context: [...(ran.context ?? []), ...notes] }
     return ran
   }).catch(($, e, next) => next(e)) // the pane only watches: if drawing fails, the game call goes on as it was
@@ -297,8 +315,11 @@ export const register: Register = on => {
   // A run of nothing but game calls draws one quiet line in place of "Called plugin:dragons-door…" (ctrl+o still shows them all).
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     const p = e.props
+    diag.groups++; diag.lastTools = p.calls.map(c => c.tool).slice(0, 4); diag.lastFlags = `expanded=${p.isExpanded} callsOnly=${p.isCallsOnly} surface=${e.surface}`
     // Our own notes for the narrator ride beside the results, so the engine doesn't call such a group calls-only: judge by the calls.
     if (p.isExpanded || p.calls.length === 0 || !p.calls.every(c => OURS.test(c.tool)) || p.calls.some(c => c.isErrored || c.isInterrupted)) return next(e)
+    diag.ours++
+    if (!p.calls.some(c => c.isRunning)) { diag.drawn++; void $.store.set('rows-drawn', true).catch(() => undefined) }
     const els = $.ui.resolve(e)
     const { Box, Text } = els
     const line = <Text dimColor>{p.calls.some(c => c.isRunning) ? '· the realm stirs…' : '· the realm answers'}</Text>
@@ -310,7 +331,7 @@ export const register: Register = on => {
     if (!chart && !title) return line
     const width = Math.max(20, (e.viewport?.columns ?? 80) - 4)
     return <Box flexDirection="column">{title}{line}{chart ? drawChart(els as unknown as Els, e.surface, chart, width) : null}</Box>
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => { diag.lastError = describeError(next.error); return next(e) })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)

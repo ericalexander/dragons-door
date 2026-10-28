@@ -293,6 +293,9 @@ test('in a terminal that shows pictures, the pane map is a picture, and a map ca
   engine(on, () => reply, opened)
   on('env.get', async (_$, e) => ({ value: e.name === 'TERM_PROGRAM' ? 'ghostty' : undefined }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const seen = await $.ui.mount({ plugin: 'dragons-door', component: 'ToolGroup', surface: 'terminal', requestId: 'g0',
+    props: { calls: [{ tool: TOOL, tool_use_id: 's0', input: {}, isRunning: false, isErrored: false, isInterrupted: false }], isActive: false, isExpanded: false, isCallsOnly: false } })
+  await seen.unmount()
   const MAP = 'mcp__plugin_dragons-door_dragons-door__map'
   const ran = await $.tool.call({ tool: MAP, tool_use_id: 'call-1' })
   expect(ran.context?.some(c => /drawn as a picture/.test(c))).toBe(true)
@@ -312,6 +315,9 @@ test('the title screen is a picture above the first status in a terminal that sh
   engine(on, () => reply, opened)
   on('env.get', async (_$, e) => ({ value: e.name === 'TERM_PROGRAM' ? 'ghostty' : undefined }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const seen = await $.ui.mount({ plugin: 'dragons-door', component: 'ToolGroup', surface: 'terminal', requestId: 'g0',
+    props: { calls: [{ tool: TOOL, tool_use_id: 's0', input: {}, isRunning: false, isErrored: false, isInterrupted: false }], isActive: false, isExpanded: false, isCallsOnly: false } })
+  await seen.unmount()
   const first = await $.tool.call({ tool: TOOL, tool_use_id: 's1' })
   expect(first.context?.some(c => /title screen is drawn as a picture/.test(c))).toBe(true)
   const again = await $.tool.call({ tool: TOOL, tool_use_id: 's2' })
@@ -329,4 +335,16 @@ test('no title picture in a terminal that shows none: the narrator prints the te
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const r = await $.tool.call({ tool: TOOL, tool_use_id: 's1' })
   expect(r.context?.some(c => /title screen/.test(c)) ?? false).toBe(false)
+})
+
+test('until a game row has been drawn here, the narrator keeps its own title and map; /door-pane debug says what the pane saw', async ($, on) => {
+  const opened = { n: 0 }
+  engine(on, () => JSON.stringify({ game: LABEL, events: [{ kind: 'map', map: ['T @'], chart: { origin: [0, 0], you: [1, 0], rows: ['T.'], names: [], heard: [] } }], state, actions: [], client: { version: '0.34.0' } }), opened)
+  on('env.get', async (_$, e) => ({ value: e.name === 'TERM_PROGRAM' ? 'ghostty' : undefined }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const r = await $.tool.call({ tool: 'mcp__plugin_dragons-door_dragons-door__map', tool_use_id: 'm1' })
+  expect(r.context?.some(c => /drawn as a picture/.test(c)) ?? false).toBe(false)
+  const out = await $.command.run({ command: 'door-pane', args: 'debug' })
+  expect(out.text).toContain('pictures in this terminal: true')
+  expect(out.text).toContain('ever drawn: false')
 })
