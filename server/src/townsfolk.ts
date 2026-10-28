@@ -7,7 +7,7 @@ import type { Personality } from "./schedule.js";
 
 export interface Townsperson {
   name: string;
-  class: "warrior" | "thief" | "mage" | "priest";
+  class: "warrior" | "guardian" | "thief" | "mage" | "priest" | "bard";
   /** The kind of person they are: their hours, fighting, goals and cares. Shared freely. */
   habits: Personality;
   /** Where they live, if not Brightwater. */
@@ -25,8 +25,6 @@ export interface Townsperson {
   note?: string;
   /** Herb-wise: "brew" forages, learns the healer's recipes and brews; "gather" forages to sell. */
   herbs?: "brew" | "gather";
-  /** What they'll specialize into at level 5, on their path, as a player would. Unset: they stay what they are. */
-  becomes?: "warrior" | "guardian" | "thief" | "mage" | "priest" | "bard";
 }
 
 export const ROSTER: Townsperson[] = [
@@ -124,12 +122,12 @@ export const ROSTER: Townsperson[] = [
     away: ["out on a long trap line; back in a day or two", "asleep; she was out all night"],
     note: "Read it. Thanks.\n\nMirela",
   },
-  { name: "Lew Tanner", becomes: "guardian", class: "warrior", habits: "watchman", home: "ironhold", level: 2, pronouns: ["he", "his"],
+  { name: "Lew Tanner", class: "guardian", habits: "watchman", home: "ironhold", level: 2, pronouns: ["he", "his"],
     persona: "Lew Tanner, who drives Ironhold's supply cart to Brightwater and back; cheerful, chatty, unlucky on the road and philosophical about it, writes letters full of road news. He/him.",
     away: ["on the road south with the cart", "on the road back from Brightwater, a day late as usual"],
     note: "Got your letter on the road. Write again, I've a long way to go.\n\nLew",
   },
-  { name: "Sister Junia", herbs: "brew", becomes: "priest", class: "mage", habits: "student", home: "ironhold", newcomer: true, pronouns: ["she", "her"],
+  { name: "Sister Junia", herbs: "brew", class: "priest", habits: "student", home: "ironhold", newcomer: true, pronouns: ["she", "her"],
     persona: "Sister Junia, a young priest of the Lamp just sent up from Ashford's Lamphouse to Ironhold, which didn't ask for one; earnest, kind, a little nervous and brave about it, writes tidy hopeful letters; learning Jessamy Crane's draughts so the garrison has something better than ale for a wound. She/her.",
     away: ["walked down to the hill farms to bless a new barn", "writing her weekly letter home to the Lamphouse; it's a long one"],
     note: "Your letter came safely. The lamp's still lit.\n\nSister Junia",
@@ -149,7 +147,7 @@ export const ROSTER: Townsperson[] = [
     away: ["up on the Lamphouse roof all night; asleep all day", "gone out to the hills, where the sky's darker"],
     note: "Received under a waxing moon. Thank you.\n\nIone",
   },
-  { name: "Jem Arkwright", becomes: "guardian", class: "warrior", habits: "greenhorn", home: "ashford", newcomer: true, pronouns: ["he", "his"],
+  { name: "Jem Arkwright", class: "guardian", habits: "greenhorn", home: "ashford", newcomer: true, pronouns: ["he", "his"],
     persona: "Jem Arkwright, nineteen, just out of Ashford's orphanage and the newest recruit in the town watch; eager, clumsy, cheerful, polite to everyone, writes careful letters with crossings-out. He/him.",
     away: ["on a double watch at the ford; the sergeant's idea", "helping at the orphanage for the day"],
     note: "Thank you for your letter! I'll write back properly when I'm off watch.\n\nJem",

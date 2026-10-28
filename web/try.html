@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Play Dragon's Door in your browser: a free text RPG</title>
-<meta name="description" content="Play a free text RPG in your browser, no install: pick a name and a path, step into Dragon&#x27;s Door&#x27;s shared realm, and play a day with a narrator telling it as it goes. Keep your character in Claude Code.">
+<meta name="description" content="Play a free text RPG in your browser, no install: pick a name and a class, step into Dragon&#x27;s Door&#x27;s shared realm, and play a day with a narrator telling it as it goes. Keep your character in Claude Code.">
 <link rel="canonical" href="https://www.dragonsdoor.gg/try">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Dragon's Door">
 <meta property="og:title" content="Play Dragon's Door in your browser: a free text RPG">
-<meta property="og:description" content="Play a free text RPG in your browser, no install: pick a name and a path, step into Dragon&#x27;s Door&#x27;s shared realm, and play a day with a narrator telling it as it goes. Keep your character in Claude Code.">
+<meta property="og:description" content="Play a free text RPG in your browser, no install: pick a name and a class, step into Dragon&#x27;s Door&#x27;s shared realm, and play a day with a narrator telling it as it goes. Keep your character in Claude Code.">
 <meta property="og:url" content="https://www.dragonsdoor.gg/try">
 <meta property="og:image" content="https://www.dragonsdoor.gg/og.png">
 <meta property="og:image:width" content="1200">
@@ -174,10 +174,13 @@
         <p>The door's ajar. The clerk at the gate looks up from the register. "Name?"</p>
         <label class="field"><span>Your name</span><input id="name" name="name" autocomplete="off" maxlength="20" minlength="2" required pattern="[A-Za-z0-9_.'\-]+( [A-Za-z0-9_.'\-]+)*" placeholder="2 to 20 letters"></label>
         <fieldset class="paths">
-          <legend>Your path</legend>
-          <label><input type="radio" name="path" value="steel" checked><span><b>Steel</b> Blades, maces, heavy armor. A warrior, from Ironhold.</span></label>
-          <label><input type="radio" name="path" value="shadow"><span><b>Shadow</b> Quick and at range: bows and daggers. A thief, from Ashford.</span></label>
-          <label><input type="radio" name="path" value="gift"><span><b>The gift</b> Magic. A mage, from Brightwater.</span></label>
+          <legend>Your class</legend>
+          <label><input type="radio" name="class" value="warrior" checked><span><b>Warrior</b> Blades, maces, heavy armor. Hits hardest. From Ironhold.</span></label>
+          <label><input type="radio" name="class" value="guardian"><span><b>Guardian</b> Shield and oath: hard to bring down. From Ironhold.</span></label>
+          <label><input type="radio" name="class" value="thief"><span><b>Thief</b> Quick and at range: bows and daggers. From Ashford.</span></label>
+          <label><input type="radio" name="class" value="bard"><span><b>Bard</b> Songs instead of blows, and tips from the rich. From Ashford.</span></label>
+          <label><input type="radio" name="class" value="mage"><span><b>Mage</b> Spells and mana, and a Fireball when it counts. From Brightwater.</span></label>
+          <label><input type="radio" name="class" value="priest"><span><b>Priest</b> The Lamp's servant: modest blows, strong healing. From Brightwater.</span></label>
         </fieldset>
         <button class="btn primary" id="start" type="submit">Open the gate</button>
       </form>
@@ -346,17 +349,17 @@
     e.preventDefault();
     if (busy) return;
     const name = $("name").value.trim().replace(/\s+/g, " ");
-    const path = (gate.querySelector('input[name="path"]:checked') || {}).value;
+    const cls = (gate.querySelector('input[name="class"]:checked') || {}).value;
     if (!$("name").checkValidity()) { $("name").reportValidity(); return; }
     busy = true;
     $("start").disabled = true;
     stir(true);
-    const r = await call("/start", { name, path, visitor: visitor() }).catch(() => ({ error: "offline", message: "Couldn't reach the realm. Check your connection and try again." }));
+    const r = await call("/start", { name, class: cls, visitor: visitor() }).catch(() => ({ error: "offline", message: "Couldn't reach the realm. Check your connection and try again." }));
     stir(false); busy = false;
     if (r.error) { $("start").disabled = false; line("note", r.message || "The gate won't open just now."); return; }
     gate.remove(); $("term").classList.remove("fresh");
-    s = { token: r.token, name: r.name, claim: r.claim || null, log: [], state: null, left: null, over: false, path, moves: 0 };
-    track("trial_started", { path });
+    s = { token: r.token, name: r.name, claim: r.claim || null, log: [], state: null, left: null, over: false, path: cls, moves: 0 };
+    track("trial_started", { path: cls, trial_class: cls });
     showClaim();
     form.hidden = false;
     take(r);

@@ -25,7 +25,6 @@ import { sweepTrials } from "./trial.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { ROSTER, townsperson } from "./townsfolk.js";
-import { SPECIALIZE_AT, SPECS, type Spec } from "./paths.js";
 import { HERBS, POTIONS, TEACHERS } from "./herbs.js";
 import { plain, write } from "./llm.js";
 import { realmDay, realmSettings } from "./day.js";
@@ -110,35 +109,8 @@ async function forestFight(b: Bot, opts: { runBelow?: number; useSpecial?: boole
   return r;
 }
 
-/**
- * Level 5 on a beginner's path: they go to the teacher of what they mean to become and take it up, as a player would.
- * Townsfolk know the roads, so the walk there is taken as read. Returns whether they're specialized now.
- */
-async function specializeIfDue(b: Bot, r: Envelope): Promise<boolean> {
-  const st = r.state as Envelope["state"] & { specialized?: boolean };
-  if (st.specialized !== false) return true;
-  if (st.level < SPECIALIZE_AT) return false;
-  const spec = townsperson(b.name)?.becomes ?? (st.class as Spec);
-  const def = SPECS[spec];
-  const town = def.towns.includes(b.home) ? b.home : def.towns[0];
-  const id = (await pool.query<{ id: string }>("select id from players where name = $1", [b.name])).rows[0]?.id;
-  if (!id) return false;
-  if (town === "brightwater") await b.post("/travel", { x: 0, y: 0 });
-  else {
-    const at = TOWN_TILES[town as keyof typeof TOWN_TILES];
-    await pool.query("update players set pos_x = $2, pos_y = $3, cave_depth = null where id = $1", [id, at.x, at.y]);
-    await pool.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing", [id, at.x, at.y]);
-  }
-  const done = await b.post("/specialize", { spec, confirm: true });
-  const ok = !isErr(done) && kinds(done).includes("specialized");
-  b.log.push(ok ? `took up the ${spec}'s way with ${def.teacher}` : `couldn't specialize as a ${spec}: ${isErr(done) ? done.error : kinds(done).join(",")}`);
-  await home(b);
-  return ok;
-}
-
 async function trainIfReady(b: Bot, r: Envelope | null) {
   if (!r || !r.state.alive || r.state.exp_next === null || r.state.exp < r.state.exp_next) return;
-  if (!(await specializeIfDue(b, r))) return;
   // Masters live in town. Out-of-town masters teach only fighters (Ashford's only thieves), so the rest walk down to Brightwater to train.
   const ownMasters = b.home === "ironhold" ? !["mage", "priest"].includes(r.state.class) : b.home === "ashford" ? r.state.class === "thief" : true;
   if (!ownMasters) await b.post("/travel", { x: 0, y: 0 });
@@ -1315,7 +1287,6 @@ async function ensureRoster(): Promise<Row[]> {
     if (!j.api_key) continue; // name taken by a human, or similar; skip rather than fight over it
     const p = await pool.query<{ id: string }>("update players set is_bot = true, role = 'townsfolk' where name = $1 returning id", [spec.name]);
     await pool.query("insert into bots (player_id, personality, api_key, home) values ($1,$2,$3,$4)", [p.rows[0].id, spec.habits, j.api_key, spec.home ?? "brightwater"]);
-    if (spec.becomes) await pool.query("update players set specialized = false where id = $1", [p.rows[0].id]);
     if (spec.home && spec.newcomer) await arrive(p.rows[0].id, spec.home);
     else if (spec.home) await settleIn(p.rows[0].id, spec.home, spec.class, spec.level ?? 5);
     existing.rows.push({ player_id: p.rows[0].id, name: spec.name, personality: spec.habits, api_key: j.api_key, mind: {}, home: spec.home ?? "brightwater" });
@@ -1331,7 +1302,7 @@ async function arrive(id: string, town: "ironhold" | "ashford") {
 }
 
 /** Other towns' townsfolk arrive seasoned: the levels, stats and gear of someone who has lived out there a while, and they know the land around it. */
-async function settleIn(id: string, town: "ironhold" | "ashford", cls: "warrior" | "thief" | "mage" | "priest", level: number) {
+async function settleIn(id: string, town: "ironhold" | "ashford", cls: "warrior" | "guardian" | "thief" | "mage" | "priest" | "bard", level: number) {
   const at = TOWN_TILES[town];
   let hp = 20, str = 10, def = 1;
   for (let l = 2; l <= level; l++) { const g = levelGains(cls, l); hp += g.hp; str += g.str; def += g.def; }

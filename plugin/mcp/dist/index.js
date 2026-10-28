@@ -633,7 +633,7 @@ void refreshInstalledScript();
 async function call(method, path, body) {
   const cfg = await loadConfig();
   if (!cfg.api_key && path !== "/v1/register" && path !== "/v1/trial/claim") {
-    return { error: "not_registered", message: "No character yet. Call `register` with a name and a path (steel, shadow or gift)." };
+    return { error: "not_registered", message: "No character yet. Call `register` with a name and a class (warrior, guardian, thief, mage, priest or bard)." };
   }
   const res = await fetch(cfg.api_url + path, {
     method,
@@ -651,12 +651,12 @@ function clientHeaders() {
 var text = (v) => ({ content: [{ type: "text", text: JSON.stringify(v && typeof v === "object" && !Array.isArray(v) ? { game: "Dragon's Door, a text RPG (game state for the narrator)", ...v } : v) }] });
 server.tool(
   "register",
-  "Create your character. Run once. Stores your API key locally. They choose a path: steel (blades and armor, starts in Ironhold), shadow (quick and at range, starts in Ashford) or gift (magic, starts in Brightwater). They play as the path's beginner class and choose a specialization at level 5. Some realms are invite-only and need the invite word.",
-  { name: z.string().min(2).max(20), path: z.enum(["steel", "shadow", "gift"]), invite: z.string().optional() },
-  async ({ name, path, invite }) => {
+  "Create your character. Run once. Stores your API key locally. They choose a class, all open from the start: warrior (blades and heavy armor, hits hardest) or guardian (shield and oath, hardest to bring down), both from Ironhold; thief (quick and at range) or bard (songs instead of blows, tips from the rich), both from Ashford; mage (spells, a Fireball when it counts) or priest (the Lamp's servant, strong healing), both from Brightwater. Some realms are invite-only and need the invite word.",
+  { name: z.string().min(2).max(20), class: z.enum(["warrior", "guardian", "thief", "mage", "priest", "bard"]), invite: z.string().optional() },
+  async ({ name, class: cls, invite }) => {
     const cfg = await loadConfig();
     if (cfg.api_key) return text({ error: "already_registered", name: cfg.name, message: "You already have a character on this machine." });
-    const r = await call("POST", "/v1/register", { name, path, invite: invite ?? process.env.DRAGONS_DOOR_INVITE ?? process.env.LORD_INVITE });
+    const r = await call("POST", "/v1/register", { name, class: cls, invite: invite ?? process.env.DRAGONS_DOOR_INVITE ?? process.env.LORD_INVITE });
     if (r.api_key) {
       await saveConfig({ ...cfg, api_key: r.api_key, name: r.name });
       delete r.api_key;
@@ -681,8 +681,8 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
   server.tool(
     "characters",
     "For the realm's maintainer (only present with DRAGONS_DOOR_DEV=1): list the characters on this machine, switch to one, or create a test character (hidden from rankings and news; needs an admin character active). share: seal every character on this machine for another of the maintainer's machines and return a one-time code (show it to them; good for 15 minutes). claim: on the other machine, with that code, add those characters here (needs an admin character active on both).",
-    { op: z.enum(["list", "switch", "new", "share", "claim"]), name: z.string().min(2).max(20).optional(), path: z.enum(["steel", "shadow", "gift"]).optional(), code: z.string().max(20).optional() },
-    async ({ op, name, path, code }) => {
+    { op: z.enum(["list", "switch", "new", "share", "claim"]), name: z.string().min(2).max(20).optional(), class: z.enum(["warrior", "guardian", "thief", "mage", "priest", "bard"]).optional(), code: z.string().max(20).optional() },
+    async ({ op, name, class: cls, code }) => {
       const cfg = await loadConfig();
       if (op === "list") return text({ active: cfg.name ?? null, others: await otherCharacters() });
       if (op === "share") {
@@ -713,7 +713,7 @@ if (process.env.DRAGONS_DOOR_DEV === "1") {
         return text(ok ? { switched_to: (await loadConfig()).name, others: await otherCharacters() } : { error: "no_such_character", others: await otherCharacters() });
       }
       if (!cfg.api_key) return text({ error: "not_registered", message: "Register your main character first." });
-      const r = await call("POST", "/v1/register", { name, path: path ?? "steel" });
+      const r = await call("POST", "/v1/register", { name, class: cls ?? "warrior" });
       if (!r.api_key) return text(r);
       await switchCharacter(r.name ?? name, r.api_key);
       return text({ created: r.name, test: Boolean(r.test), switched_to: r.name, others: await otherCharacters() });
@@ -850,7 +850,7 @@ server.tool(
 );
 server.tool(
   "library",
-  "Visit a caster's teacher: Mother Quill's library (place: library, mages), Prior Hale's chapel (place: chapel, priests), or Dunstan in the tavern (place: tavern, bards; he sells instruments, not spells). Anyone may visit and look; only that class can learn. Shows what's taught (each needs a level and costs gold; the old one trades in at half), and for the player's own class which they know and their mana. Defaults to the player's own teacher.",
+  "Visit a caster's teacher: Mother Quill's library (place: library, mages), Prior Hale's chapel (place: chapel, priests), or a bard's instrument seller (place: tavern: Dunstan in Brightwater's tavern, or Mags Pell at her music room in Ashford; they sell instruments, not spells). Anyone may visit and look; only that class can learn. Shows what's taught (each needs a level and costs gold; the old one trades in at half), and for the player's own class which they know and their mana. Defaults to the player's own teacher.",
   { place: z.enum(["library", "chapel", "tavern"]).optional() },
   async ({ place }) => text(await call("GET", `/v1/library${place ? `?place=${place}` : ""}`))
 );
@@ -862,19 +862,19 @@ server.tool(
 );
 server.tool(
   "respec",
-  "Start over on a different path, in town: back to level 1 as that path's beginner class, specializing again at 5, for a fee. (To change specialization within the same path, use specialize instead.) Without confirm it only quotes the fee and what's kept and lost; call again with confirm: true only after the player has said yes to that quote.",
-  { path: z.enum(["steel", "shadow", "gift"]), confirm: z.boolean().optional() },
-  async ({ path, confirm }) => text(await call("POST", "/v1/respec", { path, ...confirm ? { confirm: true } : {} }))
+  "Start over as a different class, in town: back to level 1, for a fee. Without confirm it only quotes the fee and what's kept and lost; call again with confirm: true only after the player has said yes to that quote.",
+  { class: z.enum(["warrior", "guardian", "thief", "mage", "priest", "bard"]), confirm: z.boolean().optional() },
+  async ({ class: cls, confirm }) => text(await call("POST", "/v1/respec", { class: cls, ...confirm ? { confirm: true } : {} }))
 );
 server.tool(
   "specializations",
-  "See the specializations on the player's path: who teaches each, where, and what choosing or switching costs.",
+  "Only for a character made before every class was open, still on a beginner's class (state.specialized is false): the classes on their path they can choose, once and free, and who teaches each.",
   {},
   async () => text(await call("GET", "/v1/specialize"))
 );
 server.tool(
   "specialize",
-  "Choose a specialization (from level 5; the first is free) or switch to another on the same path (weekly, for gold). Keeps level and gear. Must be where that teacher is. Without confirm it only quotes; call again with confirm: true only after the player says yes.",
+  "Only while state.specialized is false (a character made before every class was open): choose a class on their path, once and free, keeping level and gear. Must be where that teacher is. Without confirm it only quotes; call again with confirm: true only after the player says yes.",
   { spec: z.enum(["warrior", "thief", "mage", "priest", "guardian", "bard"]), confirm: z.boolean().optional() },
   async ({ spec, confirm }) => text(await call("POST", "/v1/specialize", { spec, ...confirm ? { confirm: true } : {} }))
 );

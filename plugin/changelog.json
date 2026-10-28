@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.29.0",
+    "lore": "The masters have stopped making everyone wait five levels to find out who they are. Pick your trade at the gate: blade, shield, bow, spell, prayer or song. Bards now start in Ashford, where Mags Pell keeps a music room on the Exchange and the audiences can afford to tip.",
+    "plain": "Every class can be chosen from the start, and nobody specializes at level 5 any more. New bards start in Ashford, and Mags Pell's music room there sells instruments and stage clothes."
+  },
+  {
     "version": "0.28.0",
     "lore": "The armorers of the realm have had a long talk, and armor works differently now: it takes a share off every blow instead of turning most of them away entirely. You'll be hit more often, for less. Guardians, who stand in front of things for a living, came out of the talk with a little more to stand behind.",
     "plain": "Armor now reduces every hit by a share instead of blocking most hits outright: expect more, smaller hits in fights. Monsters' armor and guardians' defense were adjusted so the game's pace stays the same."

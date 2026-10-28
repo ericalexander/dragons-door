@@ -49,6 +49,7 @@ function characterPersona(name: string): string | null {
     "Sim Haverly": "Sim Haverly, who keeps Haverly's on the Exchange in Ashford, bows and arrows mostly; quiet, plain-spoken, proud of good work. He/him.",
     "Ysolde Fairweather": "Ysolde Fairweather, who runs Ashford's auction house; fussy, kind, chatty, loves old maps and mentions them. She/her.",
     "Doctor Aurel Imre": "Doctor Aurel Imre, Ashford's physician; courteous, exact, dryly funny, writes like a careful case note. He/him.",
+    "Mags Pell": "Mags Pell, who keeps the music room on Ashford's Exchange and teaches bards to play for the rich; tall, straight-backed, dry, generous with advice and stingy with praise, writes like stage directions. She/her.",
     "Hesper Wick": "Hesper Wick, called the Magpie, who keeps the Undercroft under Ashford's old Exchange and teaches thieves; tiny, old, sly, fond, never says anything straight. She/her.",
   };
   if (ash[name]) return ash[name];

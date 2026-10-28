@@ -115,7 +115,7 @@ function dailyExtras(p: SimPlayer, day: number, fights: { n: number }) {
   if (p.class === "bard" && process.env.PERFORM !== "0") {
     const ms = GAME.monsters.filter((m) => m.level === p.level);
     const per = ms.length ? ms.reduce((n, m) => n + m.gold, 0) / ms.length : 25 * p.level;
-    p.gold += Math.round(per * Number(process.env.TIPS ?? 0.75) * 0.95 * (0.7 + 0.3 * Math.min(1, p.weapon_id / Math.max(1, p.level))) * (1 + Math.min(100, p.charm) / 200) * (0.7 + roll(60) / 100));
+    p.gold += Math.round(per * Number(process.env.TIPS ?? 0.75) * Number(process.env.ASHFORD_TIPS ?? 1.2) * 0.95 * (0.7 + 0.3 * Math.min(1, p.weapon_id / Math.max(1, p.level))) * (1 + Math.min(100, p.charm) / 200) * (0.7 + roll(60) / 100));
     if (roll(99) < 25) p.charm += 1;
   }
   if (!EXTRAS) return;
@@ -278,9 +278,9 @@ function shop(p: SimPlayer) {
 
 function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; killedDragon: boolean; level?: number } {
   bags.clear();
-  // Specializations that aren't a path's beginner class play as the beginner until level 5 (BASE=1 skips that).
+  // Every class is open from the start; BEGINNER=1 plays the old way, as the path's beginner class until level 5.
   const { PATHS, SPECIALIZE_AT } = PATHS_MOD;
-  const begin = process.env.BASE === "1" ? cls : PATHS[pathOfClass(cls)].base;
+  const begin = process.env.BEGINNER === "1" ? PATHS[pathOfClass(cls)].base : cls;
   const p: SimPlayer = fresh(begin);
   // GEAR_GIFT=n: a friend hands over a tier-n weapon and armor on day one.
   if (process.env.GEAR_GIFT) { p.weapon_id = Number(process.env.GEAR_GIFT); p.armor_id = Number(process.env.GEAR_GIFT); }

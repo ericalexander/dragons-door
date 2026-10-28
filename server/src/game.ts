@@ -362,7 +362,7 @@ export function publicState(p: Player, t: Turns, inEncounter: boolean, dragonAli
     name: p.name,
     class: p.class,
     path: PATHS[p.path ?? pathOfClass(p.class)].name,
-    ...(p.specialized === false ? { specialized: false, specialize_at: SPECIALIZE_AT } : {}),
+    ...(p.specialized === false ? { specialized: false, choose_class: "one free choice of class on their path" } : {}),
     level: p.level,
     exp: p.exp,
     exp_next: expForLevel(p.level + 1),
@@ -440,9 +440,12 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
       const nextLvl = expForLevel(p.level + 1);
       if (p.class === "bard" && !t.performed) w.push("perform");
       if (!t.flirted) w.push("flirt");
-      // Ironhold's masters teach blades and bows; Ashford's only the Shadow path.
-      const teachesYou = !casts(p.class) && (town !== "ashford" || p.path === "shadow");
-      if (needsSpec(p)) w.unshift("specialize");
+      // Ironhold's masters teach blades and bows; Ashford's the Shadow path, and Mags Pell tests her bards.
+      const teachesYou = (!casts(p.class) && (town !== "ashford" || p.path === "shadow")) || (p.class === "bard" && town === "ashford");
+      // Pell's Music Room, on Ashford's Exchange: anyone can look; bards buy.
+      if (town === "ashford") w.push("instruments");
+      if (p.specialized === false) w.unshift("specialize");
+      if (needsSpec(p)) { /* trains again once they've chosen */ }
       else if (teachesYou && nextLvl !== null && p.exp >= nextLvl) w.unshift("train");
       return w;
     }
@@ -466,7 +469,8 @@ export function legalActions(p: Player, t: Turns, inEncounter: boolean, dragonAl
   // Dunstan's instruments, in Brightwater's tavern: anyone can look; bards buy.
   a.push("instruments");
   const next = expForLevel(p.level + 1);
-  if (needsSpec(p)) a.unshift("specialize");
+  if (p.specialized === false) a.unshift("specialize");
+  if (needsSpec(p)) { /* trains again once they've chosen */ }
   else if (next !== null && p.exp >= next) a.unshift("train");
   if (p.level >= 12 && dragonAlive && t.forest_fights > 0) a.unshift("dragon");
   return a;

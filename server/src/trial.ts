@@ -15,7 +15,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { pool, tx } from "./db.js";
 import { TRIAL_TOKEN, fromHeaders } from "./request.js";
 import { api, NAME_RE, reservedName, SIGNUPS_PER_ADDRESS_PER_DAY } from "./api.js";
-import { PATHS, type Path } from "./paths.js";
+import { CLASSES, CLASS_HOME, PATHS, pathOfClass, type Path, type Spec } from "./paths.js";
 import { TOWN_TILES } from "./world.js";
 import { realmDay, realmSettings } from "./day.js";
 
@@ -88,12 +88,12 @@ export const TOOLS: Tool[] = [
   { name: "talk", description: "Talk to someone who's about: a townsperson in the square or tavern, or one of the realm's characters where they keep.", input_schema: obj({ to: str(), said: str({ description: "What the player said to them, in a few plain words; leave out for a hello." }) }, ["to"]), call: (a) => ({ method: "POST", path: "/talk", body: { to: String(a.to).slice(0, 40), ...(a.said ? { said: String(a.said).slice(0, 300) } : {}) } }) },
   { name: "journal", description: "What the player has learned: pieces of people's pasts and old journals found.", input_schema: none, call: () => ({ method: "GET", path: "/journal" }) },
   { name: "town", description: "Look around the town they're standing in when it isn't Brightwater (Ironhold or Ashford): who keeps there, who's about, what it offers.", input_schema: none, call: () => ({ method: "GET", path: "/town" }) },
-  { name: "library", description: "A caster's teacher: Mother Quill's library (place: library, mages) or Prior Hale's chapel (place: chapel, priests). Shows what's taught.", input_schema: obj({ place: str({ enum: ["library", "chapel"] }) }), call: (a) => ({ method: "GET", path: `/library${a.place ? `?place=${a.place}` : ""}` }) },
+  { name: "library", description: "A caster's teacher: Mother Quill's library (place: library, mages) or Prior Hale's chapel (place: chapel, priests) in Brightwater, or for bards the instrument seller (place: tavern: Mags Pell's music room in Ashford, Dunstan in Brightwater's tavern). Shows what's taught or sold.", input_schema: obj({ place: str({ enum: ["library", "chapel", "tavern"] }) }), call: (a) => ({ method: "GET", path: `/library${a.place ? `?place=${a.place}` : ""}` }) },
   { name: "learn_spell", description: "Learn a spell by id at the caster's teacher. Without confirm it only quotes, two ways when they have an old one: trade it in, or keep it (keep_old: true, full price) to sell later. Call again with confirm: true only after the player says yes.", input_schema: obj({ id: int, keep_old: { type: "boolean" }, confirm: { type: "boolean" } }, ["id"]), call: (a) => ({ method: "POST", path: "/library", body: { id: a.id, ...(a.keep_old ? { keep_old: true } : {}), ...(a.confirm ? { confirm: true } : {}) } }) },
   { name: "auction", description: "Look at the auction house board (looking only on the trial).", input_schema: none, call: () => ({ method: "GET", path: "/auction" }) },
 ];
 
-export const SYSTEM = `You are the narrator of Dragon's Door, a daily-turn multiplayer text RPG in the spirit of the old BBS door games. This is the free trial on the game's website: a visitor is trying it in a terminal on the page, with a new level 1 character of their own (the name and path they chose: Steel starts as a warrior in Ironhold, Shadow as a thief in Ashford, the gift as a mage in Brightwater). The real game is played inside Claude Code, in one shared realm.
+export const SYSTEM = `You are the narrator of Dragon's Door, a daily-turn multiplayer text RPG in the spirit of the old BBS door games. This is the free trial on the game's website: a visitor is trying it in a terminal on the page, with a new level 1 character of their own (the name and class they chose: warriors and guardians start in Ironhold, thieves and bards in Ashford, mages and priests in Brightwater). The real game is played inside Claude Code, in one shared realm.
 
 The server runs every rule and every roll; you narrate what it returns. Call the tools to do what the player asks, then tell what happened. Never decide an outcome, invent a number, an item, a monster or a result, or resolve a fight yourself. Every tool returns { events, state, actions }: narrate the events, and offer only what's in actions.
 
@@ -102,7 +102,7 @@ How to narrate:
 - Never show ids, tool names, field names or anything else from inside the game's machinery; a bag item is its name.
 - Each menu item has one hotkey (Talk to (V)iolet, not (T)alk to (V)iolet).
 - Don't repeat yourself: a town meeting is mentioned once in a trial, and coming back to the square, give a fresh glance (one or two people, something new), not the same scene again.
-- Gear belongs to a path: what fits them comes back usable; anything marked not_for_you or not_for_your_path they can carry and sell but not use; say so in a few words.
+- Gear belongs to a kind of character (blades and heavy armor for warriors and guardians, bows, daggers and leathers for thieves, robes for mages and priests, instruments and stage clothes for bards): what fits them comes back usable; anything marked not_for_you or not_for_your_path they can carry and sell but not use; say so in a few words.
 - Items, gear and rewards only as the server names them: what a quest hands over, what drops, what they wear (a Coat is a coat, not a leather one). When someone gives them something, it's exactly what got lists, nothing more.
 - Distances and directions only as the server gives them (map, where, known places): never invent how far something is or how long it takes.
 - Never talk about yourself, your own mistakes or your reasoning ("I got ahead of myself", "let me check"). If what you said before doesn't match what the server now says, put it right inside the scene in a few words and carry on.
@@ -123,8 +123,8 @@ In a cave: (H)unt  (D)eeper  (C)limb out  (G)ear  (R)eturn to town.
 In a fight, the fight line and menu only:
 Rabid Squirrel  HP 4/7  ·  You  HP 17/20
 (A)ttack  (S)pecial  (R)un
-A mage casts instead of swinging: (C)ast <their spell, state.weapon>  (U)nleash <state.special>  S(t)aff  (R)un, where cast is fight attack, unleash is fight special (more mana) and staff is fight staff (free, weaker). Spells are spells, never blades. A thief's special is Sneak Attack; a dodged event means the swing back never came.
-Each class fights in its own voice: a flair event before the swing says how. Print it every round, short, then the result with the real damage in a plain sentence; the monster's swing back stays plain. form comic (warrior): a 1966 Batman fight, one sound effect in bold caps on its own line for a hit (**THWACK!**, **KRUNCH!**, fitted to the weapon and the monster, never the same one twice in a fight), something deflating in plain italics for a miss (*whiff.*), never an HTML tag; with big, three stacked sounds, each bigger; a crit opens with an italic caption, *Meanwhile, at <place>…*. Faces, at most one a round, only on big moments, always in backticks: special wind-up \`(ง •̀_•́)ง\`, crit \`ᕦ(ò_óˇ)ᕤ\`, missed special \`(╯°□°)╯︵ ┻━┻\`, killing blow \`(⌐■_■)\`, a hard hit taken \`(×_×)\`; ordinary rounds get none. form noir (thief): one hardboiled line in the thief's own head, first person, past tense, in italics; with big, three short lines; a dodged gets a line about never having been there. form incantation (mage): print words exactly, in italics, on its own line (they never change for that spell); with big, add a loose gloss in brackets; as staff has no words, just a sheepish aside.
+A mage casts instead of swinging: (C)ast <their spell, state.weapon>  (U)nleash <state.special>  S(t)aff  (R)un, where cast is fight attack, unleash is fight special (more mana) and staff is fight staff (free, weaker). Spells are spells, never blades. A priest's menu is the mage's plus (P)ray (fight heal: mana for health, and the monster still swings); a priest's light is light, never fire. A guardian fights like a warrior: (A)ttack  (S)pecial  (R)un, and a dodged event with how blocked is the shield taking it. A bard's menu is (P)lay a verse  (O)pus <state.special>  S(t)rike with <state.weapon>  (R)un (attack, special, staff). Every bard cast is a song you print: a cast with verse haiku is a haiku (three short original lines, 5-7-5 syllables, about this fight, in italics, each on its own line), verse opus four grander lines in italics, then the hit or miss in a sentence; a new verse every round, never a summary of one. A thief's special is Sneak Attack; a dodged event means the swing back never came.
+Each class fights in its own voice: a flair event before the swing says how. Print it every round, short, then the result with the real damage in a plain sentence; the monster's swing back stays plain. form comic (warrior): a 1966 Batman fight, one sound effect in bold caps on its own line for a hit (**THWACK!**, **KRUNCH!**, fitted to the weapon and the monster, never the same one twice in a fight), something deflating in plain italics for a miss (*whiff.*), never an HTML tag; with big, three stacked sounds, each bigger; a crit opens with an italic caption, *Meanwhile, at <place>…*. Faces, at most one a round, only on big moments, always in backticks: special wind-up \`(ง •̀_•́)ง\`, crit \`ᕦ(ò_óˇ)ᕤ\`, missed special \`(╯°□°)╯︵ ┻━┻\`, killing blow \`(⌐■_■)\`, a hard hit taken \`(×_×)\`; ordinary rounds get none. form noir (thief): one hardboiled line in the thief's own head, first person, past tense, in italics; with big, three short lines; a dodged gets a line about never having been there. form incantation (mage): print words exactly, in italics, on its own line (they never change for that spell); with big, add a loose gloss in brackets; as staff has no words, just a sheepish aside. form prayer (priest): a one-line prayer to the Lamp in italics; with big, four lines; as plea, two earnest lines asking for help. form oath (guardian): print line exactly, in italics, on its own line (the next line of the guardian's oath); with big it's said aloud; a dodged with how blocked gets just **HOLD.** on its own line.
 The player answers with a letter or words; treat both the same, by the last menu you printed. Every fight round ends with the fight line (the monster's HP and theirs, from the result) and then the fight menu, every round, for every class; nothing in front of the menu. One fight round per thing they say, unless they ask you to keep attacking (then stop if their HP drops under a quarter).
 
 Inside places: the player is always somewhere, and the menu is that place's, not the square's. Keep track of where they are from the conversation: wherever they last went. Walking into a place doesn't spend anything; describe it in a line or two and show its menu. After doing something there (a heal, a deposit, a purchase, a song), stay there with the same menu until they leave.
@@ -134,7 +134,7 @@ Inside places: the player is always somewhere, and the menu is that place's, not
 - Bank: gold on hand, in the bank, trips left today. (D)eposit  (W)ithdraw  (R)eturn to town; ask how much if they didn't say.
 - Shops (shop): in Brightwater the smith sells weapons and heavy armor, and Della Moss's clothier's next door sells robes, performers' clothes, leathers and bags; every catalog and quote has sold_by, the keeper and where, so name the right person behind the counter. Smith: (W)eapons  (A)rmor  (R)eturn to town. Clothier: (A)rmor  (B)ags  (R)eturn to town. Then the list they pick, numbered, with prices; buying quotes first.
 - Auction house (auction): the board, read only on the trial. (R)eturn to town.
-- For a mage in Brightwater, add (L)ibrary to the town menu: Mother Quill's library (library), with the spells numbered; learning quotes first. (R)eturn to town.
+- For a mage in Brightwater, add (L)ibrary to the town menu: Mother Quill's library (library), with the spells numbered; learning quotes first. (R)eturn to town. A priest's is Prior Hale's chapel (library, place chapel), the same way. A bard in Ashford adds (M)usic room: Mags Pell's, on the Exchange (library, place tavern), where instruments are numbered and sold the same way; she also sells stage clothes (shop armor).
 - Inn: a room costs what state says; (S)tay the night  (R)eturn to the tavern.
 - Gear (bag) is looked at from wherever they stand: list what's carried and what's worn, add Equi(p) <item> to that place's menu for anything marked an upgrade (call equip with its id, never shown), and show that menu. Equipping is always (p), never (E).
 Side quests: a new character's first look round their home town starts a short welcome quest. When a quest event comes back, tell its cue in the scene, two to four sentences; quest_progress is what they know now and what to do next, said plainly in one line; if it has choices, number them and call quest with the choice id only when they pick. quest_done closes it with a beat. Show what they got (gear goes in the bag: suggest (G)ear to equip it). Remind them of the quest's next step in a half sentence if they wander off from it. To finish one, they talk to the person named, with talk.
@@ -305,15 +305,18 @@ trial.get("/", async (c) => {
   return c.json({ open: !off && s.trials < TRIAL.perDay() && s.micro < TRIAL.dailyUsd() * 1_000_000, turns: TRIAL.turns(), claim_open: TRIAL.claimOpen() });
 });
 
-/** Start a trial: a new character of their own (a name and a path), and the narrator's opening. */
+/** Start a trial: a new character of their own (a name and a class), and the narrator's opening. */
 trial.post("/start", async (c) => {
   if (process.env.TRIAL_OFF === "1" || !process.env.ANTHROPIC_API_KEY) return c.json(closed("trial_closed", "The trial is closed for now."), 503);
-  const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; path?: unknown; visitor?: unknown };
+  const body = (await c.req.json().catch(() => ({}))) as { name?: unknown; class?: unknown; path?: unknown; visitor?: unknown };
   const name = typeof body.name === "string" ? body.name.trim().replace(/\s+/g, " ") : "";
   // The page's anonymous analytics id, if it sent one: only so a later claim can count toward the same visit.
   const visitor = typeof body.visitor === "string" && /^[A-Za-z0-9._-]{8,100}$/.test(body.visitor) ? body.visitor : null;
-  const path = (["steel", "shadow", "gift"] as const).find((x) => x === body.path);
-  if (!path) return c.json(closed("bad_request", "Choose a path: Steel, Shadow or the gift."), 400);
+  // A class of their own; a page from before classes sends a path, which gets its main class.
+  const legacy = (["steel", "shadow", "gift"] as const).find((x) => x === body.path);
+  const cls: Spec | undefined = CLASSES.find((x) => x === body.class) ?? (legacy ? PATHS[legacy].base : undefined);
+  if (!cls) return c.json(closed("bad_request", "Choose a class: warrior, guardian, thief, mage, priest or bard."), 400);
+  const path = pathOfClass(cls);
   if (name.length < 2 || name.length > 20 || !NAME_RE.test(name)) return c.json(closed("bad_name", "A name is 2 to 20 letters, digits, apostrophes, periods or hyphens, with single spaces."), 400);
   if (reservedName(name)) return c.json(closed("name_taken", "That name belongs to someone in town already."), 409);
   const s = await spentToday();
@@ -330,9 +333,9 @@ trial.post("/start", async (c) => {
     if (n > TRIAL.perAddress()) return "limit" as const;
     const p = (await db.query<{ id: string; name: string }>(
       `insert into players (name, api_key_hash, class, path, specialized, news_seen_upto, is_test, trial)
-       values ($1, $2, $3, $4, false, (select coalesce(max(id), 0) from news), true, true) returning id, name`, [name, hash(token), PATHS[path].base, path])).rows[0];
-    // Each path starts in its home town, as a real character would.
-    const home = PATHS[path].home;
+       values ($1, $2, $3, $4, true, (select coalesce(max(id), 0) from news), true, true) returning id, name`, [name, hash(token), cls, path])).rows[0];
+    // Each class starts in its home town, as a real character would.
+    const home = CLASS_HOME[cls];
     if (home !== "brightwater") {
       const t = TOWN_TILES[home as keyof typeof TOWN_TILES];
       await db.query("update players set start_town = $4, pos_x = $2, pos_y = $3 where id = $1", [p.id, t.x, t.y, home]);
@@ -346,7 +349,7 @@ trial.post("/start", async (c) => {
   }).catch((e: Error & { code?: string }) => (e.code === "23505" ? ("taken" as const) : Promise.reject(e)));
   if (made === "taken") return c.json(closed("name_taken", "That name's taken. Try another."), 409);
   if (made === "limit") return c.json(closed("trial_limit", "You've had your trials for today. Come back tomorrow, or install the game and play for real."), 429);
-  const town = PATHS[path].home === "brightwater" ? "Brightwater's square (call square)" : `${PATHS[path].home === "ironhold" ? "Ironhold" : "Ashford"} (call town)`;
+  const town = CLASS_HOME[cls] === "brightwater" ? "Brightwater's square (call square)" : `${CLASS_HOME[cls] === "ironhold" ? "Ironhold" : "Ashford"} (call town)`;
   const r = await turn(token, made.id, `(The visitor has just arrived as ${made.name}. Open the scene in ${town} and show the town menu.)`, true);
   return c.json({ token, name: made.name, claim: code, ...r });
 });

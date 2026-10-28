@@ -20,7 +20,7 @@ import { realmHour, whereabouts, type Personality } from "./schedule.js";
 import { SUITORS, available, charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor, townOfSuitor, weddingChance } from "./romance.js";
 import { draw } from "./luck.js";
 import { GEAR_ABOVE_LEVEL, GIFT_MIN_LEVEL, GOLD_PER_LEVEL, ITEMS_PER_DAY, courierFee, nextDay, townName, townOfCharacter, townOfPlayer } from "./gifts.js";
-import { PATHS, SPECIALIZE_AT, SPECS, SPEC_SWITCH_DAYS, SPEC_SWITCH_PER_LEVEL, pathOfClass, specsOf, type Path, type Spec } from "./paths.js";
+import { CLASSES, CLASS_HOME, PATHS, SPECIALIZE_AT, SPECS, SPEC_SWITCH_DAYS, SPEC_SWITCH_PER_LEVEL, pathOfClass, specsOf, type Path, type Spec } from "./paths.js";
 import { countryOf, regionAt, rollFind } from "./bestiary.js";
 import { DIRS, LEGEND, placeAt, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
@@ -262,7 +262,7 @@ function seasoned(ctx: Ctx, what: string): boolean {
 }
 
 /** Names that would pass for a local. Compared after folding lookalike characters. */
-const RESERVED = ["hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
+const RESERVED = ["mags pell", "margery pell", "hilde", "grimwald", "vesper", "old tam", "brother ansel", "pip", "madam orsolya", "orsolya", "sir pomfrey", "pomfrey",
   "violet", "odile", "mother quill", "quill", "prior hale", "rowan", "rosalind", "mara", "jory", "fennick reed", "fennick", "dunstan the unfinished", "dunstan", "corwin lark", "corwin", "wren", "the red dragon", "red dragon", "the dark dragon", "dark dragon", "vael", "vael the watchful", "the watchful",
   "townsfolk", "narrator", "system", "server", "admin", "sysop", "claude", "anthropic", "della moss", "goldie teague", "tilly brook", "piers calloway",
   "rufus kell", "mirela sorn", "lew tanner", "sister junia", "sister orla", "bess tolley", "ione vash", "jem arkwright"];
@@ -329,8 +329,9 @@ function requireTown(ctx: Ctx, what: string, towns: TownId[]): TownId {
 
 /** Every town with services: an inn, a healer, a shop, a bank, a tavern and an auction house. */
 const ALL_TOWNS: TownId[] = ["brightwater", "ironhold", "ashford"];
-/** Where a player's masters are: Brightwater's teach everyone; Ironhold's those who fight with blades and bows; Ashford's only the Shadow path. */
+/** Where a player's masters are: Brightwater's teach everyone; Ironhold's those who fight with blades and bows; Ashford's the Shadow path, and bards under Mags Pell. */
 export function trainsAt(p: { class: Player["class"]; path: string }): TownId[] {
+  if (p.class === "bard") return ["brightwater", "ashford"];
   if (casts(p.class)) return ["brightwater"];
   return p.path === "shadow" ? ["brightwater", "ironhold", "ashford"] : ["brightwater", "ironhold"];
 }
@@ -352,15 +353,15 @@ async function requireNoEncounter(ctx: Ctx) {
 api.post("/register", async (c) => {
   const body = z.object({
     name: z.string().trim().min(2).max(20).regex(NAME_RE, "letters, digits, apostrophes, periods, hyphens, single spaces"),
-    // New plugins choose a path (Steel, Shadow or the gift) and specialize at level 5. Older ones choose a class,
-    // which counts as already specialized.
+    // Every class is open from the start. Plugins from when paths came first send a path instead: they get its
+    // main class (Steel a warrior, Shadow a thief, the gift a mage).
+    class: z.enum(CLASSES as [Spec, ...Spec[]]).optional(),
     path: z.enum(["steel", "shadow", "gift"]).optional(),
-    class: z.enum(["warrior", "thief", "mage", "priest"]).optional(),
     invite: z.string().optional(),
-  }).refine((b) => b.path || b.class, { message: "choose a path (steel, shadow or gift)" }).parse(await c.req.json());
-  const path: Path = body.path ?? pathOfClass(body.class!);
-  const cls = body.class && !body.path ? body.class : PATHS[path].base;
-  const specialized = !body.path;
+  }).refine((b) => b.path || b.class, { message: "choose a class: warrior, guardian, thief, mage, priest or bard" }).parse(await c.req.json());
+  const cls: Spec = body.class ?? PATHS[body.path!].base;
+  const path: Path = pathOfClass(cls);
+  const specialized = true;
   // A friends realm: when REALM_INVITE is set, you need the word to get in.
   const invite = process.env.REALM_INVITE;
   if (invite) {
@@ -396,10 +397,8 @@ api.post("/register", async (c) => {
     const settings = await realmSettings(db);
     const day = realmDay(settings.resetHourUtc);
     if (!testChar) await db.query("insert into news (day, kind, actor) values ($1,'join',$2)", [day, body.name]);
-    // Those who fight with steel start in Ironhold; the gifted in Brightwater. Older plugins don't know
-    // about other towns, so their new characters start in Brightwater as before.
-    // Each path has a home town: Steel and Shadow out in the world, the gift in Brightwater.
-    const home = PATHS[path].home;
+    // Each class has a home town (CLASS_HOME). Plugins from before other towns start everyone in Brightwater.
+    const home = CLASS_HOME[cls];
     if (home !== "brightwater" && !info?.townsfolk && info?.plugin && !older(info.plugin, "0.15.0")) {
       const t = TOWN_TILES[home as keyof typeof TOWN_TILES];
       await db.query("update players set start_town = $4, pos_x = $2, pos_y = $3 where id = $1", [r.rows[0].id, t.x, t.y, home]);
@@ -410,12 +409,19 @@ api.post("/register", async (c) => {
   });
   const startsIn = out.start_town && out.start_town !== "brightwater" ? TOWN_TILES[out.start_town as keyof typeof TOWN_TILES].name : "Brightwater";
   return c.json({ api_key: key, name: out.name, class: out.class, ...(testChar ? { test: true } : {}), events: [{
-    kind: "joined", name: out.name, class: out.class, starts_in: startsIn,
-    ...(specialized ? {} : { path: PATHS[path].name, plays_as: out.class, specialize_at: SPECIALIZE_AT, then_choose: specsOf(path).filter(([, s]) => s.open).map(([k]) => k) }),
+    kind: "joined", name: out.name, class: out.class, path: PATHS[path].name, starts_in: startsIn,
   }] });
 });
 
 // ---------- Mother Quill's library (spells for casters) ----------
+
+/** Where a caster's teacher keeps shop: Brightwater, and for bards Ashford too, where Mags Pell sells instruments. */
+const vendorTowns = (cls: Player["class"]): TownId[] => (cls === "bard" ? ["brightwater", "ashford"] : ["brightwater"]);
+const myVendor = (ctx: Ctx) => vendorIn(ctx.p.class, townAt(ctx.p.pos_x, ctx.p.pos_y) ?? "brightwater");
+function vendorIn(cls: Player["class"], town: TownId): { name: string; place: string } {
+  if (cls === "bard" && town === "ashford") return { name: "Mags Pell", place: "music room" };
+  return spellVendor(cls) ?? { name: "a teacher", place: "library" };
+}
 
 /** The spells for sale, tier for tier with the smith's weapons: each needs a level and costs gold, and your old spellbook trades in at half. */
 api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
@@ -425,8 +431,8 @@ api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const place = want ?? own?.place;
   const cls = place ? (Object.keys(GAME.classes) as Player["class"][]).find((k) => spellVendor(k)?.place === place) ?? null : null;
   if (!cls) { ctx.events.push({ kind: "not_for_you", reason: "there's no such teacher in town", places: ["library", "chapel"] }); return; }
-  const v = spellVendor(cls)!;
-  requireInTown(ctx, `the ${v.place}`);
+  const town = requireTown(ctx, `the ${spellVendor(cls)!.place}`, vendorTowns(cls));
+  const v = vendorIn(cls, town);
   const mine = cls === ctx.p.class;
   const discount = charmDiscount(charmOf(ctx.p));
   const mr = manaRules(cls)!;
@@ -445,7 +451,7 @@ api.post("/library", async (c) => {
   const body = z.object({ id: z.number().int(), keep_old: z.boolean().optional(), confirm: z.boolean().optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireInTown(ctx, `the ${spellVendor(ctx.p.class)?.place ?? "library"}`);
+    const vendorTown = requireTown(ctx, `the ${spellVendor(ctx.p.class)?.place ?? "library"}`, vendorTowns(ctx.p.class));
     // Like the smith: without confirm this only quotes. Plugins from before teacher quotes (0.16.6) and townsfolk go straight through.
     const plugin = current()?.plugin;
     const confirmed = body.confirm === true || ctx.p.is_bot || (plugin !== undefined && plugin !== null && older(plugin, "0.16.6"));
@@ -464,7 +470,7 @@ api.post("/library", async (c) => {
     const room = Bag.bag(ctx.p.bag_id).capacity - await Bag.used(ctx.c, ctx.p.id);
     const canKeep = oldCarried > 0 && Bag.item("weapon", oldCarried).weight <= room;
     if (!confirmed) {
-      ctx.events.push({ kind: "learn_quote", teacher: spellVendor(ctx.p.class)?.name ?? null, item: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str,
+      ctx.events.push({ kind: "learn_quote", teacher: casts(ctx.p.class) ? vendorIn(ctx.p.class, vendorTown).name : null, item: weaponName(ctx.p.class, w.id), special: specialName(ctx.p.class, w.id), power: w.str,
         replaces: weaponName(ctx.p.class, ctx.p.weapon_id), trade_in: tradeIn, cost: costTrading, gold: ctx.p.gold, bank: ctx.p.bank, ...(ctx.p.gold < costTrading ? { short_by: costTrading - ctx.p.gold } : {}),
         ...(oldCarried ? { keep: canKeep ? { as: Bag.item("weapon", oldCarried).name, cost: costKeeping, sells_for: Bag.sellPrice("weapon", oldCarried), ...(ctx.p.gold < costKeeping ? { short_by: costKeeping - ctx.p.gold } : {}) } : { possible: false, why: "no room in the bag" } } : {}),
         ...(discount ? { charm_discount_pct: Math.round(discount * 100) } : {}) });
@@ -495,26 +501,21 @@ const TAKE_UP: Record<string, string> = { warrior: "taken up the sword", thief: 
  * confirm: true it only quotes.
  */
 api.post("/respec", async (c) => {
-  // New plugins start over on a path (level 1, its beginner class, specialize again at 5). Older ones name a class,
-  // which they get straight away, already specialized.
+  // Start over as any class. Plugins from when paths came first name a path: its main class.
   const body = z.object({
+    class: z.enum(CLASSES as [Spec, ...Spec[]]).optional(),
     path: z.enum(["steel", "shadow", "gift"]).optional(),
-    class: z.enum(["warrior", "thief", "mage", "priest"]).optional(),
     confirm: z.boolean().optional(),
-  }).refine((b) => b.path || b.class, { message: "choose a path (steel, shadow or gift)" }).parse(await c.req.json());
-  const toPath: Path = body.path ?? pathOfClass(body.class!);
-  const toClass = body.path ? PATHS[toPath].base : body.class!;
-  const toSpecialized = !body.path;
+  }).refine((b) => b.path || b.class, { message: "choose a class: warrior, guardian, thief, mage, priest or bard" }).parse(await c.req.json());
+  const toClass: Spec = body.class ?? PATHS[body.path!].base;
+  const toPath: Path = pathOfClass(toClass);
+  const toSpecialized = true;
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
-    requireTown(ctx, "the town", toPath === "gift" ? ["brightwater"] : ALL_TOWNS);
+    requireTown(ctx, "the town", ALL_TOWNS);
     await requireNoEncounter(ctx);
     if (ctx.p.role !== "player") { ctx.events.push({ kind: "not_for_you", reason: "townsfolk are who they are" }); return; }
-    if (body.path && toPath === ctx.p.path) {
-      ctx.events.push({ kind: "already_that_path", path: PATHS[toPath].name, ...(ctx.p.specialized ? { instead: "to change specialization within your path, see the teachers (specialize)" } : {}) });
-      return;
-    }
-    if (!body.path && toClass === ctx.p.class) { ctx.events.push({ kind: "already_that_class", class: toClass }); return; }
+    if (toClass === ctx.p.class && ctx.p.specialized !== false) { ctx.events.push({ kind: "already_that_class", class: toClass }); return; }
     const last = ctx.p.respec_at ? new Date(ctx.p.respec_at) : null;
     if (last && Date.now() - last.getTime() < RESPEC_DAYS * 86_400_000) {
       ctx.events.push({ kind: "respec_too_soon", next: new Date(last.getTime() + RESPEC_DAYS * 86_400_000).toISOString().slice(0, 10), every_days: RESPEC_DAYS });
@@ -528,7 +529,7 @@ api.post("/respec", async (c) => {
       + (ctx.p.armor_id ? Bag.sellPrice("armor", ctx.p.armor_id, ctx.p.armor_rarity ?? 0) : 0);
     const have = ctx.p.gold + ctx.p.bank + buyback;
     const quote = {
-      from: ctx.p.class, to: toClass, ...(body.path ? { path: PATHS[toPath].name, specialize_at: SPECIALIZE_AT } : {}), from_level: ctx.p.level, fee, buyback, can_afford: have >= fee,
+      from: ctx.p.class, to: toClass, path: PATHS[toPath].name, from_level: ctx.p.level, fee, buyback, can_afford: have >= fee,
       keeps: ["bank (less the fee)", "charm", "gems", "jewelry", "pickaxe", "marriage", "map", "quests", "mail"],
       resets: ["level 1", "experience", "HP, attribute and defense to a beginner's", "weapon or spell, and armor (sold back at half price into the bank)"],
       every_days: RESPEC_DAYS,
@@ -564,6 +565,7 @@ function specChoices(ctx: Ctx) {
 
 /** What the player's path offers, and what choosing (or switching) would cost. */
 api.get("/specialize", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
+  if (ctx.p.specialized !== false) { ctx.events.push({ kind: "no_specializations", class: ctx.p.class, reason: "every class is open from the start now; to become a different class, start over (respec)" }); return; }
   const switching = ctx.p.specialized;
   ctx.events.push({
     kind: "specializations", path: PATHS[ctx.p.path].name, level: ctx.p.level, specialize_at: SPECIALIZE_AT, specialized: ctx.p.specialized,
@@ -574,21 +576,21 @@ api.get("/specialize", async (c) => c.json(await withPlayer(c.req.header("author
 })));
 
 /**
- * Choose a specialization at level 5 (free), or switch to another on the same path later (weekly, for gold).
- * Either way you keep your level, gear, and everything else; your class becomes the specialization. Taught only
- * by its teacher, in its town. Without confirm: true it only quotes.
+ * A character still on a beginner's class from when paths came first chooses its class on that path, once and
+ * free, from its teacher, keeping everything. Nobody else specializes. Without confirm: true it only quotes.
  */
 api.post("/specialize", async (c) => {
   const body = z.object({ spec: z.enum(["warrior", "thief", "mage", "priest", "guardian", "bard"]), confirm: z.boolean().optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
-    // Townsfolk specialize once, as they grow up; the realm's fixed characters never do.
-    if (ctx.p.role !== "player" && !(ctx.p.role === "townsfolk" && ctx.p.specialized === false)) { ctx.events.push({ kind: "not_for_you", reason: "townsfolk are who they are" }); return; }
+    if (ctx.p.role !== "player") { ctx.events.push({ kind: "not_for_you", reason: "townsfolk are who they are" }); return; }
+    // Every class is open from the start now. Only a character made while paths came first, still on its
+    // beginner's class, gets this: one free choice within its path, at any level.
+    if (ctx.p.specialized !== false) { ctx.events.push({ kind: "no_specializations", class: ctx.p.class, reason: "every class is open from the start now; to become a different class, start over (respec)" }); return; }
     const spec = body.spec as Spec, def = SPECS[spec];
     if (def.path !== ctx.p.path) { ctx.events.push({ kind: "not_your_path", spec, path: PATHS[ctx.p.path].name, choices: specChoices(ctx), instead: "a different path means starting over (respec)" }); return; }
     if (!def.open) { ctx.events.push({ kind: "not_taught_yet", spec, teacher: def.teacher }); return; }
-    if (ctx.p.level < SPECIALIZE_AT) { ctx.events.push({ kind: "too_green", needed_level: SPECIALIZE_AT, level: ctx.p.level }); return; }
     if (ctx.p.specialized && ctx.p.class === spec) { ctx.events.push({ kind: "already_that_class", class: spec }); return; }
     requireTown(ctx, def.teacher, def.towns);
     const switching = ctx.p.specialized;
@@ -953,7 +955,8 @@ function soldBy(ctx: Ctx, kind: "weapon" | "armor" | "bag"): { keeper: string | 
     return { keeper: "Tobin Harrow", where: "the armory" };
   }
   if (town === "ashford") {
-    if (fam === "robes" || fam === "performer") return { keeper: null, where: "a cloth-seller's stall on the Exchange" };
+    if (fam === "performer") return { keeper: "Mags Pell", where: "the rail of stage clothes at the back of Pell's Music Room" };
+    if (fam === "robes") return { keeper: null, where: "a cloth-seller's stall on the Exchange" };
     if (fam === "heavy" || (fam === "weapon" && weaponFamilyOf(ctx.p.class) === "steel")) return { keeper: "Sim Haverly", where: "Haverly's, from the few pieces he keeps for soldiers passing through" };
     return { keeper: "Sim Haverly", where: "Haverly's on the Exchange" };
   }
@@ -966,7 +969,7 @@ api.get("/shop", async (c) => {
   const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", sold_by: soldBy(ctx, "bag"), owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) }); return; }
-    if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell ${ctx.p.class === "bard" ? "instruments" : "spells"}; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
+    if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell ${ctx.p.class === "bard" ? "instruments" : "spells"}; ${myVendor(ctx).name} does, at the ${myVendor(ctx).place}`, go: myVendor(ctx).place }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
     // A weapon's str is its power (a bonus on top of the class's attribute), so call it that.
@@ -1317,7 +1320,9 @@ api.post("/train", async (c) => c.json(await withPlayer(c.req.header("authorizat
   const known = (trainTown === "ironhold" ? lore().ironMasters : trainTown === "ashford" ? lore().ashMasters : lore().masters)[ms.level];
   const m: Monster = { name: known?.name || ms.name, hp: ms.hp, max_hp: ms.hp, str: ms.str, def: ms.def, gold: 0, exp: 0 };
   await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'master',$2)", [ctx.p.id, m]);
-  ctx.events.push({ kind: "master_challenge", master: m, about: known?.about ?? null, level: ctx.p.level + 1 });
+  // In Ashford a bard's test is Mags Pell's to arrange: she finds them someone worth playing against.
+  const arranged = ctx.p.class === "bard" && trainTown === "ashford" ? { arranged_by: "Mags Pell, of the music room on the Exchange" } : {};
+  ctx.events.push({ kind: "master_challenge", master: m, about: known?.about ?? null, level: ctx.p.level + 1, ...arranged });
   ctx.hint = "The master is testing them: introduce the master with `about`, in a sentence. Losing to a master is not fatal in the fiction; the server handles it.";
 })));
 
@@ -1383,7 +1388,7 @@ api.post("/buy", async (c) => {
       await logEvent(ctx, "spend", { on: "bag", item: nb.name, gold: bagCost });
       return;
     }
-    if (body.kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell ${ctx.p.class === "bard" ? "instruments" : "spells"}; ${spellVendor(ctx.p.class)?.name ?? "a teacher"} does, at the ${spellVendor(ctx.p.class)?.place ?? "library"}`, go: spellVendor(ctx.p.class)?.place ?? "library" }); return; }
+    if (body.kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell ${ctx.p.class === "bard" ? "instruments" : "spells"}; ${myVendor(ctx).name} does, at the ${myVendor(ctx).place}`, go: myVendor(ctx).place }); return; }
     const item = body.kind === "weapon" ? weapon(body.id) : armor(body.id);
     if (item.id !== body.id) throw new GameError("no_such_item", "no such item");
     const current_ = body.kind === "weapon" ? weapon(ctx.p.weapon_id) : armor(ctx.p.armor_id);
@@ -2984,6 +2989,7 @@ const CROWD: Record<string, { mult: number; room: string }> = {
  * A bard's set: once a day, in a tavern, for tips (a Sonnet, written by the narrator). Tips run about three-quarters of a fight's
  * gold at the bard's level, more in the evening, with a better instrument, and with charm.
  */
+const ASHFORD_TIPS = 1.2;
 api.post("/perform", async (c) => c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
   requireAlive(ctx);
   const town = requireTown(ctx, "the tavern", ALL_TOWNS);
@@ -2997,7 +3003,9 @@ api.post("/perform", async (c) => c.json(await withPlayer(c.req.header("authoriz
   const kit = 0.7 + 0.3 * Math.min(1, ctx.p.weapon_id / Math.max(1, ctx.p.level));
   const charm = 1 + Math.min(100, charmOf(ctx.p)) / 200;
   const luck = 0.7 + roll(60) / 100;
-  const tips = Math.max(1, Math.round(per * TIPS * crowd.mult * kit * charm * luck));
+  // Ashford's Ford House is where the money drinks: the Exchange tips better than anywhere.
+  const purse = town === "ashford" ? ASHFORD_TIPS : 1;
+  const tips = Math.max(1, Math.round(per * TIPS * crowd.mult * kit * charm * luck * purse));
   const won = roll(99) < 25;
   await savePlayer(ctx, { gold: ctx.p.gold + tips, ...(won ? { charm: ctx.p.charm + 1 } : {}) });
   await saveTurns(ctx, { performed: true });

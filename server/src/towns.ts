@@ -50,7 +50,8 @@ export const TOWNS: Partial<Record<TownId, Town>> = {
     tavern: "the Ford House",
     inn: "a room at the Ford House in Ashford",
     services: { healer: "Doctor Aurel Imre, the council's physician", inn: "a room at the Ford House (wake up here)", board: "the Ford House's own board; Brightwater's tavern has its own", bank: "the Counting House, Octavia Strand's: the same accounts as Brightwater's bank",
-      weaponry: "Haverly's on the Exchange: bows, daggers and the rest", armory: "Haverly's: leathers, armor and bags; robes and fine clothes from a cloth-seller's stall on the Exchange", auction: "Ysolde Fairweather's auction house, on the same board as Brightwater's", sell: "Sim Haverly buys gear" },
+      weaponry: "Haverly's on the Exchange: bows, daggers and the rest", armory: "Haverly's: leathers, armor and bags; robes and fine clothes from a cloth-seller's stall on the Exchange", auction: "Ysolde Fairweather's auction house, on the same board as Brightwater's", sell: "Sim Haverly buys gear",
+      instruments: "Pell's Music Room on the Exchange, Mags Pell's: instruments and stage clothes for bards, and her bards' level tests" },
     people: [
       { name: "Herald Ambrose Kettle", where: "the Exchange steps", does: "reads the council's proclamations from the Exchange steps every morning, whether or not anyone stops" },
       { name: "Agnes Fane", where: "the Ford House", does: "keeps the Ford House, Ashford's inn and tavern, with its own board" },
@@ -60,6 +61,7 @@ export const TOWNS: Partial<Record<TownId, Town>> = {
       { name: "Ysolde Fairweather", where: "the auction house", does: "runs Ashford's auction house, which shares a board with Brightwater's and Ironhold's" },
       { name: "Doctor Aurel Imre", where: "his surgery", does: "the healer, the council's physician, trained in the far south" },
       { name: "Hesper Wick", where: "the Undercroft", does: "called the Magpie; keeps the Undercroft, a cellar under the old Exchange where those on the Shadow path learn their trade" },
+      { name: "Mags Pell", where: "Pell's Music Room", does: "keeps the music room on the Exchange: instruments and stage clothes, lessons for bards, and bookings to play at the big houses' dinners" },
     ],
   },
 };

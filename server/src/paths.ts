@@ -1,12 +1,10 @@
 /**
- * Paths and specializations. Everyone starts on one of three paths, named for how they fight, and plays it as
- * its base class (Steel as a warrior, Shadow as a thief, the gift as a mage) until level 5. Then they choose a
- * specialization from its teacher, and that's their class from then on. Masters won't test anyone for level 6
- * until they've chosen. Changing specialization within a path keeps your level (once a week, for a fee);
- * changing path starts you over, through the old class change at a teacher.
+ * Classes and the paths they belong to. Every class is open from the first day: you choose it when you make
+ * your character, and it decides your home town. The three paths (Steel, Shadow, the gift) are only how the
+ * classes are grouped: by how they fight, which gear is theirs, and which masters will train them.
  *
- * Characters made before paths, by older plugins, and the townsfolk are already specialized: their class is
- * their specialization.
+ * A few characters were made while paths came first and classes at level 5. Any still on a beginner's class
+ * (specialized false) get one free choice within their path, at any level; nobody else specializes.
  */
 import type { TownId } from "./world.js";
 
@@ -41,8 +39,12 @@ export const SPECS: Record<Spec, SpecDef> = {
   thief: { path: "shadow", teacher: "the quiet corner of the tavern, or the Magpie in Ashford's Undercroft", where: "the tavern, or the Undercroft", towns: ["brightwater", "ironhold", "ashford"], about: "the opportunist: quick, slippery, and finds more loot", open: true },
   mage: { path: "gift", teacher: "Mother Quill", where: "the library", towns: ["brightwater"], about: "spells and mana, and a Fireball when it counts", open: true },
   priest: { path: "gift", teacher: "Prior Hale", where: "the chapel", towns: ["brightwater"], about: "the Lamp's servant: modest blows, strong healing", open: true },
-  bard: { path: "gift", teacher: "Dunstan the Unfinished", where: "the tavern", towns: ["brightwater"], about: "songs instead of blows: verses in a fight, sets in the tavern", open: true },
+  bard: { path: "gift", teacher: "Mags Pell, or Dunstan the Unfinished", where: "Pell's Music Room in Ashford, or Brightwater's tavern", towns: ["ashford", "brightwater"], about: "songs instead of blows: verses in a fight, sets in the tavern", open: true },
 };
+
+/** Where each class starts: blades in Ironhold, the quick and the singers in Ashford, magic in Brightwater. */
+export const CLASS_HOME: Record<Spec, TownId> = { warrior: "ironhold", guardian: "ironhold", thief: "ashford", bard: "ashford", mage: "brightwater", priest: "brightwater" };
+export const CLASSES = Object.keys(CLASS_HOME) as Spec[];
 
 export const pathOfClass = (cls: string): Path => (SPECS[cls as Spec]?.path ?? "gift");
 export const specsOf = (path: Path) => (Object.entries(SPECS) as [Spec, SpecDef][]).filter(([, s]) => s.path === path);
