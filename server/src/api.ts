@@ -23,7 +23,7 @@ import { draw } from "./luck.js";
 import { GEAR_ABOVE_LEVEL, GIFT_MIN_LEVEL, GOLD_PER_LEVEL, ITEMS_PER_DAY, courierFee, nextDay, townName, townOfCharacter, townOfPlayer } from "./gifts.js";
 import { CLASSES, CLASS_HOME, PATHS, SPECIALIZE_AT, SPECS, SPEC_SWITCH_DAYS, SPEC_SWITCH_PER_LEVEL, pathOfClass, specsOf, type Path, type Spec } from "./paths.js";
 import { countryOf, regionAt, rollFind } from "./bestiary.js";
-import { DIRS, LEGEND, placeAt, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
+import { DIRS, LEGEND, SYMBOL, placeAt, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { judge, pickRiddle, MAX_ANSWER_WORDS } from "./riddles.js";
@@ -1660,8 +1660,38 @@ api.get("/map", async (c) => c.json(await withPlayer(c.req.header("authorization
     const t = tileAt(hx, hy);
     return { x: hx, y: hy, name: t.name, terrain: t.terrain, poi: t.poi, where: directions(hx, hy), heard_from: from };
   });
-  ctx.events.push({ kind: "map", here: describeTile(x, y, new Set([...seen, `${x},${y}`])), ways, map: renderMap(x, y, seen), legend: LEGEND, known_places: places, heard_of: heardOf });
+  // Everything they've walked, for a picture of the whole known world (the side pane draws it): rows of the ASCII
+  // map's symbols over the box they've explored (a space where they haven't been), plus the names of its towns,
+  // caves and shrine and of the places they've only heard of.
+  const chart = chartOf(ex, [x, y], heardOf.map((h) => [h.x, h.y, h.name] as [number, number, string]));
+  ctx.events.push({ kind: "map", here: describeTile(x, y, new Set([...seen, `${x},${y}`])), ways, map: renderMap(x, y, seen), legend: LEGEND, known_places: places, heard_of: heardOf, chart });
 })));
+
+/** The widest and tallest the known-world chart gets, in tiles, around where you stand. */
+const CHART_MAX = 61;
+
+function chartOf(ex: Set<string>, you: [number, number], heard: [number, number, string][]) {
+  const pts = [...ex].map((k) => k.split(",").map(Number) as [number, number]);
+  pts.push([0, 0], you);
+  const half = (CHART_MAX - 1) / 2;
+  const within = pts.filter(([px, py]) => Math.abs(px - you[0]) <= half && Math.abs(py - you[1]) <= half);
+  const x0 = Math.min(...within.map((p) => p[0])), x1 = Math.max(...within.map((p) => p[0]));
+  const y0 = Math.min(...within.map((p) => p[1])), y1 = Math.max(...within.map((p) => p[1]));
+  const names: [number, number, string][] = [];
+  const rows: string[] = [];
+  for (let ty = y0; ty <= y1; ty++) {
+    let row = "";
+    for (let tx = x0; tx <= x1; tx++) {
+      if (!(tx === 0 && ty === 0) && !ex.has(`${tx},${ty}`)) { row += " "; continue; }
+      const t = tileAt(tx, ty);
+      const sym = tx === 0 && ty === 0 ? SYMBOL.town : t.poi === "cave" ? SYMBOL.cave : t.poi === "shrine" ? SYMBOL.shrine : SYMBOL[t.terrain];
+      if (sym === SYMBOL.town || sym === SYMBOL.cave || sym === SYMBOL.shrine) names.push([tx, ty, tx === 0 && ty === 0 ? "Brightwater" : t.name]);
+      row += sym;
+    }
+    rows.push(row.trimEnd());
+  }
+  return { origin: [x0, y0], you, rows, names, heard: heard.filter(([hx, hy]) => hx >= x0 - 8 && hx <= x1 + 8 && hy >= y0 - 8 && hy <= y1 + 8) };
+}
 
 /** One step north, south, east or west. A step into the wild costs a fight; walking into town is free. */
 api.post("/move", async (c) => {

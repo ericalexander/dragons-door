@@ -23,7 +23,12 @@ export type Game = {
   online: string[];
   /** When the state last changed, ms since the epoch. */
   at: number;
+  /** The last few known-world charts the map call sent, by the call's id: drawn as a picture under that call. */
+  charts: { id: string; chart: Chart }[];
 };
+
+/** The whole known world, as the map call sends it: rows of map symbols from `origin`, a space where they haven't been. */
+export type Chart = { origin: [number, number]; you: [number, number]; rows: string[]; names: [number, number, string][]; heard: [number, number, string][] };
 
 /** One line of chat as the pane shows it. */
 export type ChatLine = { id: number; from: string; body: string; whisper?: boolean; to?: string; mine: boolean; /** When it was said, ISO. */ at?: string };

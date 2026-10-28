@@ -69,7 +69,9 @@ test('a game result opens the pane and draws the character, on every surface', a
     expect((await ui.find({ type: 'Text', text: /Wren's Wood/ }))?.text).toBe("the Wren's Wood")
     expect((await ui.find({ type: 'Text', text: /^Copper Band/ }))?.text).toBe('Copper Band (+3 Strength)')
     expect((await ui.find({ type: 'Text', text: /forest, level 1/ }))?.text).toBe('forest, level 1 · afternoon')
-    expect((await ui.find({ type: 'Text', text: /\? @/ }))?.text).toBe('      ? @')
+    // The map: text in a terminal that shows no pictures, an SVG where the surface draws SVG.
+    if (surface === 'terminal') expect((await ui.find({ type: 'Text', text: /\? @/ }))?.text).toBe('      ? @')
+    else expect(await ui.find({ type: 'Svg' })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /courier/ }))?.text).toBe('1 gift from the courier')
     expect((await ui.find({ type: 'Text', text: /Boot/ }))?.text).toContain("Grimwald's Other Boot")
     expect(await ui.find({ type: 'Text', text: /Hunt/ })).toBeUndefined()
@@ -278,4 +280,24 @@ test('a known place under the map is one click away: it asks the narrator to tra
   ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await expect(ui.press({ key: 'go--4--11' })).rejects.toBeDefined()
   await ui.unmount()
+})
+
+test('in a terminal that shows pictures, the pane map is a picture, and a map call draws the known world under it', async ($, on) => {
+  const opened = { n: 0 }
+  const chart = { origin: [-1, -1], you: [0, 0], rows: ['.%', 'T.'], names: [[0, 0, 'Brightwater']], heard: [] }
+  const reply = JSON.stringify({ game: LABEL, events: [{ kind: 'map', map: ['    ? T ?', '      ? @'], chart }], state, actions: ['forest'] })
+  engine(on, () => reply, opened)
+  on('env.get', async (_$, e) => ({ value: e.name === 'TERM_PROGRAM' ? 'ghostty' : undefined }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const MAP = 'mcp__plugin_dragons-door_dragons-door__map'
+  const ran = await $.tool.call({ tool: MAP, tool_use_id: 'call-1' })
+  expect(ran.context?.some(c => /drawn as a picture/.test(c))).toBe(true)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ type: 'Image' })).toBeDefined()
+  await pane.unmount()
+  const group = await $.ui.mount({ plugin: 'dragons-door', component: 'ToolGroup', surface: 'terminal', requestId: 'g1',
+    props: { calls: [{ tool: MAP, tool_use_id: 'call-1', input: {}, isRunning: false, isErrored: false, isInterrupted: false }], isActive: false, isExpanded: false, isCallsOnly: true } })
+  expect(await group.find({ type: 'Image' })).toBeDefined()
+  expect((await group.find({ type: 'Text', text: /Brightwater \(0, 0\)/ }))?.text).toContain('Brightwater (0, 0)')
+  await group.unmount()
 })

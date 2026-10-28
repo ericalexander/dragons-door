@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.32.0",
+    "lore": "A surveyor passing through Brightwater sold everyone a proper map, and threw in the ink. If your terminal can show pictures, the map in the side pane is drawn now, not typed, and asking to see your map lays out everything you've walked.",
+    "plain": "In Ghostty, kitty, WezTerm or iTerm2 (and in the desktop app), the side pane's map and the (M)ap view are now pictures. Set DRAGONS_DOOR_PICTURES=0 to keep the text map, or 1 to force pictures in another terminal."
+  },
+  {
     "version": "0.31.0",
     "lore": "Word has got round that the people who go and look at things come back better for it. Ground you've never stood on now teaches you something, and the troll's riddles and the realm's odd jobs pay like they mean it. Standing in one field swinging at whatever wanders past still works; it's just no longer the clever thing to do.",
     "plain": "You now earn experience the first time you step onto any tile in the wild, and riddles, events and quests give much more experience than before."

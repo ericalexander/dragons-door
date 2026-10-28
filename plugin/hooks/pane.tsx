@@ -5,9 +5,10 @@
  * aren't playing. It only reads: nothing here changes the game.
  */
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderChildren } from 'claude-code'
+import type { Elements, EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Character, Chat, ChatLine, Game } from '../types'
+import type { Character, Chart, Chat, ChatLine, Game } from '../types'
+import { cellsFor, gridFromChart, gridFromSpaced, raster, svg, terminalShowsPictures } from './mapart'
 
 const PANE = 'dragons-door'
 const TITLE = '⚔ Status'
@@ -16,10 +17,16 @@ const CHAT_TITLE = '✉ Player chat'
 const chatTitle = (unread: number) => unread > 0 ? `${CHAT_TITLE} · ${unread} new` : CHAT_TITLE
 // Change the tag when Game's fields change: it declines what an earlier version stored.
 const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
-  { isPlaying: false, isShown: false, character: null, actions: [], map: [], places: [], online: [], at: 0 } as Game, { shape: 'game-5' })
+  { isPlaying: false, isShown: false, character: null, actions: [], map: [], places: [], online: [], at: 0, charts: [] } as Game, { shape: 'game-6' })
 
 const chat = atom({ plugin: 'dragons-door', key: 'chat' } as const,
   { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '', isOpen: false, unread: 0, seen: { status: false, chat: false } } as Chat, { shape: 'chat-4' })
+/** Whether this terminal shows pictures (worked out at the start of each session; DRAGONS_DOOR_PICTURES=0 or 1 overrides). */
+let pictures = false
+/** The map tool, as the engine names it. */
+const MAP_TOOL = /^mcp__plugin_dragons-door_.*__map$/
+const MAP_NOTE = "The player's whole known map is drawn as a picture in the conversation, right under this call. Don't draw a map, make an image or list the tiles: say in a sentence or two what stands out (where they are, what's near, where they haven't been), then the menu."
+
 /** How often the pane asks the realm for new chat while it's showing. */
 const CHAT_EVERY_MS = 5000
 
@@ -160,9 +167,55 @@ async function show($: EngineInterface) {
   if (c?.isPlaced) void pollChat($).catch(() => undefined)
 }
 
+type Els = Pick<Elements['terminal'], 'Box' | 'Text'> & { Image?: Elements['terminal']['Image']; Svg?: Elements['desktop']['Svg'] }
+/** The pane's map around you as a picture (pixels in a terminal that shows them, SVG in the desktop app), or null for the text map. */
+function smallMap(els: Els, surface: string, lines: string[], maxColumns: number): RenderChildren | null {
+  const grid = gridFromSpaced(lines)
+  if (!grid.length) return null
+  const Box = els.Box
+  if (surface === 'terminal' && pictures && els.Image) {
+    const Image = els.Image!
+    const { columns, rows } = cellsFor(grid, Math.min(maxColumns, 26))
+    return <Box marginTop={1}><Image key="pane-map" source={raster(grid, 12)} columns={columns} rows={rows} alt={lines.join(' / ')} /></Box>
+  }
+  if (surface !== 'terminal' && els.Svg) {
+    const Svg = els.Svg!
+    return <Box marginTop={1}><Svg source={svg(grid, 16)} alt="The map around you" width={grid[0]!.length * 16} /></Box>
+  }
+  return null
+}
+
+/** The whole known world, drawn under the map call: a picture with names listed under it, an SVG with names on it, or the symbols. */
+function drawChart(els: Els, surface: string, chart: Chart, width: number): RenderChildren {
+  const Box = els.Box
+  const Text = els.Text
+  const grid = gridFromChart(chart)
+  const [ox, oy] = chart.origin
+  const inside = (x: number, y: number) => y - oy >= 0 && y - oy < grid.length && x - ox >= 0 && x - ox < (grid[0]?.length ?? 0)
+  const names = chart.names.map(([x, y, name]) => ({ x: x - ox, y: y - oy, name }))
+  const heard = chart.heard.filter(([x, y]) => inside(x, y)).map(([x, y, name]) => ({ x: x - ox, y: y - oy, name, heard: true }))
+  const legend = <Text dimColor>{[...chart.names.map(([x, y, name]) => `${name} (${x}, ${y})`), ...chart.heard.map(([x, y, name]) => `${name} (${x}, ${y}), heard of`)].join(' · ')}</Text>
+  if (surface === 'terminal' && pictures && els.Image) {
+    const Image = els.Image!
+    const { columns, rows } = cellsFor(grid, Math.min(width, 96))
+    const cell = Math.max(4, Math.min(16, Math.floor(1400 / Math.max(grid.length, grid[0]?.length ?? 1))))
+    return <Box flexDirection="column" marginTop={1}><Image key={`chart-${ox}-${oy}`} source={raster(grid, cell)} columns={columns} rows={rows} alt="Your map of the realm" />{legend}</Box>
+  }
+  if (surface !== 'terminal' && els.Svg) {
+    const Svg = els.Svg!
+    const cell = Math.max(10, Math.min(28, Math.floor(720 / Math.max(grid.length, grid[0]?.length ?? 1))))
+    return <Box marginTop={1}><Svg source={svg(grid, cell, [...names, ...heard])} alt="Your map of the realm" /></Box>
+  }
+  return <Box flexDirection="column" marginTop={1}>{grid.map(r => <Text mono>{r.join(' ').trimEnd()}</Text>)}{legend}</Box>
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'door-pane', description: "Show the Dragon's Door pane" })
+    // Each name written out: the engine lists what a mod reads from the environment.
+    const quiet = (p: Promise<string | undefined>) => p.then(v => v ?? undefined, () => undefined)
+    pictures = terminalShowsPictures({ term: await quiet($.env.get('TERM')), program: await quiet($.env.get('TERM_PROGRAM')),
+      tmux: await quiet($.env.get('TMUX')), force: await quiet($.env.get('DRAGONS_DOOR_PICTURES')) })
     // Tabs the player has already looked at, in any session: the hint stays gone.
     const kept = ((await $.store.get('tabs-seen').catch(() => null)) ?? {}) as { status?: boolean; chat?: boolean }
     await update($, chat, c => ({ ...c, seen: { status: Boolean(kept.status), chat: Boolean(kept.chat) } }))
@@ -188,6 +241,8 @@ export const register: Register = on => {
     const map = (events.find(x => x.kind === 'map') ?? events.find(x => x.kind === 'surroundings'))?.map
     const places = (events.find(x => x.kind === 'surroundings') as { places?: Game['places'] } | undefined)?.places
     const ranks = events.find(x => x.kind === 'rankings')?.players
+    const chart = (events.find(x => x.kind === 'map') as { chart?: Chart } | undefined)?.chart
+    const hasChart = Boolean(chart && Array.isArray(chart.rows) && chart.rows.length > 0)
     const first = !(await read($, game)).isPlaying
     await update($, game, g => ({
       ...g,
@@ -198,10 +253,12 @@ export const register: Register = on => {
       places: Array.isArray(places) ? places.slice(0, 8) : g.places,
       online: Array.isArray(ranks) ? (ranks as { name: string; online?: boolean }[]).filter(p => p.online).map(p => p.name).slice(0, 12) : g.online,
       at: Date.now(),
+      charts: hasChart ? [...(g.charts ?? []).filter(x => x.id !== e.tool_use_id), { id: e.tool_use_id, chart: chart! }].slice(-4) : (g.charts ?? []),
     }))
     if (first) await show($)
     // Right beside the result, where the narrator reads it, not just in the system prompt: the pane has the numbers.
-    if (ran.deny === undefined && (await read($, game)).isShown) return { ...ran, context: [...(ran.context ?? []), RESULT_NOTE] }
+    const notes = [...((await read($, game)).isShown ? [RESULT_NOTE] : []), ...(hasChart ? [MAP_NOTE] : [])]
+    if (ran.deny === undefined && notes.length) return { ...ran, context: [...(ran.context ?? []), ...notes] }
     return ran
   }).catch(($, e, next) => next(e)) // the pane only watches: if drawing fails, the game call goes on as it was
 
@@ -215,8 +272,16 @@ export const register: Register = on => {
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     const p = e.props
     if (p.isExpanded || p.isCallsOnly !== true || p.calls.length === 0 || !p.calls.every(c => OURS.test(c.tool))) return next(e)
-    const { Text } = $.ui.resolve(e)
-    return <Text dimColor>{p.calls.some(c => c.isRunning) ? '· the realm stirs…' : '· the realm answers'}</Text>
+    const els = $.ui.resolve(e)
+    const { Box, Text } = els
+    const line = <Text dimColor>{p.calls.some(c => c.isRunning) ? '· the realm stirs…' : '· the realm answers'}</Text>
+    // A map call's answer is drawn here as the whole known world: a picture where the screen can, the symbols where it can't.
+    const g = await read($, game)
+    const call = [...p.calls].reverse().find(c => MAP_TOOL.test(c.tool) && !c.isRunning && c.tool_use_id && (g.charts ?? []).some(x => x.id === c.tool_use_id))
+    const chart = call ? g.charts.find(x => x.id === call.tool_use_id)!.chart : null
+    if (!chart) return line
+    const width = Math.max(20, (e.viewport?.columns ?? 80) - 4)
+    return <Box flexDirection="column">{line}{drawChart(els as unknown as Els, e.surface, chart, width)}</Box>
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -259,7 +324,7 @@ export const register: Register = on => {
         {section('Today', <Text>Turns {c.forest_fights} · PvP {c.player_fights} · bag {c.bag_used}/{c.bag_capacity}</Text>)}
         {section('Gear', <Text>{c.weapon}</Text>, <Text>{c.armor}</Text>, c.jewelry ? <Text>{c.jewelry}</Text> : null)}
         {section('Where', <Text>{where}</Text>, <Text dimColor>{ground}{c.time_of_day ? ` · ${c.time_of_day}` : ''}</Text>,
-          ...(g.map.length > 0 ? [<Box flexDirection="column" marginTop={1}>{g.map.map(line => (
+          ...(g.map.length > 0 ? [smallMap($.ui.resolve(e) as unknown as Els, e.surface, g.map, cols - 2) ?? <Box flexDirection="column" marginTop={1}>{g.map.map(line => (
             // You (@) stand out in bold and the accent colour; towns (T) and caves (O) in bold.
             <Text mono>{line.split(/([@TO])/).filter(Boolean).map(part =>
               part === '@' ? <Text mono bold color="claude">@</Text> : part === 'T' || part === 'O' ? <Text mono bold>{part}</Text> : part)}</Text>
