@@ -15,9 +15,9 @@ for (let y = -R; y <= R; y++) for (let x = -R; x <= R; x++) {
   tiles.push([TER.indexOf(t.terrain), t.level, t.poi === "cave" ? 1 : t.poi === "town" || (x === 0 && y === 0) ? 2 : t.poi === "shrine" ? 3 : 0, nameIx.get(nm)!]);
 }
 const activity = JSON.parse(readFileSync(`${dir}/activity.json`, "utf8"));
-const towns = [{ id: "brightwater", name: "Brightwater", x: 0, y: 0, note: "the gift's home; Grey Hob keeps the old north toll-bridge" },
+const towns = [{ id: "brightwater", name: "Brightwater", x: 0, y: 0, note: "mages and priests start here; Grey Hob keeps the old north toll-bridge" },
   ...Object.entries(TOWN_TILES).map(([id, t]) => ({ id, name: (t as { name: string }).name, x: (t as { x: number }).x, y: (t as { y: number }).y,
-    note: id === "ironhold" ? "Steel's home; Old Grudge under the broken bridge; the forge" : id === "ashford" ? "Shadow's home; Nan Silt at the ford; the Undercroft" : "" }))];
+    note: id === "ironhold" ? "warriors and guardians start here; Old Grudge under the broken bridge; the forge" : id === "ashford" ? "thieves and bards start here; Nan Silt at the ford; the Undercroft; Mags Pell's music room" : "" }))];
 const out = { generated: new Date().toISOString().slice(0, 10), seed: process.env.DRAGONS_DOOR_WORLD_SEED ? "the live realm's (private)" : "dragons-door-world-1 (local)", radius: R, pocket: POCKET, terrains: TER, names, tiles, towns, activity };
 writeFileSync(`${dir}/world.json`, JSON.stringify(out));
 console.log("tiles", tiles.length, "names", names.length, "caves", tiles.filter((t) => t[2] === 1).length, "bytes", JSON.stringify(out).length);
