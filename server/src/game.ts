@@ -267,6 +267,19 @@ export function armor(id: number) {
   const t = tierOf(id);
   return GAME.armor.find((a) => a.id === t) ?? GAME.armor[0];
 }
+/** What one ordinary fight at this level is worth in experience: the average of its monsters. */
+export function fightExp(level: number): number {
+  const ms = GAME.monsters.filter((m) => m.level === Math.max(1, Math.min(12, level)));
+  return ms.length ? ms.reduce((a, m) => a + m.exp, 0) / ms.length : 0;
+}
+/**
+ * Experience that isn't from a fight is counted in fights, so it stays worth having at every level: an effect's
+ * exp: 10 is one fight's worth, at the level of the place (never above your own, so walking far out early doesn't pay).
+ */
+export const expInFights = (k: number, placeLevel: number, yourLevel: number) => Math.round(k / 10 * fightExp(Math.min(placeLevel, yourLevel)));
+/** The first time you set foot on a tile in the wild: this share of a fight there, in experience. Makes new ground worth the turn. */
+export const NEW_GROUND = 0.6;
+
 export function expForLevel(level: number): number | null {
   return GAME.levels.find((l) => l.level === level)?.exp ?? null;
 }

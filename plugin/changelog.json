@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.31.0",
+    "lore": "Word has got round that the people who go and look at things come back better for it. Ground you've never stood on now teaches you something, and the troll's riddles and the realm's odd jobs pay like they mean it. Standing in one field swinging at whatever wanders past still works; it's just no longer the clever thing to do.",
+    "plain": "You now earn experience the first time you step onto any tile in the wild, and riddles, events and quests give much more experience than before."
+  },
+  {
     "version": "0.30.0",
     "lore": "The troll under the bridge has stopped taking your word for it. He asks a real riddle now and waits, chewing, while you think. Some of them are about the realm, so the gossip you sat through in the tavern might finally pay.",
     "plain": "When the bridge troll offers a riddle, type your own answer. Get it right for experience and gold; get it wrong and he fights you."

@@ -6,6 +6,7 @@ import { realmDay, realmSettings, loadTurns } from "./day.js";
 import {
   GAME, armor, weapon, effective, armorName, armorFamilyOf, weaponFamilyOf, carriedId, carriedName, familyLabel, familyOf, familyUsers, fits, itemName, tierOf, charmOf, attributeName, casts, spellVendor, manaMax, manaRules, weaponName, specialName, expForLevel, master, levelGains, legalActions, publicState, innCost, healCost, isNight, timeOfDayNow, needsSpec, casterItemName,
   type Player, type PlayerClass, type Turns, type Monster, type Event, type Envelope,
+  expInFights, fightExp, NEW_GROUND,
 } from "./game.js";
 import * as Bag from "./bag.js";
 import { TOWNS as TOWN_INFO, homeOf } from "./towns.js";
@@ -1706,9 +1707,12 @@ api.post("/move", async (c) => {
       [x, y, t.name, t.terrain, t.poi, ctx.p.id]);
     const firstEver = Boolean(anyone.rowCount);
     if (firstEver && t.poi) await post(ctx, "discovery", ctx.p.name, null, { place: t.name, poi: t.poi });
-    if (firstForYou) await logEvent(ctx, "explore", { x, y, ring: t.ring, terrain: t.terrain, level: t.level, poi: t.poi, first_ever: firstEver });
+    // New ground is worth the turn it took: a share of a fight's experience, at the tile's level (never above yours).
+    const groundExp = firstForYou && t.poi !== "town" ? Math.round(NEW_GROUND * fightExp(Math.min(t.level, ctx.p.level))) : 0;
+    if (groundExp) await savePlayer(ctx, { exp: ctx.p.exp + groundExp });
+    if (firstForYou) await logEvent(ctx, "explore", { x, y, ring: t.ring, terrain: t.terrain, level: t.level, poi: t.poi, first_ever: firstEver, ...(groundExp ? { exp: groundExp } : {}) });
     const others = await othersHere(ctx, x, y);
-    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: firstForYou, first_ever: firstEver,
+    ctx.events.push({ kind: "arrived", place: t.name, terrain: t.terrain, level: t.level, ring: t.ring, poi: t.poi, first_for_you: firstForYou, first_ever: firstEver, ...(groundExp ? { new_ground_exp: groundExp } : {}),
       ...(others.length ? { others_here: others } : {}),
       ...(firstEver ? {} : { found_by: (await ctx.c.query<{ name: string }>("select p.name from discoveries d left join players p on p.id = d.found_by where d.x = $1 and d.y = $2", [x, y])).rows[0]?.name ?? null }) });
     await questTriggers(ctx, { arrive: { x, y } });
@@ -2048,7 +2052,7 @@ async function applyEffects(ctx: Ctx, effects: (Effect | QEffect)[], lvl: number
     else if ("charm" in fx) { const n = Math.max(-ctx.p.charm, fx.charm); await savePlayer(ctx, { charm: ctx.p.charm + n }); got.charm = n; }
     else if ("gem" in fx) { await savePlayer(ctx, { gems: ctx.p.gems + fx.gem }); got.gems = fx.gem; }
     else if ("fights" in fx) { const n = Math.max(-ctx.t.forest_fights, fx.fights); await saveTurns(ctx, { forest_fights: ctx.t.forest_fights + n }); got.forest_fights = n; }
-    else if ("exp" in fx) { const n = fx.exp * lvl; await savePlayer(ctx, { exp: ctx.p.exp + n }); got.exp = n; }
+    else if ("exp" in fx) { const n = expInFights(fx.exp, lvl, ctx.p.level); await savePlayer(ctx, { exp: ctx.p.exp + n }); got.exp = n; }
     else if ("map" in fx) { got.marked = await sketchNearby(ctx, from, fx.map, around ?? undefined); }
     else if ("monster" in fx) { monster = fx.monster; }
     else if ("quest" in fx) { quest = fx.quest; }

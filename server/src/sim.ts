@@ -4,6 +4,7 @@
  * buys the best gear they can afford, trains when ready, inn every night, no PvP.
  * Uses the real combat functions and data. Run: npx tsx src/sim.ts [class] [trials]
  */
+import { NEW_GROUND } from "./game.js";
 import { GAME, armor, weapon, expForLevel, master, levelGains, manaMax, manaRules, type Player, type Monster } from "./game.js";
 import { bardFor, pickGift } from "./bards.js";
 import { visitorFor, pickVisitorGift } from "./square.js";
@@ -33,11 +34,11 @@ const NIGHT_SHARE = Number(process.env.NIGHT ?? 0);
 // (one turn) after every WALK_EVERY fights there, meeting wild events on the way. hop: when a tile's hunted out,
 // move to another known one for free (travel), as a veteran with a map full of known tiles can.
 // Rules under test: HUNT_CAP=n fights a tile pays full experience for, a day; HUNT_X its share after that.
-// NEWTILE=k: k x tile level experience for each new tile you step onto. FIRSTKILL=1: the first kill of each kind of monster pays double.
+// NEWTILE=k: k x tile level experience for each new tile you step onto (the old way; NEWTILE_F, the game's way, defaults to NEW_GROUND). FIRSTKILL=1: the first kill of each kind of monster pays double.
 const DAY = { strat: process.env.STRAT ?? "camp", every: Number(process.env.WALK_EVERY ?? 3), cap: Number(process.env.HUNT_CAP ?? 999), x: Number(process.env.HUNT_X ?? 1),
   newtile: Number(process.env.NEWTILE ?? 0), firstkill: process.env.FIRSTKILL === "1",
   // In fights' worth instead: NEWTILE_F = share of a monster at your level per new tile; EVENT_F = an event's exp:k pays k/10 of one.
-  newtileF: Number(process.env.NEWTILE_F ?? 0), eventF: Number(process.env.EVENT_F ?? 0) };
+  newtileF: Number(process.env.NEWTILE_F ?? NEW_GROUND), eventF: Number(process.env.EVENT_F ?? 1) };
 const fightWorth = (lvl: number) => { const ms = GAME.monsters.filter((m) => m.level === lvl); return ms.reduce((a, m) => a + m.exp, 0) / Math.max(1, ms.length); };
 const DAYSTATS = { hunts: 0, steps: 0, events: 0, eventExp: 0, huntExp: 0, bonusExp: 0, days: 0 };
 // CLASSES='{"guardian":{"defPerLevel":3}}' overrides class numbers (nested objects such as mana merge one level deep).

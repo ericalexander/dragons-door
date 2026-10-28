@@ -15,7 +15,7 @@ export type Effect =
   | { charm: number }
   | { gem: number }
   | { fights: number }          // forest fights gained (or lost, if negative)
-  | { exp: number }             // times tile level
+  | { exp: number }             // in fights: 10 is one fight's worth at the tile's level (never above yours); see expInFights
   | { map: number }             // places nearby marked on their map
   | { monster: number }         // a fight, at tile level plus this
   | { quest: string }           // starts a side quest (quests.ts)
