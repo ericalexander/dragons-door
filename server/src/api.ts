@@ -583,7 +583,8 @@ api.post("/specialize", async (c) => {
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
-    if (ctx.p.role !== "player") { ctx.events.push({ kind: "not_for_you", reason: "townsfolk are who they are" }); return; }
+    // Townsfolk specialize once, as they grow up; the realm's fixed characters never do.
+    if (ctx.p.role !== "player" && !(ctx.p.role === "townsfolk" && ctx.p.specialized === false)) { ctx.events.push({ kind: "not_for_you", reason: "townsfolk are who they are" }); return; }
     const spec = body.spec as Spec, def = SPECS[spec];
     if (def.path !== ctx.p.path) { ctx.events.push({ kind: "not_your_path", spec, path: PATHS[ctx.p.path].name, choices: specChoices(ctx), instead: "a different path means starting over (respec)" }); return; }
     if (!def.open) { ctx.events.push({ kind: "not_taught_yet", spec, teacher: def.teacher }); return; }
