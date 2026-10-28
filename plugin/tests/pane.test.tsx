@@ -112,6 +112,10 @@ test('a run of game calls draws one quiet line; anything else is the engine\'s',
     ui = await $.ui.mount({ ...group([call(TOOL)]), props: { ...group([call(TOOL)]).props, isCallsOnly: false }, surface })
     expect((await ui.find({ type: 'Text' }))?.text).toBe('· the realm answers')
     await ui.unmount()
+    // Claude Code loading the game's tools first is still a run of game calls.
+    ui = await $.ui.mount({ ...group([call('ToolSearch'), call(TOOL)]), surface })
+    expect((await ui.find({ type: 'Text' }))?.text).toBe('· the realm answers')
+    await ui.unmount()
     ui = await $.ui.mount({ ...group([call(TOOL), call('Bash')]), surface })
     expect((await ui.find({ type: 'Text' }))?.text).toBe('engine')
     await ui.unmount()
@@ -347,4 +351,19 @@ test('until a game row has been drawn here, the narrator keeps its own title and
   const out = await $.command.run({ command: 'door-pane', args: 'debug' })
   expect(out.text).toContain('pictures in this terminal: true')
   expect(out.text).toContain('ever drawn: false')
+})
+
+test('the title picture draws even when the first group holds other tools: around the engine\'s own row', async ($, on) => {
+  const opened = { n: 0 }
+  engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [], client: { version: '0.34.0' } }), opened)
+  on('env.get', async (_$, e) => ({ value: e.name === 'TERM_PROGRAM' ? 'ghostty' : undefined }))
+  on('ui.render', { component: 'ToolGroup' }, ($, e) => { const { Text } = $.ui.resolve(e); return <Text>engine</Text> })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: TOOL, tool_use_id: 's1' })
+  const call = (tool: string, id?: string) => ({ tool, tool_use_id: id, input: {}, isRunning: false, isErrored: false, isInterrupted: false })
+  const ui = await $.ui.mount({ plugin: 'dragons-door', component: 'ToolGroup', surface: 'terminal', requestId: 'g3',
+    props: { calls: [call('Read', 'r1'), call(TOOL, 's1')], isActive: false, isExpanded: false, isCallsOnly: true } })
+  expect(await ui.find({ type: 'Image' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /^engine$/ }))?.text).toBe('engine')
+  await ui.unmount()
 })

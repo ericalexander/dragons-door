@@ -163,6 +163,8 @@ const RESULT_NOTE = "The Dragon's Door side pane is showing the player's numbers
 
 /** The game's tools, as the engine names them: mcp__plugin_dragons-door_<server>__<tool>. */
 const OURS = /^mcp__plugin_dragons-door_/
+/** Calls that may sit in a run of game calls without making it someone else's: Claude Code loading the game's tools. */
+const NEUTRAL = /^ToolSearch$/
 
 /** Open both panes (the surface draws them as tabs), and remember whether a surface is drawing each. */
 async function show($: EngineInterface) {
@@ -316,13 +318,16 @@ export const register: Register = on => {
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     const p = e.props
     diag.groups++; diag.lastTools = p.calls.map(c => c.tool).slice(0, 4); diag.lastFlags = `expanded=${p.isExpanded} callsOnly=${p.isCallsOnly} surface=${e.surface}`
-    // Our own notes for the narrator ride beside the results, so the engine doesn't call such a group calls-only: judge by the calls.
-    if (p.isExpanded || p.calls.length === 0 || !p.calls.every(c => OURS.test(c.tool)) || p.calls.some(c => c.isErrored || c.isInterrupted)) return next(e)
+    if (p.isExpanded || !p.calls.some(c => OURS.test(c.tool))) return next(e)
     diag.ours++
     if (!p.calls.some(c => c.isRunning)) { diag.drawn++; void $.store.set('rows-drawn', true).catch(() => undefined) }
     const els = $.ui.resolve(e)
     const { Box, Text } = els
-    const line = <Text dimColor>{p.calls.some(c => c.isRunning) ? '· the realm stirs…' : '· the realm answers'}</Text>
+    // All game calls (Claude Code loading the game's tools first doesn't count) and none failed: one quiet line. Otherwise the
+    // engine's own row stays, and any picture goes around it. Our notes for the narrator make the engine say such a group
+    // isn't calls-only, so judge by the calls themselves.
+    const quiet = p.calls.every(c => OURS.test(c.tool) || NEUTRAL.test(c.tool)) && !p.calls.some(c => c.isErrored || c.isInterrupted)
+    const line = quiet ? <Text dimColor>{p.calls.some(c => c.isRunning) ? '· the realm stirs…' : '· the realm answers'}</Text> : await next(e)
     // A map call's answer is drawn here as the whole known world: a picture where the screen can, the symbols where it can't.
     const g = await read($, game)
     const call = [...p.calls].reverse().find(c => MAP_TOOL.test(c.tool) && !c.isRunning && c.tool_use_id && (g.charts ?? []).some(x => x.id === c.tool_use_id))
