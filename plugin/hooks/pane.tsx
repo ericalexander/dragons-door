@@ -9,6 +9,7 @@ import type { Elements, EngineInterface, Register, RenderChildren } from 'claude
 
 import type { Character, Chart, Chat, ChatLine, Game } from '../types'
 import { cellsFor, gridFromChart, gridFromSpaced, raster, svg, terminalShowsPictures } from './mapart'
+import { LOGO_COLUMNS, LOGO_ROWS, logoRaster, logoSvg } from './logo'
 
 const PANE = 'dragons-door'
 const TITLE = '⚔ Status'
@@ -17,12 +18,15 @@ const CHAT_TITLE = '✉ Player chat'
 const chatTitle = (unread: number) => unread > 0 ? `${CHAT_TITLE} · ${unread} new` : CHAT_TITLE
 // Change the tag when Game's fields change: it declines what an earlier version stored.
 const game = atom({ plugin: 'dragons-door', key: 'game' } as const,
-  { isPlaying: false, isShown: false, character: null, actions: [], map: [], places: [], online: [], at: 0, charts: [] } as Game, { shape: 'game-6' })
+  { isPlaying: false, isShown: false, character: null, actions: [], map: [], places: [], online: [], at: 0, charts: [], logo: null } as Game, { shape: 'game-7' })
 
 const chat = atom({ plugin: 'dragons-door', key: 'chat' } as const,
   { room: '', roomName: '', here: [], lines: [], lastId: 0, who: '', note: '', draft: '', isOpen: false, unread: 0, seen: { status: false, chat: false } } as Chat, { shape: 'chat-4' })
 /** Whether this terminal shows pictures (worked out at the start of each session; DRAGONS_DOOR_PICTURES=0 or 1 overrides). */
 let pictures = false
+/** Which surface started the session (terminal, desktop, ...): the title picture is drawn where it can be. */
+let startedOn = 'terminal'
+const LOGO_NOTE = "The Dragon's Door title screen is drawn as a picture right above this reply, with the version under it. Don't print the title screen; start with anything that comes after it (an update notice, what's new, the game)."
 /** The map tool, as the engine names it. */
 const MAP_TOOL = /^mcp__plugin_dragons-door_.*__map$/
 const MAP_NOTE = "The player's whole known map is drawn as a picture in the conversation, right under this call. Don't draw a map, make an image or list the tiles: say in a sentence or two what stands out (where they are, what's near, where they haven't been), then the menu."
@@ -185,6 +189,22 @@ function smallMap(els: Els, surface: string, lines: string[], maxColumns: number
   return null
 }
 
+/** The title screen: the logo on a clear background, the version under its right end. Null where no picture can be drawn. */
+function drawLogo(els: Els, surface: string, version: string): RenderChildren | null {
+  const Box = els.Box
+  const Text = els.Text
+  const ver = <Box width={LOGO_COLUMNS} justifyContent="flex-end"><Text dimColor>v{version}</Text></Box>
+  if (surface === 'terminal' && pictures && els.Image) {
+    const Image = els.Image!
+    return <Box flexDirection="column" marginBottom={1}><Image key="title" source={logoRaster(4)} columns={LOGO_COLUMNS} rows={LOGO_ROWS} alt="Dragon's Door" />{ver}</Box>
+  }
+  if (surface !== 'terminal' && els.Svg) {
+    const Svg = els.Svg!
+    return <Box flexDirection="column" marginBottom={1}><Svg source={logoSvg(8)} alt="Dragon's Door" width={LOGO_COLUMNS * 8} />{ver}</Box>
+  }
+  return null
+}
+
 /** The whole known world, drawn under the map call: a picture with names listed under it, an SVG with names on it, or the symbols. */
 function drawChart(els: Els, surface: string, chart: Chart, width: number): RenderChildren {
   const Box = els.Box
@@ -214,6 +234,7 @@ export const register: Register = on => {
     await $.command.register({ name: 'door-pane', description: "Show the Dragon's Door pane" })
     // Each name written out: the engine lists what a mod reads from the environment.
     const quiet = (p: Promise<string | undefined>) => p.then(v => v ?? undefined, () => undefined)
+    startedOn = typeof (e as { surface?: unknown }).surface === 'string' ? (e as { surface: string }).surface : 'terminal'
     pictures = terminalShowsPictures({ term: await quiet($.env.get('TERM')), program: await quiet($.env.get('TERM_PROGRAM')),
       tmux: await quiet($.env.get('TMUX')), force: await quiet($.env.get('DRAGONS_DOOR_PICTURES')) })
     // Tabs the player has already looked at, in any session: the hint stays gone.
@@ -243,7 +264,11 @@ export const register: Register = on => {
     const ranks = events.find(x => x.kind === 'rankings')?.players
     const chart = (events.find(x => x.kind === 'map') as { chart?: Chart } | undefined)?.chart
     const hasChart = Boolean(chart && Array.isArray(chart.rows) && chart.rows.length > 0)
-    const first = !(await read($, game)).isPlaying
+    const before = await read($, game)
+    const first = !before.isPlaying
+    // The session's first status with the client's version (what the enter skill calls first): the title screen goes here as a picture.
+    const version = (r.client as { version?: unknown } | undefined)?.version
+    const logo = !before.logo && /__status$/.test(e.tool) && typeof version === 'string' && (pictures || startedOn !== 'terminal')
     await update($, game, g => ({
       ...g,
       isPlaying: true,
@@ -253,11 +278,12 @@ export const register: Register = on => {
       places: Array.isArray(places) ? places.slice(0, 8) : g.places,
       online: Array.isArray(ranks) ? (ranks as { name: string; online?: boolean }[]).filter(p => p.online).map(p => p.name).slice(0, 12) : g.online,
       at: Date.now(),
+      logo: logo ? { id: e.tool_use_id, version: version as string } : g.logo,
       charts: hasChart ? [...(g.charts ?? []).filter(x => x.id !== e.tool_use_id), { id: e.tool_use_id, chart: chart! }].slice(-4) : (g.charts ?? []),
     }))
     if (first) await show($)
     // Right beside the result, where the narrator reads it, not just in the system prompt: the pane has the numbers.
-    const notes = [...((await read($, game)).isShown ? [RESULT_NOTE] : []), ...(hasChart ? [MAP_NOTE] : [])]
+    const notes = [...(logo ? [LOGO_NOTE] : []), ...((await read($, game)).isShown ? [RESULT_NOTE] : []), ...(hasChart ? [MAP_NOTE] : [])]
     if (ran.deny === undefined && notes.length) return { ...ran, context: [...(ran.context ?? []), ...notes] }
     return ran
   }).catch(($, e, next) => next(e)) // the pane only watches: if drawing fails, the game call goes on as it was
@@ -271,7 +297,8 @@ export const register: Register = on => {
   // A run of nothing but game calls draws one quiet line in place of "Called plugin:dragons-door…" (ctrl+o still shows them all).
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     const p = e.props
-    if (p.isExpanded || p.isCallsOnly !== true || p.calls.length === 0 || !p.calls.every(c => OURS.test(c.tool))) return next(e)
+    // Our own notes for the narrator ride beside the results, so the engine doesn't call such a group calls-only: judge by the calls.
+    if (p.isExpanded || p.calls.length === 0 || !p.calls.every(c => OURS.test(c.tool)) || p.calls.some(c => c.isErrored || c.isInterrupted)) return next(e)
     const els = $.ui.resolve(e)
     const { Box, Text } = els
     const line = <Text dimColor>{p.calls.some(c => c.isRunning) ? '· the realm stirs…' : '· the realm answers'}</Text>
@@ -279,9 +306,10 @@ export const register: Register = on => {
     const g = await read($, game)
     const call = [...p.calls].reverse().find(c => MAP_TOOL.test(c.tool) && !c.isRunning && c.tool_use_id && (g.charts ?? []).some(x => x.id === c.tool_use_id))
     const chart = call ? g.charts.find(x => x.id === call.tool_use_id)!.chart : null
-    if (!chart) return line
+    const title = g.logo && p.calls.some(c => c.tool_use_id === g.logo!.id && !c.isRunning) ? drawLogo(els as unknown as Els, e.surface, g.logo.version) : null
+    if (!chart && !title) return line
     const width = Math.max(20, (e.viewport?.columns ?? 80) - 4)
-    return <Box flexDirection="column">{line}{drawChart(els as unknown as Els, e.surface, chart, width)}</Box>
+    return <Box flexDirection="column">{title}{line}{chart ? drawChart(els as unknown as Els, e.surface, chart, width) : null}</Box>
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {

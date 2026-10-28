@@ -25,6 +25,8 @@ export type Game = {
   at: number;
   /** The last few known-world charts the map call sent, by the call's id: drawn as a picture under that call. */
   charts: { id: string; chart: Chart }[];
+  /** The title screen as a picture: drawn under the session's first status call (by its id), with the plugin's version. */
+  logo: { id: string; version: string } | null;
 };
 
 /** The whole known world, as the map call sends it: rows of map symbols from `origin`, a space where they haven't been. */

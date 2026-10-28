@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.33.0",
+    "lore": "Someone has repainted the sign over the gate. The dragon is red now, and the paint doesn't leave a box around it.",
+    "plain": "In terminals that show pictures, and in the desktop app, the title screen is now a picture with a clear background."
+  },
+  {
     "version": "0.32.0",
     "lore": "A surveyor passing through Brightwater sold everyone a proper map, and threw in the ink. If your terminal can show pictures, the map in the side pane is drawn now, not typed, and asking to see your map lays out everything you've walked.",
     "plain": "In Ghostty, kitty, WezTerm or iTerm2 (and in the desktop app), the side pane's map and the (M)ap view are now pictures. Set DRAGONS_DOOR_PICTURES=0 to keep the text map, or 1 to force pictures in another terminal."

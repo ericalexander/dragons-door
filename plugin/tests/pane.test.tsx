@@ -108,6 +108,10 @@ test('a run of game calls draws one quiet line; anything else is the engine\'s',
     let ui = await $.ui.mount({ ...group([call(TOOL), call('mcp__plugin_dragons-door_dragons-door__map')]), surface })
     expect((await ui.find({ type: 'Text' }))?.text).toBe('· the realm answers')
     await ui.unmount()
+    // The pane's own notes beside the results make the engine say the group isn't calls-only; it's still ours to draw.
+    ui = await $.ui.mount({ ...group([call(TOOL)]), props: { ...group([call(TOOL)]).props, isCallsOnly: false }, surface })
+    expect((await ui.find({ type: 'Text' }))?.text).toBe('· the realm answers')
+    await ui.unmount()
     ui = await $.ui.mount({ ...group([call(TOOL), call('Bash')]), surface })
     expect((await ui.find({ type: 'Text' }))?.text).toBe('engine')
     await ui.unmount()
@@ -300,4 +304,29 @@ test('in a terminal that shows pictures, the pane map is a picture, and a map ca
   expect(await group.find({ type: 'Image' })).toBeDefined()
   expect((await group.find({ type: 'Text', text: /Brightwater \(0, 0\)/ }))?.text).toContain('Brightwater (0, 0)')
   await group.unmount()
+})
+
+test('the title screen is a picture above the first status in a terminal that shows pictures, and the narrator is told to skip it', async ($, on) => {
+  const opened = { n: 0 }
+  const reply = JSON.stringify({ game: LABEL, events: [], state, actions: [], client: { version: '0.33.0' } })
+  engine(on, () => reply, opened)
+  on('env.get', async (_$, e) => ({ value: e.name === 'TERM_PROGRAM' ? 'ghostty' : undefined }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const first = await $.tool.call({ tool: TOOL, tool_use_id: 's1' })
+  expect(first.context?.some(c => /title screen is drawn as a picture/.test(c))).toBe(true)
+  const again = await $.tool.call({ tool: TOOL, tool_use_id: 's2' })
+  expect(again.context?.some(c => /title screen/.test(c)) ?? false).toBe(false)
+  const ui = await $.ui.mount({ plugin: 'dragons-door', component: 'ToolGroup', surface: 'terminal', requestId: 'g2',
+    props: { calls: [{ tool: TOOL, tool_use_id: 's1', input: {}, isRunning: false, isErrored: false, isInterrupted: false }], isActive: false, isExpanded: false, isCallsOnly: false } })
+  expect(await ui.find({ type: 'Image' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /^v0\.33\.0$/ }))?.text).toBe('v0.33.0')
+  await ui.unmount()
+})
+
+test('no title picture in a terminal that shows none: the narrator prints the text one', async ($, on) => {
+  const opened = { n: 0 }
+  engine(on, () => JSON.stringify({ game: LABEL, events: [], state, actions: [], client: { version: '0.33.0' } }), opened)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const r = await $.tool.call({ tool: TOOL, tool_use_id: 's1' })
+  expect(r.context?.some(c => /title screen/.test(c)) ?? false).toBe(false)
 })
