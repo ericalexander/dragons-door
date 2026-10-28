@@ -808,9 +808,9 @@ server.tool(
 );
 server.tool(
   "event",
-  "Answer something the player came upon in the wild (a wild_event): pick one of its choices by id or number. The server rolls what comes of it. Doing anything else walks away from it.",
-  { choice: z.string().min(1).max(40) },
-  async ({ choice }) => text(await call("POST", "/v1/event", { choice }))
+  "Answer something the player came upon in the wild (a wild_event): pick one of its choices by id or number. The server rolls what comes of it. For a riddle, pass `answer`: exactly the words the player typed, never your own. Doing anything else walks away from it.",
+  { choice: z.string().min(1).max(40), answer: z.string().max(120).optional().describe("For a riddle: the player's own answer, word for word") },
+  async ({ choice, answer }) => text(await call("POST", "/v1/event", { choice, ...answer ? { answer } : {} }))
 );
 server.tool(
   "cave",

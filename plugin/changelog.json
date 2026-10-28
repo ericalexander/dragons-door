@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.30.0",
+    "lore": "The troll under the bridge has stopped taking your word for it. He asks a real riddle now and waits, chewing, while you think. Some of them are about the realm, so the gossip you sat through in the tavern might finally pay.",
+    "plain": "When the bridge troll offers a riddle, type your own answer. Get it right for experience and gold; get it wrong and he fights you."
+  },
+  {
     "version": "0.29.0",
     "lore": "The masters have stopped making everyone wait five levels to find out who they are. Pick your trade at the gate: blade, shield, bow, spell, prayer or song. Bards now start in Ashford, where Mags Pell keeps a music room on the Exchange and the audiences can afford to tip.",
     "plain": "Every class can be chosen from the start, and nobody specializes at level 5 any more. New bards start in Ashford, and Mags Pell's music room there sells instruments and stage clothes."

@@ -13,6 +13,7 @@ import type pg from "pg";
 import { pool } from "./db.js";
 import { QUESTS, type QuestDef } from "./quests.js";
 import { setPlaces, type Place } from "./world.js";
+import type { Riddle } from "./riddles.js";
 
 export interface Journal { key: string; title: string; text: string; where: "wild" | "cave" | "town" | "ironhold" | "ashford"; author: string | null; min_ring: number }
 export interface Lore {
@@ -27,9 +28,11 @@ export interface Lore {
   journals: Journal[];
   /** How people look, which anyone would see, and for a few, how something they live with shapes how they move or talk. */
   looks: Record<string, { look: string; manner?: string }>;
+  /** The bridge troll's riddles, answers and all. Never shown whole to anyone. */
+  riddles: Riddle[];
 }
 
-const EMPTY: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, ashMasters: {}, journals: [], looks: {} };
+const EMPTY: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, ashMasters: {}, journals: [], looks: {}, riddles: [] };
 const TTL = 5 * 60_000;
 let current: Lore = EMPTY;
 let loadedAt = 0;
@@ -46,7 +49,7 @@ export async function loadLore(force = false): Promise<Lore> {
     loadedAt = Date.now();
     return current;
   }
-  const next: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, ashMasters: {}, journals: [], looks: {} };
+  const next: Lore = { world: "", people: {}, masters: {}, ironMasters: {}, ashMasters: {}, journals: [], looks: {}, riddles: [] };
   const person = (name: string) => (next.people[name] ??= { pieces: [], mentions: [] });
   const places: Place[] = [];
   for (const r of rows) {
@@ -61,6 +64,9 @@ export async function loadLore(force = false): Promise<Lore> {
     } else if (r.kind === "place" && r.subject) {
       const d = r.data as { x: number; y: number; poi: "shrine"; meeting?: number };
       places.push({ key: r.subject, x: d.x, y: d.y, name: (r.data as { name?: string }).name ?? r.subject, poi: d.poi, about: r.body, ...(d.meeting ? { meeting: d.meeting } : {}) });
+    } else if (r.kind === "riddle") {
+      const d = r.data as { answers?: string[]; realm?: boolean };
+      if (d.answers?.length) next.riddles.push({ key: r.key, text: r.body, answers: d.answers, realm: d.realm === true });
     } else if (r.kind === "quest") {
       // Quests written into the lore join the ones in code; a later load replaces the earlier copy.
       const q = r.data as unknown as QuestDef;

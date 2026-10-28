@@ -25,6 +25,7 @@ import { countryOf, regionAt, rollFind } from "./bestiary.js";
 import { DIRS, LEGEND, placeAt, renderMap, tileAt, townAt, TOWN_TILES, type Dir, type Tile, type TownId } from "./world.js";
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
+import { judge, pickRiddle, MAX_ANSWER_WORDS } from "./riddles.js";
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
@@ -1553,10 +1554,22 @@ async function maybeEvent(ctx: Ctx, x: number, y: number, chance = EVENT_CHANCE,
   if (!options.length) return;
   const e = options[Math.floor(Math.random() * options.length)];
   await saveTurns(ctx, { events_seen: (ctx.t.events_seen ?? 0) + 1 });
-  await savePlayer(ctx, { pending_event: { id: e.id, x, y } });
+  // The bridge troll asks a real riddle (from the lore), one this player hasn't solved yet, and they answer it themselves.
+  const riddle = e.id === "bridge_troll" ? await riddleFor(ctx) : null;
+  await savePlayer(ctx, { pending_event: { id: e.id, x, y, ...(riddle ? { riddle: riddle.key } : {}) } });
   ctx.events.push({ kind: "wild_event", event: e.id, place: t.name, terrain: t.terrain, description: e.description, ...(onTheRoad ? { on_the_road: true } : {}),
-    choices: e.choices.map((c, i) => ({ n: i + 1, id: c.id, label: c.label, ...(c.cost ? { costs_gold: c.cost * t.level } : {}) })) });
-  ctx.hint = "Something besides a fight. Describe it in two or three sentences from `description`, then offer its choices numbered (1), (2)… with their labels (and any gold cost), plus the usual Wild menu below. Call `event` with the choice id only when they pick one; anything else they do walks away from it.";
+    ...(riddle ? { riddle: riddle.text, ...(riddle.realm ? { about_the_realm: true } : {}) } : {}),
+    choices: e.choices.map((c, i) => ({ n: i + 1, id: c.id, label: c.label, ...(c.cost ? { costs_gold: c.cost * t.level } : {}), ...(riddle && c.id === "answer" ? { needs: "their own answer" } : {}) })) });
+  ctx.hint = "Something besides a fight. Describe it in two or three sentences from `description`, then offer its choices numbered (1), (2)… with their labels (and any gold cost), plus the usual Wild menu below. Call `event` with the choice id only when they pick one; anything else they do walks away from it."
+    + (riddle ? " The troll asks his riddle: quote `riddle` word for word, in his voice, before the choices. If they pick Answer the riddle and haven't said an answer yet, ask what their answer is and wait. Then call `event` with choice 'answer' and `answer` set to exactly what they typed. Never answer it for them, hint at it, or say whether they're right before the server does." : "");
+}
+
+/** A riddle for the bridge troll: one this player hasn't solved, from the lore. None if the lore has none. */
+async function riddleFor(ctx: Ctx) {
+  const all = (await loadLore()).riddles;
+  if (!all.length) return null;
+  const solved = new Set((await ctx.c.query<{ key: string }>("select key from player_lore where player_id = $1 and key like 'riddle:%'", [ctx.p.id])).rows.map((r) => r.key));
+  return pickRiddle(all, solved);
 }
 
 /** Now and then an old journal, a letter or a page turns up: one every few days at most, each found once. The words come from the lore. */
@@ -1987,7 +2000,7 @@ api.get("/journal", async (c) => c.json(await withPlayer(c.req.header("authoriza
 
 /** Answer the choice a quest is waiting on. */
 api.post("/quest", async (c) => {
-  const body = z.object({ choice: z.string().trim().min(1).max(40) }).parse(await c.req.json());
+  const body = z.object({ choice: z.string().trim().min(1).max(40), answer: z.string().trim().max(120).optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
@@ -2051,7 +2064,7 @@ async function applyEffects(ctx: Ctx, effects: (Effect | QEffect)[], lvl: number
 
 /** Answer the event in front of you. The server rolls what comes of it. */
 api.post("/event", async (c) => {
-  const body = z.object({ choice: z.string().trim().min(1).max(40) }).parse(await c.req.json());
+  const body = z.object({ choice: z.string().trim().min(1).max(40), answer: z.string().trim().max(120).optional() }).parse(await c.req.json());
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     requireAlive(ctx);
     await requireNoEncounter(ctx);
@@ -2064,18 +2077,32 @@ api.post("/event", async (c) => {
     const lvl = Math.max(1, t.level);
     const cost = (choice.cost ?? 0) * lvl;
     if (cost > ctx.p.gold) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, note: "the event is still there; pick something else or walk on" }); return; }
+    // A riddle is judged on their own words. Plugins from before riddles (0.30.0) can't send any, so theirs is rolled as before.
+    const riddle = choice.id === "answer" && pe.riddle ? (await loadLore()).riddles.find((r) => r.key === pe.riddle) ?? null : null;
+    const info = current();
+    const rolled = !riddle || (!info?.trial && info?.plugin !== undefined && info?.plugin !== null && older(info.plugin, "0.30.0"));
+    if (riddle && !rolled && !body.answer) {
+      ctx.events.push({ kind: "needs_answer", event: e.id, riddle: riddle.text, max_words: MAX_ANSWER_WORDS });
+      ctx.hint = "Ask them for their answer to the riddle (quote it again) and wait. Then call `event` with choice 'answer' and `answer` set to exactly what they typed. Don't answer it for them.";
+      return;
+    }
     await savePlayer(ctx, { pending_event: null, ...(cost ? { gold: ctx.p.gold - cost } : {}) });
-    const out = rollOutcome(choice);
+    const right = riddle && !rolled ? judge(body.answer!, riddle.answers) : null;
+    const out = right === null ? rollOutcome(choice)
+      : right ? { key: riddle!.realm ? "right_about_the_realm" : "right", weight: 1, effects: riddle!.realm ? [{ exp: 18 }, { gold: 8 }] as Effect[] : choice.outcomes.find((x) => x.key === "right")!.effects }
+      : choice.outcomes.find((x) => x.key === "wrong")!;
+    if (right) await ctx.c.query("insert into player_lore (player_id, key, day, how) values ($1, $2, $3, 'riddle') on conflict do nothing", [ctx.p.id, riddle!.key, ctx.day]);
     const { got, monster: m0, quest } = await applyEffects(ctx, out.effects, lvl, [pe.x, pe.y], e.id === "hermit" ? "a hermit" : "what you saw");
     const monster = m0 !== null ? pickMonster(t.level + m0, regionAt(t.x, t.y)) : null;
-    ctx.events.push({ kind: "event_outcome", event: e.id, choice: choice.id, chose: choice.label, outcome: out.key, scene: e.description, ...(cost ? { paid: cost } : {}), got, ...(monster ? { fight: true } : {}) });
+    ctx.events.push({ kind: "event_outcome", event: e.id, choice: choice.id, chose: choice.label, outcome: out.key, scene: e.description, ...(cost ? { paid: cost } : {}), got, ...(monster ? { fight: true } : {}),
+      ...(right !== null ? { riddle: riddle!.text, they_said: body.answer, ...(right ? {} : { note: "don't tell them the answer; they can try another day" }) } : {}) });
     if (quest) await startQuest(ctx, quest, true);
     if (monster) {
       await ctx.c.query("insert into encounters (player_id, kind, monster) values ($1,'forest',$2)", [ctx.p.id, monster]);
       ctx.events.push({ kind: "encounter", monster, place: t.name, terrain: t.terrain, from_event: e.id });
     }
-    ctx.hint = `Tell what happened in two to four sentences: the outcome '${out.key}' of choosing '${choice.label}', in the scene of ${e.description}. Give the real numbers in got (gold, healing, hurt, charm, gems, fights, exp, places marked on the map).${monster ? " Then it's a fight: show the fight menu." : " Then the Wild menu."}`;
-    await logEvent(ctx, "wild_event", { event: e.id, choice: choice.id, outcome: out.key, level: t.level, ...got, marked: undefined });
+    ctx.hint = `Tell what happened in two to four sentences: the outcome '${out.key}' of choosing '${choice.label}', in the scene of ${e.description}. Give the real numbers in got (gold, healing, hurt, charm, gems, fights, exp, places marked on the map).${right === true ? " They answered the troll's riddle themselves and got it right: let him take it badly, with grudging respect." : right === false ? " They answered the troll's riddle and got it wrong: he's delighted. Never say what the right answer was." : ""}${monster ? " Then it's a fight: show the fight menu." : " Then the Wild menu."}`;
+    await logEvent(ctx, "wild_event", { event: e.id, choice: choice.id, outcome: out.key, level: t.level, ...got, marked: undefined, ...(right !== null ? { riddle: riddle!.key } : {}) });
   }));
 });
 

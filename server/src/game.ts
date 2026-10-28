@@ -59,7 +59,7 @@ export interface Player {
   pickaxe: boolean;
   cave_depth: number | null;
   /** A wild event waiting for an answer, where it happened. */
-  pending_event: { id: string; x: number; y: number } | null;
+  pending_event: { id: string; x: number; y: number; riddle?: string } | null;
   /** Can make test characters; and whether this one is a test character (kept out of everything public). */
   admin: boolean;
   is_test: boolean;
