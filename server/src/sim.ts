@@ -8,6 +8,7 @@ import { GAME, armor, weapon, expForLevel, master, levelGains, manaMax, manaRule
 import { bardFor, pickGift } from "./bards.js";
 import { visitorFor, pickVisitorGift } from "./square.js";
 import { charmDiscount, charmLucky, flirtOutcome, spousePerk, suitor, weddingChance } from "./romance.js";
+import { EVENTS, EVENT_CHANCE, EVENTS_PER_DAY, rollOutcome } from "./events.js";
 import { blow, exchange, monsterAsFighter, pickMonster, playerAsFighter, roll, dropChance, rollDrop, specialDodges, specialMultiplier } from "./combat.js";
 import { boosted, forgeCost, rarity as rarityOf, RARITY } from "./rarity.js";
 import { FINDS_PER_PERSON, SWINGS_PER_DAY, GEM_SELL, ORES, PICKAXE_COST, TRINKETS, canMake, caveLevel, swing, trinket } from "./caves.js";
@@ -28,6 +29,17 @@ if (process.env.DROP !== undefined) GAME.drops.chance = Number(process.env.DROP)
 // ARMOR='{"heavy":{"def":1,"str":0},"light":{"def":1,"str":0}}' runs with armor as it was before families.
 if (process.env.ARMOR) (GAME as { armorProfiles: unknown }).armorProfiles = JSON.parse(process.env.ARMOR);
 const NIGHT_SHARE = Number(process.env.NIGHT ?? 0);
+// How a day is spent. STRAT=camp (default): every turn hunting one tile at your level. walk: step to a new tile
+// (one turn) after every WALK_EVERY fights there, meeting wild events on the way. hop: when a tile's hunted out,
+// move to another known one for free (travel), as a veteran with a map full of known tiles can.
+// Rules under test: HUNT_CAP=n fights a tile pays full experience for, a day; HUNT_X its share after that.
+// NEWTILE=k: k x tile level experience for each new tile you step onto. FIRSTKILL=1: the first kill of each kind of monster pays double.
+const DAY = { strat: process.env.STRAT ?? "camp", every: Number(process.env.WALK_EVERY ?? 3), cap: Number(process.env.HUNT_CAP ?? 999), x: Number(process.env.HUNT_X ?? 1),
+  newtile: Number(process.env.NEWTILE ?? 0), firstkill: process.env.FIRSTKILL === "1",
+  // In fights' worth instead: NEWTILE_F = share of a monster at your level per new tile; EVENT_F = an event's exp:k pays k/10 of one.
+  newtileF: Number(process.env.NEWTILE_F ?? 0), eventF: Number(process.env.EVENT_F ?? 0) };
+const fightWorth = (lvl: number) => { const ms = GAME.monsters.filter((m) => m.level === lvl); return ms.reduce((a, m) => a + m.exp, 0) / Math.max(1, ms.length); };
+const DAYSTATS = { hunts: 0, steps: 0, events: 0, eventExp: 0, huntExp: 0, bonusExp: 0, days: 0 };
 // CLASSES='{"guardian":{"defPerLevel":3}}' overrides class numbers (nested objects such as mana merge one level deep).
 if (process.env.CLASSES) for (const [k, v] of Object.entries(JSON.parse(process.env.CLASSES) as Record<string, Record<string, unknown>>)) {
   const c = (GAME.classes as Record<string, Record<string, unknown>>)[k];
@@ -288,6 +300,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
   let farthest = 0; // ring reached so far
   const ores: Record<number, number> = {};
   const draughts = { n: 0 }; let wort = 0, learned = false, brewedN = 0;
+  const killed = new Set<string>();
   for (let day = 1; day <= maxDays; day++) {
     // morning: inn heal (we always sleep at the inn if we could afford it)
     if (p.location === "inn" || !p.alive) p.hp = p.max_hp;
@@ -301,6 +314,7 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
     const oocUsed = { n: 0 };
     dailyExtras(p, day, extra);
     let fights = 10 + extra.n;
+    let onTile = 0, eventsToday = 0; DAYSTATS.days++;
     CHARM.total += p.charm;
 
     shop(p);
@@ -382,14 +396,49 @@ function simulate(cls: Cls, maxDays = 365): { days: number; deaths: number; kill
       }
       // walk out to the ring that matches your level, the first time (known paths are free after that)
       if (EXPLORE && p.level > farthest) { const steps = p.level - farthest; farthest = p.level; fights -= steps; if (fights <= 0) break; }
+      // A hunted-out tile: walk to a new one (a turn, and what turns up on the way), or hop to a known one for free.
+      if ((DAY.strat === "walk" && onTile >= DAY.every) || (DAY.strat === "hop" && onTile >= DAY.cap)) {
+        onTile = 0;
+        if (DAY.strat === "walk") {
+          fights--; DAYSTATS.steps++;
+          if (DAY.newtile || DAY.newtileF) { const b = Math.round(DAY.newtile * p.level + DAY.newtileF * fightWorth(p.level)); p.exp += b; DAYSTATS.bonusExp += b; }
+          if (eventsToday < EVENTS_PER_DAY && Math.random() < EVENT_CHANCE) {
+            eventsToday++; DAYSTATS.events++;
+            const e = EVENTS.filter((x) => !x.quest)[Math.floor(Math.random() * EVENTS.filter((x) => !x.quest).length)];
+            // the choice worth most experience, counting a fight it starts at about a monster's worth
+            const worth = (c: typeof e.choices[number]) => c.outcomes.reduce((a, o) => a + o.weight * o.effects.reduce((b, f) => b + ("exp" in f ? (DAY.eventF ? f.exp / 10 * DAY.eventF * fightWorth(p.level) : f.exp * p.level) : "monster" in f ? 0.8 * (GAME.monsters.find((m) => m.level === Math.min(12, p.level + f.monster))?.exp ?? 0) : 0), 0), 0);
+            const c = [...e.choices].filter((x) => !x.cost || p.gold >= x.cost * p.level).sort((a, b) => worth(b) - worth(a))[0];
+            if (c.cost) p.gold -= c.cost * p.level;
+            for (const f of rollOutcome(c).effects) {
+              if ("exp" in f) { const n = Math.round(DAY.eventF ? f.exp / 10 * DAY.eventF * fightWorth(p.level) : f.exp * p.level); p.exp += n; DAYSTATS.eventExp += n; }
+              else if ("gold" in f) p.gold = Math.max(0, p.gold + f.gold * p.level);
+              else if ("heal_pct" in f) p.hp = Math.min(p.max_hp, p.hp + Math.round(p.max_hp * f.heal_pct / 100));
+              else if ("hurt_pct" in f) p.hp = Math.max(1, p.hp - Math.round(p.max_hp * f.hurt_pct / 100));
+              else if ("fights" in f) fights += f.fights;
+              else if ("monster" in f) {
+                const em = pickMonster(Math.min(12, p.level + f.monster));
+                const r = fight(p, em, specials, 0.5, POTIONS_ON ? draughts : undefined);
+                if (r === "won") { p.gold += em.gold; p.exp += em.exp; DAYSTATS.eventExp += em.exp; }
+                if (r === "died") { DEATH_L[p.level] = (DEATH_L[p.level] ?? 0) + 1; deaths++; p.alive = false; p.gold = 0; p.exp -= Math.floor(p.exp * 0.1); }
+              }
+            }
+            if (!p.alive) break;
+          }
+          if (fights <= 0) break;
+        }
+      }
       // ordinary forest fight
-      fights--;
+      fights--; onTile++; DAYSTATS.hunts++;
       if (roll(99) < 10) { p.gold += roll(10 * p.level) + 5; continue; }
       // NIGHT=share of ordinary fights fought at night (0 by default; 1 = every fight in the dark).
       const m = pickMonster(p.level, undefined, NIGHT_SHARE > 0 && Math.random() < NIGHT_SHARE);
       const res = fight(p, m, specials, 0.5, POTIONS_ON ? draughts : undefined);
       if (res === "won") {
-        p.gold += m.gold; p.exp += p.class === "mage" ? Math.round(m.exp * MAGE.expb) : m.exp;
+        p.gold += m.gold;
+        { const base = p.class === "mage" ? Math.round(m.exp * MAGE.expb) : m.exp;
+          const got = Math.round(base * (onTile > DAY.cap ? DAY.x : 1));
+          const first = DAY.firstkill && !killed.has(m.name) ? base : 0; killed.add(m.name);
+          p.exp += got + first; DAYSTATS.huntExp += got; DAYSTATS.bonusExp += first; }
         if (p.class === "mage" && MAGE.regen > 0) p.hp = Math.min(p.max_hp, p.hp + Math.round(p.max_hp * MAGE.regen));
         const drop = rollDrop(m.level ?? p.level, p.class, BAGS ? bagDraw("drop", dropChance(p.class)) : undefined);
         if (drop) {
@@ -455,6 +504,7 @@ if (process.env.BREAKDOWN) {
 if (POTIONS_ON) console.log(`  draughts brewed per run: ${(POT.brewed / trials).toFixed(0)}, drunk: ${(POT.drunk / trials).toFixed(0)}`);
 if (MINE) console.log(`  jewelry made per run: ${(MINED.trinkets / trials).toFixed(1)}, best ever: ${trinket(MINED.best).name}`);
 if (FORGE) console.log(`  forgings per run: ${(FORGED.n / trials).toFixed(1)}; best reached: ${RARITY[FORGED.top].name}`);
+if (process.env.DAYSTATS) { const d = DAYSTATS.days; const tot = DAYSTATS.huntExp + DAYSTATS.eventExp + DAYSTATS.bonusExp; console.log(`  per day: ${(DAYSTATS.hunts / d).toFixed(1)} hunts, ${(DAYSTATS.steps / d).toFixed(1)} new tiles, ${(DAYSTATS.events / d).toFixed(2)} events; experience from hunting ${Math.round(100 * DAYSTATS.huntExp / tot)}%, events ${Math.round(100 * DAYSTATS.eventExp / tot)}%, bonuses ${Math.round(100 * DAYSTATS.bonusExp / tot)}%`); }
 console.log(`  healer gold per run: ${Math.round(HEALER.gold / trials)}${OOC.on ? `; prayers outside fights per run: ${(OOC.prayers / trials).toFixed(0)}` : ""}`);
 console.log(`  drops per run: ${(DROPS.n / trials).toFixed(1)} (${(DROPS.equipped / trials).toFixed(1)} equipped)`);
 if (EXTRAS) console.log(`  married ${CHARM.married}/${trials} runs (avg day ${CHARM.married ? (CHARM.marriedDay / CHARM.married).toFixed(0) : "-"}); avg charm across days ${(CHARM.total / runs.reduce((a, r) => a + r.days, 0)).toFixed(0)}`);
