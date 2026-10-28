@@ -6,9 +6,9 @@ test("riddle answers: a little give on wording, none on hedging", () => {
   assert.equal(judge("A shadow", ["shadow"]), true);
   assert.equal(judge("it's your shadow!", ["shadow"]), true);
   assert.equal(judge("Shadows", ["shadow"]), true);
-  assert.equal(judge("the Dragon's Door", ["dragons door", "door"]), true);
-  assert.equal(judge("grey hob", ["grey hob"]), true);
-  assert.equal(judge("hob grey", ["grey hob"]), false);
+  assert.equal(judge("the Copper Kettle", ["copper kettle", "kettle"]), true);
+  assert.equal(judge("blue gate", ["blue gate"]), true);
+  assert.equal(judge("gate blue", ["blue gate"]), false);
   assert.equal(judge("shadow or fire", ["shadow"]), false);
   assert.equal(judge("shadow, fire, egg", ["shadow"]), false);
   assert.equal(judge("fire", ["shadow"]), false);
