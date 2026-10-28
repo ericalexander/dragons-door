@@ -10,7 +10,7 @@ The game server makes every roll and keeps every rule; Claude only tells the sto
 /dragons-door:enter
 ```
 
-The first time, you pick a name and a path (Steel, Shadow or the gift), and you're in. There's no account or password: the game stores a key on your machine, and that key is your character.
+The first time, you pick a name and a class (warrior, guardian, thief, mage, priest or bard), and you're in. There's no account or password: the game stores a key on your machine, and that key is your character.
 
 ## Things to try
 
@@ -33,12 +33,13 @@ The first time, you pick a name and a path (Steel, Shadow or the gift), and you'
 
 The side pane is a Claude Code mod (`hooks/pane.tsx`). Everything it does:
 
-- **Reads:** the results of this game's own tools (it ignores every other tool call); `HOME` or `USERPROFILE`, `DRAGONS_DOOR_CONFIG_DIR` and `DRAGONS_DOOR_API_URL` from the environment, to find the game's config file; and your character key from that file (`~/.config/dragons-door/config.json`), the same key the game's MCP server uses.
-- **Fetches:** every few seconds while the Player chat tab is open, `GET https://api.dragonsdoor.gg/v1/chat` (or the server in your config) with your character key, for new chat lines in your town. When you type in the chat box, `POST https://api.dragonsdoor.gg/v1/chat` with your key and exactly the words you typed. It contacts nothing else.
-- **Submits prompts:** only when you click a place under the map, and only the text `Travel to <place> (x, y)` for the place you clicked, as if you'd typed it.
-- **Runs:** no shell commands and no other tools. It adds one slash command, `/door-pane`, which reopens the pane, and it opens its two tabs (Status and Player chat) the first time the game answers in a session.
+- **Hooks on tool calls:** one hook, on this game's own tools only (`mcp__plugin_dragons-door_…`); no other tool call reaches it. It lets each call run unchanged and reads the result: your character's numbers, the map and known places, and who's online, to draw the pane. When the pane is showing, it adds one fixed note beside the game's result for Claude: *"The Dragon's Door side pane is showing the player's numbers right now. Don't print the status line in this reply; give the menu only."* It never changes, blocks or makes a tool call.
+- **Reads:** those game results; `HOME` or `USERPROFILE`, `DRAGONS_DOOR_CONFIG_DIR` and `DRAGONS_DOOR_API_URL` from the environment, to find the game's config file and server; and from that file (`~/.config/dragons-door/config.json`) your character key and the game server's address. It reads nothing else on your machine and nothing else from the conversation.
+- **Sends, and where:** only to the game server, `https://api.dragonsdoor.gg`, unless you've pointed the game at another server (with `DRAGONS_DOOR_API_URL`, or the server saved in that config file). It contacts no other host. Every few seconds while you're in the realm and the pane is showing, `GET /v1/chat?since=<last line seen>` with your character key, for new chat in your town and who's online. When you type in the chat box, `POST /v1/chat` with your key and exactly the words you typed (and the name, if you started with `@Name` to whisper). Nothing from the conversation or from other tools is ever sent.
+- **Submits prompts:** only when you click a place under the map, and only the text `Travel to <place> (x, y)` for that place, as if you'd typed it. It submits nothing else.
+- **Runs:** no shell commands, no processes and no tools of its own. It adds one slash command, `/door-pane`, which reopens the pane, and it opens its two tabs (Status and Player chat) the first time the game answers in a session.
 - **Stores:** which tabs you've already seen, in the mod's own storage. It writes no files.
-- **Draws:** a group of this game's tool calls shows a short "the realm answers" line instead of the raw calls.
+- **Draws:** a run of nothing but this game's tool calls shows a short "the realm answers" line instead of the raw calls (expand it to see them all).
 
 ## What goes to the game server
 

@@ -178,7 +178,8 @@ export const register: Register = on => {
     return { text: "Dragon's Door pane opened." }
   })
 
-  on('tool.call', async ($, e, next) => {
+  // Only this game's own tools: every other tool call goes past this hook untouched and unseen.
+  on('tool.call', { tool: OURS }, async ($, e, next) => {
     const ran = await next(e)
     const r = parse(ran.text)
     if (!r) return ran
