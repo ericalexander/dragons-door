@@ -33,7 +33,7 @@ import { DIRS, TOWN_TILES, tileAt, type Dir, type TownId } from "./world.js";
 import { SUITORS, available, townOfSuitor } from "./romance.js";
 import { loadLore, lore } from "./lore.js";
 import { MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, canMake, caveLevel, trinket, type Trinket } from "./caves.js";
-import { awayToday, choose, doneLine, finished, fraction, goalLabel, goalTalk, pickGoal, type Activity, type Facts, type Mind } from "./minds.js";
+import { awayToday, choose, doneLine, doneLines, finished, shapeOf, fraction, goalLabel, goalTalk, pickGoal, type Activity, type Facts, type Mind } from "./minds.js";
 
 export const bots = new Hono();
 
@@ -609,6 +609,26 @@ async function goalSaying(b: Bot, stock: string, goal: string, stage: string): P
   return text ? plain(text, 280).replace(/^["“]|["”]$/g, "") : stock;
 }
 
+const GOAL_DONE = `You write one line of village news for Dragon's Door, a fantasy village text game: a townsperson got something they'd been working toward. Third person, past or present tense, one or two short sentences, under 25 words, plain and a little wry, the way the town crier or a gossip would put it. Use the name and every number exactly as given, and nothing that isn't in the facts. Say it a way none of the recent headlines does: not their words, not their joke, not their shape (no "and is telling everyone" if one says that). No quotation marks. Never reveal anyone's secrets or invent history.`;
+
+/** The headline for a finished goal: written fresh in the character's way, else a stock line whose shape nobody's used lately. */
+async function goalHeadline(row: Row, g: NonNullable<Mind["goal"]>, f: Facts, day: string): Promise<string> {
+  const recent = (await pool.query<{ actor: string; line: string }>(
+    "select actor, detail->>'line' as line from news where kind = 'goal' and day > ($1::date - 5) order by id desc limit 20", [day])).rows.filter((r) => r.line);
+  const names = [row.name, ...recent.map((r) => r.actor)];
+  const used = new Set(recent.map((r) => shapeOf(r.line, names)));
+  const stock = doneLines(row.name, row.personality, g, f);
+  const fresh = stock.find((l) => !used.has(shapeOf(l, names))) ?? stock[Math.floor(Math.random() * stock.length)]!;
+  if (goalLinesWritten >= GOAL_LINES_PER_RUN) return fresh;
+  goalLinesWritten++;
+  const facts = { who: row.name, about_them: townsperson(row.name)?.persona ?? null, what_they_did: fresh, recent_headlines: recent.map((r) => r.line) };
+  const text = await write({ system: GOAL_DONE, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite the headline.`, maxTokens: 300, trim: true, quick: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
+  const out = text ? plain(text, 200).replace(/^["“]|["”]$/g, "") : "";
+  // Keep it honest: it has to name them and carry the same numbers as the stock line.
+  const nums = (t: string) => (t.match(/\d[\d,]*/g) ?? []).map((x) => x.replace(/,/g, "")).sort().join(" ")
+  return out && out.includes(row.name) && nums(out) === nums(fresh) ? out : fresh;
+}
+
 async function prayers(b: Bot) {
   // Brother Ansel: a word for the dead, or a proverb nobody asked for.
   const dead = (await yesterday(b)).filter((e) => e.what === "forest_death" || e.what === "pvp_kill");
@@ -980,7 +1000,7 @@ async function morning(b: Bot, row: Row, mind: Mind, day: string) {
 async function reviewGoal(b: Bot, row: Row, mind: Mind, f: Facts, day: string, inTown: boolean) {
   const g = mind.goal;
   if (g && finished(g, f, mind)) {
-    const line = doneLine(row.name, row.personality, g, f);
+    const line = await goalHeadline(row, g, f, day);
     if (g.kind !== "wed" && g.kind !== "level") await postNews("goal", row.name, { goal: g.kind, line }, day);
     mind.done = [{ kind: g.kind, line, day }, ...(mind.done ?? [])].slice(0, 5);
     b.log.push(`goal done: ${g.kind}`);

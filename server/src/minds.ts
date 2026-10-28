@@ -129,9 +129,12 @@ export function fraction(g: Goal, f: Facts, mind: Mind): number {
 export const finished = (g: Goal, f: Facts, mind: Mind) => fraction(g, f, mind) >= 1;
 
 export function pickGoal(f: Facts, mind: Mind, day: string, r: () => number): Goal {
-  const last = mind.done?.[0]?.kind;
-  const options = LEANS[f.personality].filter(([k]) => {
-    if (k === last && LEANS[f.personality].length > 1) return false; // something new for a change
+  // Something new for a change: not the kind of either of the last two goals (saving and getting rich count as one kind).
+  const family = (k: GoalKind) => (k === "rich" ? "save" : k)
+  const recent = new Set((mind.done ?? []).slice(0, 2).map((d) => family(d.kind)))
+  const fresh = LEANS[f.personality].filter(([k]) => !recent.has(family(k)))
+  const pool = fresh.length ? fresh : LEANS[f.personality].filter(([k]) => k !== mind.done?.[0]?.kind)
+  const options = (pool.length ? pool : LEANS[f.personality]).filter(([k]) => {
     if (k === "wed" && f.married) return false;
     if (k === "outrank" && !f.top_rival) return false;
     if (k === "cave" && f.found_cave) return false;
@@ -209,6 +212,7 @@ export function doneLine(name: string, p: Personality, g: Goal, f: Facts): strin
   const n = fmt(g.target);
   switch (g.kind) {
     case "save": return p === "banker" ? `${name} has ${n} gold in the bank. The cottage by the river is nearly ${pro(name)[1] === "her" ? "hers" : "his"}.` : `${name} has ${n} gold in the bank and is telling everyone.`;
+    // (More ways to say it are in doneLines, for when the writer's away: the news picks one nobody's used lately.)
     case "rich": return `${name} is worth ${n} gold. Nobody asks how.`;
     case "gear": return `${name} bought a ${gearName(g.slot!, g.target)} and won't stop showing it off.`;
     case "level": return `${name} reached level ${g.target}, just as ${he} said ${he} would.`;
@@ -221,6 +225,26 @@ export function doneLine(name: string, p: Personality, g: Goal, f: Facts): strin
     case "jewel": return `${name} is wearing new ${METAL[g.target]} jewelry from Odile and catching the light on purpose.`;
   }
 }
+
+/** Other ways to say a finished goal, for when the writer's away: the news picks one whose shape nobody's used lately. */
+export function doneLines(name: string, p: Personality, g: Goal, f: Facts): string[] {
+  const [he, his] = pro(name);
+  const n = fmt(g.target);
+  const He = he[0]!.toUpperCase() + he.slice(1);
+  const extra: Partial<Record<Goal["kind"], string[]>> = {
+    save: [`The bank says ${name} has ${n} gold. ${name} says it louder.`, `${name} counted ${n} gold in the bank twice, to be sure, then told the whole tavern.`,
+      `${name} reached ${n} gold in the bank and bought a round to celebrate, which rather undid it.`, `${n} gold in the bank: ${name} has done it, and ${he} won't let anyone forget.`],
+    rich: [`${name} is worth ${n} gold now. ${He} won't say where it came from, and nobody presses.`, `${n} gold to ${his} name: ${name} is suddenly very popular.`],
+    level: [`${name} is level ${g.target} now, and the training yard heard all about it.`],
+    explore: [`${name} has walked the land past the gate and won't stop describing it.`],
+    far: [`${name} got farther from town than ever before. The distance grows each time ${he} tells it.`, `${name} went out farther than ${he} ever has, and has a map, of sorts, to prove it.`],
+    gear: [`${name} has a ${gearName(g.slot!, g.target)} at last, and keeps leaving it where people can see.`],
+  }
+  return [doneLine(name, p, g, f), ...(p === "banker" && g.kind === "save" ? [] : extra[g.kind] ?? [])]
+}
+
+/** A line with its names and numbers taken out: two headlines with the same shape read as the same headline. */
+export const shapeOf = (line: string, names: string[]) => names.reduce((t, nm) => t.split(nm).join("_"), line).replace(/[\d,]+/g, "#").toLowerCase()
 
 /** What they say in the tavern about it, in their own voice. stage: 0 just started, 1 halfway, 2 nearly there. */
 export function goalTalk(name: string, p: Personality, g: Goal, stage: 0 | 1 | 2, r: () => number): string {
