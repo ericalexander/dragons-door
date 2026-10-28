@@ -8,7 +8,7 @@
  */
 export interface Riddle { key: string; text: string; answers: string[]; realm: boolean }
 
-/** Longest answer we'll judge, in words. Long enough for "it's the Door on the crags", too short to list guesses. */
+/** Longest answer we'll judge, in words. Long enough for "I think it's a long dark shadow", too short to list guesses. */
 export const MAX_ANSWER_WORDS = 7;
 
 const FILLER = new Set(["a", "an", "the", "my", "your", "his", "her", "its", "it", "is", "i", "think", "maybe", "perhaps", "you", "are", "am", "that", "of", "answer"]);
