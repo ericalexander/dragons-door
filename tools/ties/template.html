@@ -1,0 +1,204 @@
+<title>Dragon's Door Ties</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;700&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Layout: the atlas's sibling. A surveyor's sheet of people instead of land: the map of ties on the left, a notebook on the right that reads whoever you pick. */
+  :root {
+    --paper: #efe4c9; --paper-hi: #f7efdc; --ink: #2a1c10; --ink-soft: #4a3322; --ink-faint: #6b4a2e; --rule: #b89c70;
+    --warm: #b06a12; --warm-hi: #8a4a06; --cold: #3e5f99; --cold-hi: #2a3f78; --plain: #9c8a6c;
+    --t-bright: #b8862a; --t-iron: #6d7480; --t-ash: #4f7d74; --t-none: #a08e74;
+    --display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+    --body: "Alegreya Sans", "Gill Sans", "Trebuchet MS", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --paper: #1b1510; --paper-hi: #241c15; --ink: #ecdfc4; --ink-soft: #cdbb9b; --ink-faint: #a8936f; --rule: #5c4a34;
+    --warm: #e09a3c; --warm-hi: #f2b862; --cold: #7f9fd6; --cold-hi: #a7c0ee; --plain: #7a6a52;
+    --t-bright: #d9a85a; --t-iron: #9aa1ad; --t-ash: #7fb0a5; --t-none: #8a7a62; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --paper: #1b1510; --paper-hi: #241c15; --ink: #ecdfc4; --ink-soft: #cdbb9b; --ink-faint: #a8936f; --rule: #5c4a34;
+    --warm: #e09a3c; --warm-hi: #f2b862; --cold: #7f9fd6; --cold-hi: #a7c0ee; --plain: #7a6a52;
+    --t-bright: #d9a85a; --t-iron: #9aa1ad; --t-ash: #7fb0a5; --t-none: #8a7a62; color-scheme: dark }
+  * { box-sizing: border-box; }
+  body { background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+  h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4.4vw, 46px); line-height: 1; margin: 0; text-wrap: balance; }
+  .meta { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; padding-block: 14px; font-size: 14px; color: var(--ink-soft); }
+  .bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .bar input { accent-color: var(--warm); }
+  .bar label:focus-within { outline: 2px solid var(--warm); outline-offset: 2px; }
+  .sheet { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 24px; align-items: start; }
+  @media (max-width: 900px) { .sheet { grid-template-columns: minmax(0, 1fr); } }
+  .mapbox { border: 1px solid var(--rule); background: var(--paper-hi); min-width: 0; overflow: hidden; }
+  svg { display: block; width: 100%; height: auto; touch-action: none; }
+  aside { display: grid; gap: 18px; min-width: 0; }
+  .card { border-top: 1px solid var(--ink); padding-top: 8px; min-width: 0; }
+  .kicker { font: 500 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); }
+  .who { font-family: var(--display); font-size: 26px; font-weight: 700; line-height: 1.1; margin: 4px 0 2px; text-wrap: balance; }
+  .sub { font-size: 14px; color: var(--ink-faint); margin: 0 0 8px; }
+  .ties { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .ties li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 4px 0; border-bottom: 1px dotted var(--rule); cursor: pointer; }
+  .ties li:hover .n { color: var(--warm-hi); }
+  .ties .w { font: 500 12px var(--mono); }
+  .ties .y { grid-column: 1 / -1; font-size: 12px; color: var(--ink-faint); }
+  .w.warm { color: var(--warm-hi); } .w.cold { color: var(--cold-hi); } .w.plain { color: var(--ink-faint); }
+  .legend { display: grid; gap: 6px; font-size: 14px; }
+  .legend .row { display: flex; align-items: center; gap: 8px; }
+  .legend svg { width: 44px; height: 14px; flex: none; }
+  .note { font-size: 14px; color: var(--ink-soft); margin: 6px 0 0; }
+  .label { font-family: var(--body); font-size: 11px; fill: var(--ink); paint-order: stroke; stroke: var(--paper-hi); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+  .town { font-family: var(--display); font-weight: 700; font-size: 22px; fill: var(--ink-faint); opacity: .55; pointer-events: none; }
+  .node { cursor: pointer; }
+  .node:focus-visible { outline: none; }
+  .node:focus-visible .shape { stroke: var(--warm); stroke-width: 3px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Dragon's Door Ties</h1>
+    <div class="meta" id="meta"></div>
+  </header>
+  <div class="bar" role="group" aria-label="What the map shows">
+    <label><input type="checkbox" id="f-players" checked> How townsfolk feel about players</label>
+    <label><input type="checkbox" id="f-bonds" checked> Townsfolk with each other</label>
+    <label><input type="checkbox" id="f-weak"> Acquaintances too</label>
+  </div>
+  <div class="sheet">
+    <div class="mapbox"><svg id="map" viewBox="0 0 900 680" role="img" aria-label="People of Dragon's Door clustered by town, with lines for how they feel about each other"></svg></div>
+    <aside>
+      <section class="card" aria-live="polite">
+        <div class="kicker" id="p-kicker">Pick someone</div>
+        <div class="who" id="p-name">The realm</div>
+        <p class="sub" id="p-sub"></p>
+        <div class="kicker" id="p-out-k"></div>
+        <ul class="ties" id="p-out"></ul>
+        <div class="kicker" id="p-in-k" style="margin-top:10px"></div>
+        <ul class="ties" id="p-in"></ul>
+      </section>
+      <section class="card">
+        <div class="kicker">Reading the map</div>
+        <div class="legend" id="legend"></div>
+        <p class="note">Each line runs from the one who feels it to the one it's about. Townsfolk are circles, players squares, and the realm's fixed characters (shopkeepers, teachers) small diamonds. Grouped by home town.</p>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+const DATA = /*TIES*/null;
+const WARM = new Set(["friendly", "trusted", "close"]), COLD = new Set(["wary", "hostile"]);
+const tone = (w) => WARM.has(w) ? "warm" : COLD.has(w) ? "cold" : "plain";
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const TOWNS = { brightwater: { name: "Brightwater", x: 290, y: 470, c: "--t-bright" }, ironhold: { name: "Ironhold", x: 330, y: 190, c: "--t-iron" }, ashford: { name: "Ashford", x: 690, y: 430, c: "--t-ash" } };
+const $ = (id) => document.getElementById(id);
+const svg = d3.select("#map"), W = 900, H = 680;
+const defs = svg.append("defs");
+for (const t of ["warm", "cold", "plain"]) defs.append("marker").attr("id", `arrow-${t}`).attr("viewBox", "0 0 10 10").attr("refX", 9).attr("refY", 5)
+  .attr("markerWidth", 5).attr("markerHeight", 5).attr("orient", "auto-start-reverse").append("path").attr("d", "M0,0L10,5L0,10z").attr("class", `ah-${t}`);
+const gTowns = svg.append("g"), gLinks = svg.append("g"), gNodes = svg.append("g");
+for (const [id, t0] of Object.entries(TOWNS)) { const t = { ...t0, id }; gTowns.append("text").attr("class", "town").attr("x", t.id === "ironhold" ? t.x + 250 : t.x).attr("y", t.id === "ironhold" ? t.y : Math.max(26, t.y - 120)).attr("text-anchor", "middle").text(t.name); }
+const nodes = DATA.nodes.map((n) => ({ ...n, x: TOWNS[n.town]?.x ?? W / 2, y: TOWNS[n.town]?.y ?? H / 2 }));
+const byId = new Map(nodes.map((n) => [n.id, n]));
+const all = DATA.links.map((l) => ({ ...l }));
+let picked = null;
+
+function visible() {
+  const showP = $("f-players").checked, showB = $("f-bonds").checked, weak = $("f-weak").checked;
+  return all.filter((l) => (l.kind === "standing" ? showP : showB) && (weak || tone(l.word) !== "plain"));
+}
+const width = (l) => 1 + Math.min(5, Math.abs(l.points) / 3);
+const sim = d3.forceSimulation(nodes)
+  .force("charge", d3.forceManyBody().strength(-170))
+  .force("x", d3.forceX((d) => TOWNS[d.town]?.x ?? W / 2).strength(0.12))
+  .force("y", d3.forceY((d) => TOWNS[d.town]?.y ?? H / 2).strength(0.12))
+  .force("collide", d3.forceCollide(26));
+let linkSel, nodeSel;
+function draw() {
+  const ls = visible().map((l) => ({ ...l, source: byId.get(l.source.id ?? l.source), target: byId.get(l.target.id ?? l.target) })).filter((l) => l.source && l.target);
+  sim.force("link", d3.forceLink(ls).id((d) => d.id).distance((l) => tone(l.word) === "cold" ? 140 : 60).strength((l) => tone(l.word) === "warm" ? 0.25 : 0.04));
+  linkSel = gLinks.selectAll("path").data(ls, (d) => `${d.source.id}>${d.target.id}`).join("path")
+    .attr("fill", "none").attr("stroke-width", width)
+    .attr("stroke-dasharray", (d) => tone(d.word) === "plain" ? "2 3" : null)
+    .attr("marker-end", (d) => `url(#arrow-${tone(d.word)})`);
+  nodeSel = gNodes.selectAll("g.node").data(nodes, (d) => d.id).join((enter) => {
+    const g = enter.append("g").attr("class", "node").attr("tabindex", 0).attr("role", "button").attr("aria-label", (d) => `${d.id}, ${d.kind}`);
+    g.append("path").attr("class", "shape").attr("d", (d) => d3.symbol().type(d.kind === "player" ? d3.symbolSquare : d.kind === "character" ? d3.symbolDiamond : d3.symbolCircle).size(d.kind === "character" ? 90 : d.kind === "player" ? 230 : 200)());
+    g.append("text").attr("class", "label").attr("dy", 20).attr("text-anchor", "middle").text((d) => d.id);
+    g.on("click", (e, d) => pick(d.id)).on("keydown", (e, d) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(d.id); } });
+    g.call(d3.drag().on("start", (e, d) => { if (!e.active) sim.alphaTarget(0.2).restart(); d.fx = d.x; d.fy = d.y; })
+      .on("drag", (e, d) => { d.fx = e.x; d.fy = e.y; }).on("end", (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+    return g;
+  });
+  paint();
+  sim.alpha(0.6).restart();
+}
+function paint() {
+  const col = { warm: css("--warm"), cold: css("--cold"), plain: css("--plain") };
+  for (const t of ["warm", "cold", "plain"]) defs.selectAll(`.ah-${t}`).attr("fill", col[t]);
+  const near = picked ? new Set([picked, ...visible().filter((l) => l.source === picked || l.target === picked || l.source.id === picked || l.target.id === picked).flatMap((l) => [l.source.id ?? l.source, l.target.id ?? l.target])]) : null;
+  linkSel?.attr("stroke", (d) => col[tone(d.word)]).attr("opacity", (d) => !picked ? 0.75 : (d.source.id === picked || d.target.id === picked) ? 0.95 : 0.08);
+  nodeSel?.select(".shape").attr("fill", (d) => css(TOWNS[d.town]?.c ?? "--t-none")).attr("stroke", css("--ink")).attr("stroke-width", (d) => d.id === picked ? 2.5 : 1)
+    .attr("opacity", (d) => !near || near.has(d.id) ? 1 : 0.25);
+  nodeSel?.select(".label").attr("opacity", (d) => !near || near.has(d.id) ? 1 : 0.25);
+}
+sim.on("tick", () => {
+  for (const n of nodes) { n.x = Math.max(48, Math.min(W - 48, n.x)); n.y = Math.max(40, Math.min(H - 30, n.y)); }
+  linkSel?.attr("d", (d) => {
+    const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y, len = Math.hypot(dx, dy) || 1, r = 11;
+    const x2 = d.target.x - dx / len * r, y2 = d.target.y - dy / len * r;
+    // A gentle bend, so a pair's two feelings don't sit on top of each other.
+    const mx = (d.source.x + x2) / 2 - dy / len * 10, my = (d.source.y + y2) / 2 + dx / len * 10;
+    return `M${d.source.x},${d.source.y}Q${mx},${my} ${x2},${y2}`;
+  });
+  nodeSel?.attr("transform", (d) => `translate(${d.x},${d.y})`);
+});
+
+const KIND = { player: "player", townsfolk: "townsperson", character: "one of the realm's characters" };
+const townName = (t) => TOWNS[t]?.name ?? t;
+function li(name, word, why) {
+  const el = document.createElement("li");
+  el.innerHTML = `<span class="n"></span><span class="w ${tone(word)}"></span><span class="y"></span>`;
+  el.children[0].textContent = name; el.children[1].textContent = word; el.children[2].textContent = why || "";
+  el.addEventListener("click", () => pick(name));
+  return el;
+}
+function pick(id) {
+  picked = picked === id ? null : id;
+  const n = picked && byId.get(picked);
+  const out = $("p-out"), inn = $("p-in"); out.replaceChildren(); inn.replaceChildren();
+  if (!n) {
+    $("p-kicker").textContent = "Pick someone"; $("p-name").textContent = "The realm";
+    const warm = all.filter((l) => WARM.has(l.word)).length, cold = all.filter((l) => COLD.has(l.word)).length;
+    $("p-sub").textContent = `${nodes.length} people, ${warm} warm feelings and ${cold} cold ones. Click anyone, or a name in their list, to follow the ties.`;
+    $("p-out-k").textContent = ""; $("p-in-k").textContent = "";
+    paint(); return;
+  }
+  $("p-kicker").textContent = `${KIND[n.kind]} · ${townName(n.town)}`;
+  $("p-name").textContent = n.id;
+  $("p-sub").textContent = n.level ? `${n.cls ?? ""}, level ${n.level}` : "";
+  const order = (a, b) => b.points - a.points;
+  const mine = all.filter((l) => l.source === n.id).sort(order), theirs = all.filter((l) => l.target === n.id).sort(order);
+  $("p-out-k").textContent = mine.length ? `How ${n.id} feels about others` : "";
+  for (const l of mine) out.append(li(l.target, l.word, l.why));
+  $("p-in-k").textContent = theirs.length ? `How others feel about ${n.id}` : (mine.length ? "" : "No ties yet");
+  for (const l of theirs) inn.append(li(l.source, l.word, l.why));
+  paint();
+}
+function legend() {
+  const rows = [["warm", 4, null, "Friendly, trusted or close (thicker is stronger)"], ["cold", 4, null, "Wary or hostile"], ["plain", 1.5, "2 3", "Acquaintance: knows them, no more"]];
+  $("legend").innerHTML = rows.map(([t, w, dash, text]) => `<div class="row"><svg viewBox="0 0 44 14" aria-hidden="true"><path d="M2 7H40" stroke="var(--${t})" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ""} fill="none"/></svg><span>${text}</span></div>`).join("")
+    + `<div class="row"><svg viewBox="0 0 44 14" aria-hidden="true"><circle cx="8" cy="7" r="5" fill="var(--t-bright)"/><circle cx="22" cy="7" r="5" fill="var(--t-iron)"/><circle cx="36" cy="7" r="5" fill="var(--t-ash)"/></svg><span>Brightwater, Ironhold, Ashford</span></div>`;
+}
+for (const id of ["f-players", "f-bonds", "f-weak"]) $(id).addEventListener("change", () => { draw(); if (picked) { const p = picked; picked = null; pick(p); } });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paint);
+new MutationObserver(paint).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+$("meta").textContent = `As of ${DATA.day} · from talks, letters, gifts, quests, robberies and evenings together`;
+legend(); draw(); pick(null);
+for (let i = 0; i < 200; i++) sim.tick();
+</script>
