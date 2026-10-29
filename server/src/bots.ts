@@ -34,7 +34,7 @@ import { DIRS, TOWN_TILES, tileAt, type Dir, type TownId } from "./world.js";
 import { SUITORS, available, townOfSuitor } from "./romance.js";
 import { loadLore, lore } from "./lore.js";
 import { MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, canMake, caveLevel, trinket, type Trinket } from "./caves.js";
-import { awayToday, choose, doneLine, doneLines, finished, shapeOf, fraction, goalLabel, goalTalk, pickGoal, type Activity, type Facts, type Mind } from "./minds.js";
+import { awayToday, choose, doneLine, doneLines, finished, newsworthy, shapeOf, fraction, goalLabel, goalTalk, pickGoal, type Activity, type Facts, type Mind } from "./minds.js";
 
 export const bots = new Hono();
 
@@ -601,7 +601,7 @@ const say = async (b: Bot, line: string) => {
 /** How many tavern lines the writer puts in townsfolk's own words per run; the rest fall back to the stock line. */
 const GOAL_LINES_PER_RUN = Number(process.env.GOAL_LINES_PER_RUN ?? 10);
 let goalLinesWritten = 0;
-const GOAL_LINE = `You write one tavern-board post by a townsperson in Dragon's Door, a fantasy village text game: what they say about something they're working toward. One or two short sentences, under 30 words, first person, in their own voice and the way they'd really talk. The gist gives the idea; say it your own way, not in its words. Say something none of the posts already on the board says: no repeating their words, their joke or their shape. Plain words, no quotation marks, no stage directions, no names of real players. Stay inside the fiction; never reveal anyone's secrets or invent history.`;
+const GOAL_LINE = `You write one tavern-board post by a townsperson in Dragon's Door, a fantasy village text game: what they say about something they're working toward. One or two short sentences, under 30 words, first person, in their own voice and the way they'd really talk. The gist gives the idea; say it your own way, not in its words. Say something none of the posts already on the board says: no repeating their words, their joke or their shape. Plain words, no quotation marks, no stage directions, no names of real players. No sums of gold: talk about what it's for, not the money. Stay inside the fiction; never reveal anyone's secrets or invent history.`;
 
 /** A townsperson's goal, said their own way. Falls back to the stock line when the writer's away or the run's share is spent. */
 async function goalSaying(b: Bot, stock: string, goal: string, stage: string): Promise<string> {
@@ -1034,7 +1034,7 @@ async function reviewGoal(b: Bot, row: Row, mind: Mind, f: Facts, day: string, i
   const g = mind.goal;
   if (g && finished(g, f, mind)) {
     const line = await goalHeadline(row, g, f, day);
-    if (g.kind !== "wed" && g.kind !== "level") await postNews("goal", row.name, { goal: g.kind, line }, day);
+    if (g.kind !== "wed" && g.kind !== "level" && newsworthy(row.personality, g)) await postNews("goal", row.name, { goal: g.kind, line }, day);
     mind.done = [{ kind: g.kind, line, day }, ...(mind.done ?? [])].slice(0, 5);
     b.log.push(`goal done: ${g.kind}`);
     delete mind.goal;

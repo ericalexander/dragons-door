@@ -75,17 +75,17 @@ const LEANS: Record<Personality, [GoalKind, number][]> = {
   banker:   [["save", 5], ["gear", 2], ["level", 2], ["jewel", 1]],
   drunk:    [["wed", 3], ["explore", 3], ["level", 1]],
   raider:   [["rich", 4], ["gear", 2], ["level", 1]],
-  gossip:   [["wed", 2], ["save", 2], ["explore", 2], ["jewel", 1]],
+  gossip:   [["wed", 2], ["save", 1], ["explore", 2], ["jewel", 1]],
   pious:    [["shrine", 5], ["level", 1]],
   reckless: [["outrank", 4], ["far", 3], ["level", 1]],
-  seer:     [["cave", 4], ["jewel", 3], ["save", 2], ["explore", 1]],
+  seer:     [["cave", 4], ["jewel", 3], ["save", 1], ["explore", 1]],
   braggart: [["gear", 5], ["jewel", 2], ["outrank", 2], ["wed", 2]],
-  veteran:  [["level", 3], ["rich", 2], ["far", 1]],
+  veteran:  [["level", 3], ["rich", 1], ["far", 1]],
   scout:    [["far", 4], ["cave", 3], ["explore", 2]],
   scholar:  [["explore", 3], ["cave", 2], ["level", 2]],
-  pickpocket: [["rich", 4], ["save", 2], ["explore", 1]],
+  pickpocket: [["rich", 3], ["save", 1], ["explore", 2]],
   watchman: [["level", 3], ["far", 2], ["explore", 2]],
-  prelate:  [["gear", 3], ["level", 2], ["save", 1]],
+  prelate:  [["gear", 3], ["level", 2]],
   student:  [["level", 3], ["explore", 2], ["cave", 1]],
   greenhorn: [["level", 4], ["save", 2], ["gear", 1]],
   clerk:    [["save", 3], ["level", 2], ["explore", 1]],
@@ -152,8 +152,9 @@ export function pickGoal(f: Facts, mind: Mind, day: string, r: () => number): Go
     return goal;
   };
   switch (kind) {
-    case "save": return g(round100(f.bank + 400 * f.level + 300));
-    case "rich": return g(round100(f.gold + f.bank + 500 * f.level + 500));
+    // Money goals take weeks: they used to finish in days and crowd the news.
+    case "save": return g(round100(f.bank + 900 * f.level + 600));
+    case "rich": return g(round100(f.gold + f.bank + 1000 * f.level + 800));
     case "gear": {
       const slot = f.weapon_id <= f.armor_id ? "weapon" : "armor";
       return g((slot === "weapon" ? f.weapon_id : f.armor_id) + 1, { slot });
@@ -182,11 +183,12 @@ export function goalLabel(name: string, p: Personality, g: Goal): string {
   const item = g.slot ? gearName(g.slot, g.target) : "";
   switch (g.kind) {
     case "save":
-      if (p === "banker") return `saving ${n} gold to retire to a cottage by the river`;
-      if (p === "gossip") return `putting ${n} gold by for a proper funeral, though ${he}'s in no hurry`;
-      if (p === "seer") return `saving ${n} gold for a crystal ball that actually works`;
-      return `trying to get ${n} gold in the bank`;
-    case "rich": return p === "raider" ? `set on having ${n} gold to ${his} name, by any means` : `wants to be worth ${n} gold`;
+      if (p === "banker") return `saving to retire to a cottage by the river`;
+      if (p === "gossip") return `putting a little by for a proper funeral, though ${he}'s in no hurry`;
+      if (p === "seer") return `saving for a crystal ball that actually works`;
+      if (p === "pickpocket") return `putting enough by to get out of the trade, one day`;
+      return `putting money by for a rainy day`;
+    case "rich": return p === "raider" ? `set on being rich, by any means` : p === "pickpocket" ? `after one big score` : `wants a fortune to show for the years`;
     case "gear": return p === "braggart" ? `set on buying a ${item}, and telling everyone so` : `saving for a ${item}`;
     case "level": return `determined to reach level ${g.target}`;
     case "explore":
@@ -205,6 +207,9 @@ export function goalLabel(name: string, p: Personality, g: Goal): string {
     case "outrank": return p === "reckless" ? `wants to outrank ${g.rival}, and won't shut up about it` : `can't abide that ${g.rival} outranks ${his === "her" ? "her" : "him"}`;
   }
 }
+
+/** Whether a finished goal is news: saving and getting rich only for those whose life it is (the banker, the raider). */
+export const newsworthy = (p: Personality, g: Goal) => (g.kind === "save" ? p === "banker" : g.kind === "rich" ? p === "raider" : true);
 
 /** A headline when they get there. */
 export function doneLine(name: string, p: Personality, g: Goal, f: Facts): string {
@@ -253,15 +258,15 @@ export function goalTalk(name: string, p: Personality, g: Goal, stage: 0 | 1 | 2
   const pick = (a: string[]) => a[Math.floor(r() * a.length)];
   const lines: Record<GoalKind, string[][]> = {
     save: [
-      [p === "banker" ? `I'm putting ${n} gold in the bank and then I'm done. A cottage. A river. No more ogres.` : `${n} gold in the bank. That's the plan. Don't tempt me.`,
-       `I've started saving. ${n} gold, then we'll see who's laughing.`],
-      [`Halfway to ${n} gold. I count it every night.`, `The banker knows my name now. Halfway there.`],
-      [`Nearly ${n} gold in the bank. Nobody rob me this week, please.`, `So close to ${n} I can hear the river.`],
+      [p === "banker" ? `A little more in the bank and then I'm done. A cottage. A river. No more ogres.` : `I've started putting a bit by. Don't tempt me.`,
+       `I'm saving. Don't ask for what. Something quiet.`],
+      [`Halfway there. I won't say to what.`, `The banker knows my name now.`],
+      [`Nearly there. Nobody rob me this week, please.`, p === "banker" ? `So close I can hear the river.` : `Nearly enough. Then we'll see.`],
     ],
     rich: [
-      [`I'll have ${n} gold to my name before the moon turns. How is my business.`, `${n} gold. I've a list of whose pockets it's in.`],
-      [`Halfway to ${n}. Sleep at the inn, all of you. Or don't.`, `The purse is getting heavy. I like heavy.`],
-      [`Nearly ${n} gold. One good night and I'm there.`, `Don't count my money. I'm counting it.`],
+      [`I'll be rich before the moon turns. How is my business.`, `I've a list of whose pockets my fortune's in.`],
+      [`Sleep at the inn, all of you. Or don't.`, `The purse is getting heavy. I like heavy.`],
+      [`One good night and I'm set.`, `Don't count my money. I'm counting it.`],
     ],
     gear: [
       [p === "braggart" ? `I shall own a ${item}. The shopkeeper has been told to keep it for me.` : `Saving for a ${item}. Then the forest can watch out.`,
