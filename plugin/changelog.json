@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.34.0",
+    "lore": "People in town have started keeping track of you. The ones you sit with, write to and help out warm to you, tell you more, and sometimes knock a little off the price. The ones you've robbed in the fields have long memories.",
+    "plain": "Townsfolk now remember how you treat them: talk, letters, gifts and quests make them friendlier (better prices, more of their stories, secrets only once they trust you); robbing them turns them against you. Your journal shows how each seems to feel."
+  },
+  {
     "version": "0.33.0",
     "lore": "Someone has repainted the sign over the gate. The dragon is red now, and the paint doesn't leave a box around it.",
     "plain": "In terminals that show pictures, and in the desktop app, the title screen is now a picture with a clear background."

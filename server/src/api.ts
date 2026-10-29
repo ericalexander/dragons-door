@@ -27,6 +27,7 @@ import { DIRS, LEGEND, SYMBOL, placeAt, renderMap, tileAt, townAt, TOWN_TILES, t
 import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { judge, pickRiddle, MAX_ANSWER_WORDS } from "./riddles.js";
+import { HOW, PRICE_CUT, pastChance, standingWith, type Standing } from "./standing.js";
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
@@ -436,6 +437,7 @@ api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authoriza
   const town = requireTown(ctx, `the ${spellVendor(cls)!.place}`, vendorTowns(cls));
   const v = vendorIn(cls, town);
   const mine = cls === ctx.p.class;
+  const friend = mine ? await friendCut(ctx, v.name) : { cut: 0 };
   const discount = charmDiscount(charmOf(ctx.p));
   const mr = manaRules(cls)!;
   ctx.events.push({
@@ -446,6 +448,7 @@ api.get("/library", async (c) => c.json(await withPlayer(c.req.header("authoriza
     spells: GAME.weapons.map((w) => ({ id: w.id, name: weaponName(cls, w.id), special: specialName(cls, w.id), power: w.str, cost: w.cost, needs_level: Math.max(1, w.id),
       ...(mine ? { known: w.id === ctx.p.weapon_id, learnable: w.id > ctx.p.weapon_id && ctx.p.level >= Math.max(1, w.id) } : {}) })),
     ...(mine ? { charm_discount_pct: Math.round(discount * 100) } : {}),
+    ...(friend.cut ? { friend_discount_pct: Math.round(friend.cut * 100), teacher_feels: (friend as { feels?: string }).feels } : {}),
   });
 })));
 
@@ -464,7 +467,8 @@ api.post("/library", async (c) => {
     if (w.id <= ctx.p.weapon_id) { ctx.events.push({ kind: "already_known", spell: weaponName(ctx.p.class, ctx.p.weapon_id) }); return; }
     if (ctx.p.level < w.id) { ctx.events.push({ kind: "too_soon", spell: weaponName(ctx.p.class, w.id), needs_level: w.id }); return; }
     const tradeIn = Math.floor(weapon(ctx.p.weapon_id).cost / 2);
-    const discount = charmDiscount(charmOf(ctx.p));
+    const friend = await friendCut(ctx, vendorIn(ctx.p.class, vendorTown).name);
+    const discount = Math.min(0.4, charmDiscount(charmOf(ctx.p)) + friend.cut);
     const costTrading = Math.ceil((w.cost - tradeIn) * (1 - discount));
     const costKeeping = Math.ceil(w.cost * (1 - discount));
     // The old spell or instrument is a thing now: trade it in, or keep it (as a scroll, or the instrument) to sell or auction.
@@ -970,14 +974,16 @@ api.get("/shop", async (c) => {
   const q = c.req.query("kind");
   const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
-    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", sold_by: soldBy(ctx, "bag"), owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) }); return; }
+    const friend = await friendCut(ctx, soldBy(ctx, kind).keeper);
+    const friendPct = friend.cut ? { friend_discount_pct: Math.round(friend.cut * 100), keeper_feels: friend.feels } : {};
+    if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", sold_by: soldBy(ctx, "bag"), owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100), ...friendPct }); return; }
     if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell ${ctx.p.class === "bard" ? "instruments" : "spells"}; ${myVendor(ctx).name} does, at the ${myVendor(ctx).place}`, go: myVendor(ctx).place }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
     const owned = kind === "armor" ? ctx.p.armor_id : ctx.p.weapon_id;
     // A weapon's str is its power (a bonus on top of the class's attribute), so call it that.
     const named = (items as { id: number; name: string }[]).map((x) => ({ ...x, name: itemName(kind, x.id, ctx.p.class) }));
     const listed = kind === "weapon" ? (named as unknown as { str: number }[]).map(({ str, ...rest }) => ({ ...rest, power: str })) : named;
-    ctx.events.push({ kind: "catalog", shop: kind, sold_by: soldBy(ctx, kind), owned, items: listed, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100) });
+    ctx.events.push({ kind: "catalog", shop: kind, sold_by: soldBy(ctx, kind), owned, items: listed, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100), ...friendPct });
   }));
 });
 
@@ -1372,8 +1378,10 @@ api.post("/buy", async (c) => {
     // Plugins from before buy quotes (0.15.1) and townsfolk go straight through, trading in as before.
     const plugin = current()?.plugin;
     const confirmed = body.confirm === true || ctx.p.is_bot || (plugin !== undefined && plugin !== null && older(plugin, "0.15.1"));
-    const discount = charmDiscount(charmOf(ctx.p));
-    const pct = discount ? { charm_discount_pct: Math.round(discount * 100) } : {};
+    const charm = charmDiscount(charmOf(ctx.p));
+    const friend = await friendCut(ctx, soldBy(ctx, body.kind).keeper);
+    const discount = Math.min(0.4, charm + friend.cut);
+    const pct = { ...(charm ? { charm_discount_pct: Math.round(charm * 100) } : {}), ...(friend.cut ? { friend_discount_pct: Math.round(friend.cut * 100), keeper_feels: friend.feels } : {}) };
     if (body.kind === "bag") {
       const nb = Bag.bag(body.id);
       if (nb.id !== body.id) throw new GameError("no_such_item", "no such bag");
@@ -2027,9 +2035,14 @@ api.get("/journal", async (c) => c.json(await withPlayer(c.req.header("authoriza
     const j = L.journals.find((x) => x.key === r.key);
     return j ? { title: j.title, author: j.author, text: j.text, found: r.day, where: r.how } : null;
   }).filter(Boolean);
-  ctx.events.push({ kind: "journal", pasts: Object.entries(people).map(([name, pieces]) => ({ name, told: pieces.filter(Boolean) })), journals,
+  // Everyone they've talked to, and how each feels about them now: a word, never a number.
+  const met = (await ctx.c.query<{ id: string; name: string }>(
+    "select p.id, p.name from npc_memory m join players p on lower(p.name) = lower(m.npc) and p.role in ('townsfolk', 'npc') where m.player_id = $1 order by m.last_talk desc limit 40", [ctx.p.id])).rows;
+  const known = [];
+  for (const w of met) known.push({ name: w.name, feels: (await standingWith(ctx.c, ctx.p, w, ctx.day)).word });
+  ctx.events.push({ kind: "journal", pasts: Object.entries(people).map(([name, pieces]) => ({ name, told: pieces.filter(Boolean) })), journals, people_you_know: known,
     ...(rows.length ? {} : { empty: true }) });
-  ctx.hint = "Show what they've learned as their own notebook: people first (a few lines each, in your words), then the journals they've found, quoted exactly under their titles. Nothing beyond what's here.";
+  ctx.hint = "Show what they've learned as their own notebook: people first (a few lines each, in your words, and from people_you_know how each seems to feel about them, as a phrase in the notebook's voice, e.g. 'warm to me lately', 'still cold since the fields'; never a score), then the journals they've found, quoted exactly under their titles. Nothing beyond what's here.";
 }, { quiet: true })));
 
 /** Answer the choice a quest is waiting on. */
@@ -2775,6 +2788,20 @@ export function sinceDay(today: string, day: string): string {
 }
 
 /** What someone remembers of this player: when they met, how often they've talked, what the player said, gifts kept, quests done together. Null on a first meeting. */
+/** How a townsperson or character feels about this player, by name. Stranger if there's no such person. */
+async function feels(ctx: Ctx, name: string | null): Promise<{ word: Standing; points: number } | null> {
+  if (!name || ctx.p.role !== "player") return null;
+  const who = (await ctx.c.query<{ id: string; name: string }>("select id, name from players where lower(name) = lower($1) and role in ('townsfolk', 'npc')", [name])).rows[0];
+  return who ? standingWith(ctx.c, ctx.p, who, ctx.day) : null;
+}
+
+/** What a shopkeeper's liking takes off: nothing unless they're friendly or better. */
+async function friendCut(ctx: Ctx, keeper: string | null): Promise<{ cut: number; keeper?: string; feels?: Standing }> {
+  const f = await feels(ctx, keeper);
+  const cut = f ? PRICE_CUT[f.word] ?? 0 : 0;
+  return cut ? { cut, keeper: keeper!, feels: f!.word } : { cut: 0 };
+}
+
 async function recall(ctx: Ctx, whoId: string, name: string) {
   const m = (await ctx.c.query<{ first_met: string; last_talk: string; talks: number; notes: { day: string; line: string }[] }>(
     "select first_met::text, last_talk::text, talks, notes from npc_memory where player_id = $1 and npc = $2", [ctx.p.id, name])).rows[0];
@@ -2871,7 +2898,10 @@ api.post("/talk", async (c) => {
 
     // A little gossip, now and then: a place someone found, preferably one they found themselves.
     let gossip: Record<string, unknown> | null = null;
-    if (!again && !ctx.t.gossip_heard && await luck(ctx, "gossip", 0.3)) {
+    // How they feel about the player, from everything between them so far (standing.ts).
+    const stand = await standingWith(ctx.c, ctx.p, who, ctx.day);
+    const cold = ctx.p.role === "player" && (stand.word === "hostile" || stand.word === "wary");
+    if (!again && !cold && !ctx.t.gossip_heard && await luck(ctx, "gossip", 0.3)) {
       const ex = await exploredSet(ctx);
       const far = Math.max(2, ...[...ex].map((k) => { const [a, b] = k.split(",").map(Number); return Math.max(Math.abs(a), Math.abs(b)); }));
       const g = (await ctx.c.query<{ x: number; y: number; name: string; terrain: string; poi: string | null; found_by: string | null }>(
@@ -2890,7 +2920,7 @@ api.post("/talk", async (c) => {
 
     const mind = who.mind ?? {};
     // A piece of their past, now and then: the next one in order, at most one a day from each person.
-    // Nobody tells their secrets to someone they hold a grudge against.
+    // Nobody tells anything to someone they hold a grudge against or are wary of; secrets go only to those they trust.
     let past: { piece: string; told: string; you_already_know?: string[] } | null = null;
     const pieces = lore().people[who.name]?.pieces ?? [];
     let heardPieces = 0;
@@ -2900,7 +2930,8 @@ api.post("/talk", async (c) => {
       const sore = mind.grudge?.name.toLowerCase() === ctx.p.name.toLowerCase();
       // A recent gift warms them a little toward telling you more (never enough to buy a secret on its own).
       const fond = (await ctx.c.query("select 1 from gifts where from_player = $1 and to_player = $2 and state = 'kept' and sent_day > $3::date - 7 limit 1", [ctx.p.id, who.id, ctx.day])).rowCount;
-      if (!again && !sore && heardPieces < pieces.length && !h.today && await luck(ctx, `past:${who.name}`, fond ? Math.min(0.75, PAST_CHANCE + 0.2) : PAST_CHANCE)) {
+      const chance = pastChance(fond ? Math.min(0.75, PAST_CHANCE + 0.2) : PAST_CHANCE, stand.word, PIECE_NAMES[heardPieces] === "secret")
+      if (!again && !sore && chance > 0 && heardPieces < pieces.length && !h.today && await luck(ctx, `past:${who.name}`, chance)) {
         await ctx.c.query("insert into player_lore (player_id, key, day, how) values ($1, $2, $3, 'talk') on conflict do nothing", [ctx.p.id, personKey(who.name, heardPieces), ctx.day]);
         past = { piece: PIECE_NAMES[heardPieces] ?? "more", told: pieces[heardPieces], ...(heardPieces ? { you_already_know: pieces.slice(0, heardPieces) } : {}) };
         heardPieces++;
@@ -2910,7 +2941,7 @@ api.post("/talk", async (c) => {
     const remembers = await recall(ctx, who.id, who.name);
     await remember(ctx, who.name, again, body.said);
     ctx.events.push({
-      kind: "talk", name: who.name, where, again, ...looksOf(who.name),
+      kind: "talk", name: who.name, where, again, ...looksOf(who.name), feels: stand.word,
       ...(remembers ? { remembers } : { first_meeting: true }),
       ...(who.role === "townsfolk" ? {
         townsfolk: true, class: who.class, level: who.level,
@@ -2925,7 +2956,7 @@ api.post("/talk", async (c) => {
     const pastHint = !past ? "" : past.piece === "secret"
       ? " They also tell you their secret (past.told), in their own words: it costs them something, they lower their voice, and it's plainly not for repeating."
       : ` Somewhere in it they let you in on a piece of their past (past.told), in their own words, only as much as fits the moment.`;
-    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${again ? " You've already talked today; keep it brief." : ""}${remembers ? " They remember the player (remembers): at most one callback, only if it fits, as they'd naturally bring it up; never list it." : ""}`;
+    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind. How they feel about the player (feels: ${stand.word}): ${HOW[stand.word]} Show it in how they act, never as a word or a number.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${again ? " You've already talked today; keep it brief." : ""}${remembers ? " They remember the player (remembers): at most one callback, only if it fits, as they'd naturally bring it up; never list it." : ""}`;
     const before = ctx.hint;
     // Talking can move a quest along, or a townsperson might ask a favor.
     await questTriggers(ctx, { talk: { name: who.name, townsfolk: who.role === "townsfolk" } });
