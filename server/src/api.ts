@@ -28,6 +28,7 @@ import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { judge, pickRiddle, MAX_ANSWER_WORDS } from "./riddles.js";
 import { HOW, PRICE_CUT, pastChance, standingWith, type Standing } from "./standing.js";
+import { bondsOf, cold as coldBond, warm as warmBond } from "./bonds.js";
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
 import { CAVE_FINDS_PER_DAY, FINDS_PER_PERSON, GEM_SELL, MAX_DEPTH, PICKAXE_COST, SWINGS_PER_DAY, TRINKETS, bonusText, canMake, caveLevel, ore as oreOf, swing, trinket } from "./caves.js";
@@ -930,6 +931,7 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
       return `${n.actor} married ${to}.`;
     }
     case "goal": return String(n.detail.line);
+    case "bond": return String(n.detail.line);
     case "respec": return String(n.detail.line);
     case "quest_news": return String(n.detail.line);
     case "forged": return `${n.actor} had Brannagh Steel forge ${/^[AEIOU]/.test(String(n.detail.item)) ? "an" : "a"} ${n.detail.item} in Ironhold.`;
@@ -2949,6 +2951,13 @@ api.post("/talk", async (c) => {
         mood: (mind.mood ?? 0) > 0 ? "in good spirits" : (mind.mood ?? 0) < 0 ? "out of sorts" : "as usual",
         ...(mind.grudge?.name.toLowerCase() === ctx.p.name.toLowerCase() ? { grudge_against_you: true } : {}),
         ...(mind.done?.[0] ? { last_achievement: mind.done[0].line } : {}),
+        ...(await (async () => {
+          // Who they've been spending their evenings with, and who they've fallen out with: what anyone in town could see.
+          const bonds = await bondsOf(who.name, ctx.day);
+          const friends = bonds.filter((x) => warmBond(x.word)).slice(0, 3).map((x) => x.other);
+          const foes = bonds.filter((x) => coldBond(x.word)).slice(0, 2).map((x) => x.other);
+          return { ...(friends.length ? { friends } : {}), ...(foes.length ? { at_odds_with: foes } : {}) };
+        })()),
       } : { character: true }),
       ...(gossip ? { gossip } : {}),
       ...(past ? { past } : heardPieces ? { you_know_of_their_past: pieces.slice(0, heardPieces) } : {}),

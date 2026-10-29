@@ -108,7 +108,7 @@ export function templateEntry(f: DayFacts, standings = true): string {
   const more: string[] = [];
   if (ups.length) more.push(`${ups.length === 1 ? "One new level" : "New levels"} for ${list(ups)}.`);
   more.push(...loot);
-  for (const n of [...of("married"), ...of("discovery"), ...of("goal"), ...of("mined_out"), ...of("crafted")]) more.push(n.line);
+  for (const n of [...of("married"), ...of("discovery"), ...of("goal"), ...of("bond"), ...of("mined_out"), ...of("crafted")]) more.push(n.line);
   for (const n of [...of("dragon"), ...of("dragon_death")]) more.push(n.line);
   if (more.length) paras.push(more.join(" "));
 

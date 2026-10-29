@@ -27,6 +27,7 @@ import { createHash } from "node:crypto";
 import { ROSTER, townsperson } from "./townsfolk.js";
 import { HERBS, POTIONS, TEACHERS } from "./herbs.js";
 import { plain, write } from "./llm.js";
+import { bondsOf, cold, recordTogether, turnsToTell, warm } from "./bonds.js";
 import { realmDay, realmSettings } from "./day.js";
 import { GAME, expForLevel, levelGains, type Envelope, type Event } from "./game.js";
 import { DIRS, TOWN_TILES, tileAt, type Dir, type TownId } from "./world.js";
@@ -496,12 +497,16 @@ async function raid(b: Bot) {
   const me = await b.get("/status");
   if (isErr(me) || !me.state.alive) { b.log.push("no raid (dead)"); return; }
   await b.post("/healer", { hp: "all" });
+  // Never a friend; someone they're at odds with first.
+  const bonds = await bondsOf(b.name, runDay);
+  const friends = bonds.filter((x) => warm(x.word)).map((x) => x.other);
+  const foes = bonds.filter((x) => cold(x.word)).map((x) => x.other);
   const target = await pool.query<{ name: string }>(
     `select name from players
      where role <> 'npc' and not is_test and alive and location = 'fields' and gold > 0 and name <> $1
-       and abs(level - $2) <= 1 and level >= 2 and created_at < now() - interval '24 hours'
-     order by gold desc, level desc limit 1`,
-    [b.name, me.state.level],
+       and abs(level - $2) <= 1 and level >= 2 and created_at < now() - interval '24 hours' and name <> all($3::text[])
+     order by (name = any($4::text[])) desc, gold desc, level desc limit 1`,
+    [b.name, me.state.level, friends, foes],
   );
   if (!target.rowCount) { b.log.push("raid: nobody worth robbing"); return; }
   const c = await b.post("/challenge", { name: target.rows[0].name });
@@ -627,6 +632,23 @@ async function goalHeadline(row: Row, g: NonNullable<Mind["goal"]>, f: Facts, da
   // Keep it honest: it has to name them and carry the same numbers as the stock line.
   const nums = (t: string) => (t.match(/\d[\d,]*/g) ?? []).map((x) => x.replace(/,/g, "")).sort().join(" ")
   return out && out.includes(row.name) && nums(out) === nums(fresh) ? out : fresh;
+}
+
+const BOND_LINE = `You write one tavern-board post by a townsperson in Dragon's Door, a fantasy village text game: something they say about another townsperson they've grown close to or fallen out with. One or two short sentences, under 30 words, first person, in their own voice and the way they'd really talk. Name the other person. Warm if they're friends, cold or pointed if they're at odds, never cruel. Say something none of the posts already on the board says. Plain words, no quotation marks, no stage directions. Never reveal anyone's secrets or invent history; don't say why they fell out beyond what's given.`;
+
+/** A line about another townsperson: written in their voice when the writer's about, else a stock one. */
+async function bondSaying(b: Bot, row: Row, other: string, feels: string): Promise<string> {
+  const warmLines = [`Drinks with ${other} again tonight. Somebody has to keep an eye on them.`, `${other} and I go back a way now. Don't tell them I said so.`,
+    `If you're buying, buy ${other} one too. They've earned it.`, `I'd walk into the crags for ${other}. Not happily, but I would.`];
+  const coldLines = [`If ${other} comes in, I'm leaving.`, `Nobody trust ${other} near a purse. That's all I'll say.`, `${other} knows what they did. I'm not discussing it.`];
+  const stock = pick(feels === "wary" || feels === "hostile" ? coldLines : warmLines);
+  if (goalLinesWritten >= GOAL_LINES_PER_RUN) return stock;
+  goalLinesWritten++;
+  const board = (await pool.query<{ body: string }>("select body from tavern where ts > now() - interval '3 days' order by id desc limit 15")).rows.map((r) => r.body);
+  const facts = { who: townsperson(row.name)?.persona ?? row.name, about: other, how_they_feel: feels, why: feels === "wary" || feels === "hostile" ? `${other} robbed them in the fields` : "evenings in the same tavern", gist: stock, already_on_the_board: board };
+  const text = await write({ system: BOND_LINE, content: `Facts as JSON:\n${JSON.stringify(facts, null, 1)}\n\nWrite what ${row.name} posts.`, maxTokens: 300, trim: true, quick: true, model: process.env.LETTERS_MODEL ?? "claude-sonnet-5-5" });
+  const out = text ? plain(text, 280).replace(/^["“]|["”]$/g, "") : "";
+  return out && out.includes(other) ? out : stock;
 }
 
 async function prayers(b: Bot) {
@@ -924,6 +946,17 @@ async function tavernTalk(b: Bot, row: Row, mind: Mind, f: Facts) {
     await say(b, pick(b.errandLines));
     b.log.push("talked about what's happened");
     return;
+  }
+  // Someone they've grown close to, or fallen out with, is on their mind.
+  if (Math.random() < 0.2) {
+    const day = runDay;
+    const bonds = (await bondsOf(row.name, day)).filter((x) => warm(x.word) || cold(x.word));
+    const strong = bonds.find((x) => x.word === "close" || x.word === "hostile") ?? bonds[0];
+    if (strong) {
+      await say(b, await bondSaying(b, row, strong.other, strong.word));
+      b.log.push(`talked about ${strong.other} (${strong.word})`);
+      return;
+    }
   }
   // Now and then the past comes up: never the secret, just what they'd say over a drink.
   const mentions = lore().people[row.name]?.mentions;
@@ -1335,6 +1368,9 @@ async function settleIn(id: string, town: "ironhold" | "ashford", cls: "warrior"
     await pool.query("insert into explored (player_id, x, y) values ($1,$2,$3) on conflict do nothing", [id, at.x + dx, at.y + dy]);
 }
 
+/** The realm day the current run is playing (set at the start of each run). */
+let runDay = new Date().toISOString().slice(0, 10);
+
 export async function runBots(now = new Date()): Promise<{ day: string; now: string; results: Record<string, string[]> }> {
   await loadLore();
   goalLinesWritten = 0;
@@ -1342,6 +1378,7 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
   const c = await pool.connect();
   let day: string;
   try { day = realmDay((await realmSettings(c)).resetHourUtc, now); } finally { c.release(); }
+  runDay = day;
   const results: Record<string, string[]> = {};
   for (const row of roster) {
     const st = await pool.query<{ sessions: { day?: string; done?: number[] } }>("select sessions from bots where player_id = $1", [row.player_id]);
@@ -1375,6 +1412,17 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
     }
     results[row.name] = b.log;
   }
+  // Who spent the hour together, and any friendship or falling-out worth the news.
+  try { const met = await recordTogether(day, now); if (met.length) results["(together)"] = met; } catch (e) { results["(together)"] = [`error: ${(e as Error).message}`]; }
+  try {
+    for (const t of await turnsToTell(day)) {
+      const line = t.kind === "friends"
+        ? pick([`${t.a} and ${t.b} have become fast friends. Nobody's quite sure how it started.`, `${t.a} and ${t.b} are thick as thieves these days, and only one of them is a thief.`, `You won't often see ${t.a} without ${t.b} now. The tavern has noticed.`])
+        : pick([`${t.a} won't share a room with ${t.b} since what happened in the fields.`, `There's bad blood between ${t.a} and ${t.b}, and ${t.a} isn't hiding it.`, `${t.a} has had enough of ${t.b}. Everyone in the tavern has heard why.`]);
+      await postNews("bond", t.a, { with: t.b, kind: t.kind, line }, day);
+      (results["(bonds)"] ??= []).push(line);
+    }
+  } catch (e) { results["(bonds)"] = [`error: ${(e as Error).message}`]; }
   return { day, now: now.toISOString(), results };
 }
 
