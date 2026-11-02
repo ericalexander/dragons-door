@@ -13,6 +13,7 @@ import { whereabouts } from "./schedule.js";
 import { score, word, type Standing } from "./standing.js";
 import type { Personality } from "./schedule.js";
 import { tileAt } from "./world.js";
+import { sourness, whispersBetween } from "./shadows.js";
 
 export interface Bond { other: string; word: Standing; points: number }
 
@@ -79,19 +80,22 @@ export async function recordTogether(day: string, now: Date, rand?: () => number
 
 /** How one townsperson feels about each of the others they have any history with, warmest first. */
 export async function bondsOf(name: string, day: string): Promise<Bond[]> {
+  // Whispers someone put about between them: each blames the other, and it fades in a month.
+  const whispers = await whispersBetween(name, day);
   const rows = (await pool.query<{ other: string; together: number; last_together: string | null; robbed: number[] | null; married: boolean }>(
     `with mine as (
        select case when a = $1 then b else a end as other, together, last_together::text from bonds where a = $1 or b = $1
      ), hurt as (
        select actor as other, array_agg($2::date - day) as robbed from news
        where kind = 'pvp_kill' and target = $1 and day > $2::date - 60 and actor in (select name from players where role = 'townsfolk') group by actor
-     ), names as (select other from mine union select other from hurt)
+     ), names as (select other from mine union select other from hurt union select unnest($3::text[]))
      select n.other, coalesce(m.together, 0) as together, m.last_together, h.robbed,
        coalesce((select me.spouse_id = them.id from players me, players them where me.name = $1 and them.name = n.other), false) as married
-     from names n left join mine m on m.other = n.other left join hurt h on h.other = n.other`, [name, day])).rows;
+     from names n left join mine m on m.other = n.other left join hurt h on h.other = n.other`, [name, day, [...whispers.keys()]])).rows;
   return rows.map((r) => {
     const points = score({ talkDays: r.together, gifts: [], letterDays: 0, quests: 0, robbedDaysAgo: r.robbed ?? [], married: r.married,
-      sinceContact: r.last_together ? Math.round((Date.parse(day) - Date.parse(r.last_together)) / 86_400_000) : null });
+      sinceContact: r.last_together ? Math.round((Date.parse(day) - Date.parse(r.last_together)) / 86_400_000) : null })
+      + sourness(whispers.get(r.other) ?? []);
     return { other: r.other, word: word(points, r.together > 0), points: Math.round(points * 10) / 10 };
   }).sort((x, y) => y.points - x.points);
 }

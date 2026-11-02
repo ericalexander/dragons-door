@@ -28,6 +28,7 @@ import { awayToday, goalLabel, type Mind } from "./minds.js";
 import { EVENTS_PER_DAY, EVENT_CHANCE, ROAD_EVENT_MAX, ROAD_EVENT_PER_STEP, eventById, eventsFor, rollOutcome, type Effect } from "./events.js";
 import { judge, pickRiddle, MAX_ANSWER_WORDS } from "./riddles.js";
 import { HOW, PRICE_CUT, pastChance, standingWith, type Standing } from "./standing.js";
+import { TROUBLE, recentTrouble, troubleToday } from "./shadows.js";
 import { bondsOf, cold as coldBond, warm as warmBond } from "./bonds.js";
 import { loadLore, looksOf, lore, heardOf, personKey, PIECE_NAMES, PAST_CHANCE, JOURNAL_CHANCE, JOURNAL_EVERY_DAYS } from "./lore.js";
 import { QUESTS, questById, questByIndex, questIndex, stepOf, type QEffect, type QStep, type QuestDef } from "./quests.js";
@@ -932,6 +933,7 @@ export function newsLine(n: { kind: string; actor: string | null; target: string
     }
     case "goal": return String(n.detail.line);
     case "bond": return String(n.detail.line);
+    case "trouble": return String(n.detail.line);
     case "respec": return String(n.detail.line);
     case "quest_news": return String(n.detail.line);
     case "forged": return `${n.actor} had Brannagh Steel forge ${/^[AEIOU]/.test(String(n.detail.item)) ? "an" : "a"} ${n.detail.item} in Ironhold.`;
@@ -977,7 +979,9 @@ api.get("/shop", async (c) => {
   const kind = q === "armor" ? "armor" : q === "bag" ? "bag" : "weapon";
   return c.json(await withPlayer(c.req.header("authorization"), async (ctx) => {
     const friend = await friendCut(ctx, soldBy(ctx, kind).keeper);
-    const friendPct = friend.cut ? { friend_discount_pct: Math.round(friend.cut * 100), keeper_feels: friend.feels } : {};
+    const markup = (await troubleToday(ctx.c, townAt(ctx.p.pos_x, ctx.p.pos_y) ?? "brightwater", ctx.day)).has("stores");
+    const friendPct = { ...(friend.cut ? { friend_discount_pct: Math.round(friend.cut * 100), keeper_feels: friend.feels } : {}),
+      ...(markup ? { dearer_today_pct: Math.round(TROUBLE.shop * 100), dearer_because: "rats got into the town's stores" } : {}) };
     if (kind === "bag") { ctx.events.push({ kind: "catalog", shop: "bag", sold_by: soldBy(ctx, "bag"), owned: ctx.p.bag_id, items: GAME.bags, charm_discount_pct: Math.round(charmDiscount(charmOf(ctx.p)) * 100), ...friendPct }); return; }
     if (kind === "weapon" && casts(ctx.p.class)) { ctx.events.push({ kind: "not_for_you", reason: `the smith doesn't sell ${ctx.p.class === "bard" ? "instruments" : "spells"}; ${myVendor(ctx).name} does, at the ${myVendor(ctx).place}`, go: myVendor(ctx).place }); return; }
     const items = kind === "armor" ? GAME.armor : GAME.weapons;
@@ -1362,10 +1366,13 @@ api.post("/healer", async (c) => {
     const missing = ctx.p.max_hp - ctx.p.hp;
     const want = Math.min(missing, body.hp === "all" ? missing : body.hp);
     if (want <= 0) { ctx.events.push({ kind: "already_healthy" }); return; }
-    const cost = healCost(ctx.p, want, ctx.spouse);
-    if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold }); return; }
+    // A foul well in town today keeps the healer busy, and dearer.
+    const foul = (await troubleToday(ctx.c, townAt(ctx.p.pos_x, ctx.p.pos_y) ?? "brightwater", ctx.day)).has("well");
+    const cost = Math.ceil(healCost(ctx.p, want, ctx.spouse) * (foul ? TROUBLE.healer : 1));
+    const dearer = foul ? { dearer_today: "the town's well went foul and the healer is run off their feet" } : {};
+    if (ctx.p.gold < cost) { ctx.events.push({ kind: "too_poor", cost, gold: ctx.p.gold, ...dearer }); return; }
     await savePlayer(ctx, { hp: ctx.p.hp + want, gold: ctx.p.gold - cost });
-    ctx.events.push({ kind: "healed", hp: want, cost });
+    ctx.events.push({ kind: "healed", hp: want, cost, ...dearer });
     await logEvent(ctx, "spend", { on: "healer", gold: cost, hp: want });
   }));
 });
@@ -1382,8 +1389,11 @@ api.post("/buy", async (c) => {
     const confirmed = body.confirm === true || ctx.p.is_bot || (plugin !== undefined && plugin !== null && older(plugin, "0.15.1"));
     const charm = charmDiscount(charmOf(ctx.p));
     const friend = await friendCut(ctx, soldBy(ctx, body.kind).keeper);
-    const discount = Math.min(0.4, charm + friend.cut);
-    const pct = { ...(charm ? { charm_discount_pct: Math.round(charm * 100) } : {}), ...(friend.cut ? { friend_discount_pct: Math.round(friend.cut * 100), keeper_feels: friend.feels } : {}) };
+    // Spoiled stores in town today put every price up.
+    const markup = (await troubleToday(ctx.c, shopTown, ctx.day)).has("stores") ? TROUBLE.shop : 0;
+    const discount = Math.min(0.4, charm + friend.cut) - markup;
+    const pct = { ...(charm ? { charm_discount_pct: Math.round(charm * 100) } : {}), ...(friend.cut ? { friend_discount_pct: Math.round(friend.cut * 100), keeper_feels: friend.feels } : {}),
+      ...(markup ? { dearer_today_pct: Math.round(markup * 100), dearer_because: "rats got into the town's stores" } : {}) };
     if (body.kind === "bag") {
       const nb = Bag.bag(body.id);
       if (nb.id !== body.id) throw new GameError("no_such_item", "no such bag");
@@ -2942,6 +2952,8 @@ api.post("/talk", async (c) => {
     }
     const remembers = await recall(ctx, who.id, who.name);
     await remember(ctx, who.name, again, body.said);
+    // What's gone wrong lately, for them to grumble about. Nobody knows who's behind it.
+    const trouble = again ? [] : await recentTrouble(ctx.c, inWild(ctx.p) ? "" : townAt(ctx.p.pos_x, ctx.p.pos_y) ?? "brightwater", ctx.day);
     ctx.events.push({
       kind: "talk", name: who.name, where, again, ...looksOf(who.name), feels: stand.word,
       ...(remembers ? { remembers } : { first_meeting: true }),
@@ -2960,12 +2972,13 @@ api.post("/talk", async (c) => {
         })()),
       } : { character: true }),
       ...(gossip ? { gossip } : {}),
+      ...(trouble.length ? { trouble } : {}),
       ...(past ? { past } : heardPieces ? { you_know_of_their_past: pieces.slice(0, heardPieces) } : {}),
     });
     const pastHint = !past ? "" : past.piece === "secret"
       ? " They also tell you their secret (past.told), in their own words: it costs them something, they lower their voice, and it's plainly not for repeating."
       : ` Somewhere in it they let you in on a piece of their past (past.told), in their own words, only as much as fits the moment.`;
-    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind. How they feel about the player (feels: ${stand.word}): ${HOW[stand.word]} Show it in how they act, never as a word or a number.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${again ? " You've already talked today; keep it brief." : ""}${remembers ? " They remember the player (remembers): at most one callback, only if it fits, as they'd naturally bring it up; never list it." : ""}`;
+    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind. How they feel about the player (feels: ${stand.word}): ${HOW[stand.word]} Show it in how they act, never as a word or a number.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${trouble.length ? " If it fits, they mention what's gone wrong lately (trouble) the way anyone would: grumbling, guessing, maybe suspecting someone. Nobody knows who's behind it, so never say." : ""}${again ? " You've already talked today; keep it brief." : ""}${remembers ? " They remember the player (remembers): at most one callback, only if it fits, as they'd naturally bring it up; never list it." : ""}`;
     const before = ctx.hint;
     // Talking can move a quest along, or a townsperson might ask a favor.
     await questTriggers(ctx, { talk: { name: who.name, townsfolk: who.role === "townsfolk" } });

@@ -1,5 +1,10 @@
 [
   {
+    "version": "0.35.0",
+    "lore": "Two new faces about the realm: an oil-seller who pushes his cart up the south road from Ashford, and a ratcatcher in Ironhold with a ferret in his coat. Ironhold says its luck has been bad lately. Ironhold always says that.",
+    "plain": "Two new townsfolk: Hollis Wray in Ashford and Garrick Sloe in Ironhold. Some days things go wrong in a town, and the healer or the shop can cost more for it."
+  },
+  {
     "version": "0.34.0",
     "lore": "People in town have started keeping track of you. The ones you sit with, write to and help out warm to you, tell you more, and sometimes knock a little off the price. The ones you've robbed in the fields have long memories.",
     "plain": "Townsfolk now remember how you treat them: talk, letters, gifts and quests make them friendlier (better prices, more of their stories, secrets only once they trust you); robbing them turns them against you. Your journal shows how each seems to feel."

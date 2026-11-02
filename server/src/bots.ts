@@ -25,6 +25,7 @@ import { sweepTrials } from "./trial.js";
 import { roll } from "./combat.js";
 import { createHash } from "node:crypto";
 import { ROSTER, townsperson } from "./townsfolk.js";
+import { runShadows } from "./shadows.js";
 import { HERBS, POTIONS, TEACHERS } from "./herbs.js";
 import { plain, write } from "./llm.js";
 import { bondsOf, cold, recordTogether, turnsToTell, warm } from "./bonds.js";
@@ -1412,13 +1413,15 @@ export async function runBots(now = new Date()): Promise<{ day: string; now: str
     }
     results[row.name] = b.log;
   }
+  // Whatever was done in secret overnight: found in the morning.
+  try { const done = await runShadows(day, now); if (done.length) results["(trouble)"] = done; } catch (e) { results["(trouble)"] = [`error: ${(e as Error).message}`]; }
   // Who spent the hour together, and any friendship or falling-out worth the news.
   try { const met = await recordTogether(day, now); if (met.length) results["(together)"] = met; } catch (e) { results["(together)"] = [`error: ${(e as Error).message}`]; }
   try {
     for (const t of await turnsToTell(day)) {
       const line = t.kind === "friends"
         ? pick([`${t.a} and ${t.b} have become fast friends. Nobody's quite sure how it started.`, `${t.a} and ${t.b} are thick as thieves these days, and only one of them is a thief.`, `You won't often see ${t.a} without ${t.b} now. The tavern has noticed.`])
-        : pick([`${t.a} won't share a room with ${t.b} since what happened in the fields.`, `There's bad blood between ${t.a} and ${t.b}, and ${t.a} isn't hiding it.`, `${t.a} has had enough of ${t.b}. Everyone in the tavern has heard why.`]);
+        : pick([`${t.a} won't share a room with ${t.b} these days.`, `There's bad blood between ${t.a} and ${t.b}, and ${t.a} isn't hiding it.`, `${t.a} has had enough of ${t.b}. Everyone in the tavern has heard why.`]);
       await postNews("bond", t.a, { with: t.b, kind: t.kind, line }, day);
       (results["(bonds)"] ??= []).push(line);
     }

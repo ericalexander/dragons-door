@@ -8,6 +8,7 @@
  * Everything here is pure: the runner in bots.ts gathers the facts and carries out the choices.
  */
 import { townsperson } from "./townsfolk.js";
+import { shadowAway } from "./shadows.js";
 import { createHash } from "node:crypto";
 import type { Personality, Doing } from "./schedule.js";
 import { GAME } from "./game.js";
@@ -441,6 +442,8 @@ export function choose(p: Personality, mind: Mind, s: Situation, r: () => number
 
 /** About one day in thirty, each townsperson is simply gone for the day. Stable per day, so the square agrees. */
 export function awayToday(day: string, name: string, p: Personality): string | null {
+  const shadow = shadowAway(day, name);
+  if (shadow) return shadow;
   const h = createHash("sha256").update(`away|${day}|${name}`).digest();
   if (h.readUInt16BE(0) % 30 !== 0) return null;
   const reasons = townsperson(name)?.away;
