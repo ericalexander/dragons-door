@@ -7,6 +7,7 @@
  * news when two of them become fast friends or fall out.
  */
 import { createHash } from "node:crypto";
+import type pg from "pg";
 import { pool } from "./db.js";
 import { awayToday, type Mind } from "./minds.js";
 import { whereabouts } from "./schedule.js";
@@ -78,11 +79,15 @@ export async function recordTogether(day: string, now: Date, rand?: () => number
   return met;
 }
 
-/** How one townsperson feels about each of the others they have any history with, warmest first. */
-export async function bondsOf(name: string, day: string): Promise<Bond[]> {
+/**
+ * How one townsperson feels about each of the others they have any history with, warmest first.
+ * Inside a request's transaction, pass its client: the pool is tiny, and asking it for a second connection
+ * while this one holds a player's row can wait forever on a request that's waiting for that row.
+ */
+export async function bondsOf(name: string, day: string, c: pg.PoolClient | pg.Pool = pool): Promise<Bond[]> {
   // Whispers someone put about between them: each blames the other, and it fades in a month.
-  const whispers = await whispersBetween(name, day);
-  const rows = (await pool.query<{ other: string; together: number; last_together: string | null; robbed: number[] | null; married: boolean }>(
+  const whispers = await whispersBetween(name, day, c);
+  const rows = (await c.query<{ other: string; together: number; last_together: string | null; robbed: number[] | null; married: boolean }>(
     `with mine as (
        select case when a = $1 then b else a end as other, together, last_together::text from bonds where a = $1 or b = $1
      ), hurt as (

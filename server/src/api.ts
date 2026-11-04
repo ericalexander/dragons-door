@@ -2965,7 +2965,7 @@ api.post("/talk", async (c) => {
         ...(mind.done?.[0] ? { last_achievement: mind.done[0].line } : {}),
         ...(await (async () => {
           // Who they've been spending their evenings with, and who they've fallen out with: what anyone in town could see.
-          const bonds = await bondsOf(who.name, ctx.day);
+          const bonds = await bondsOf(who.name, ctx.day, ctx.c);
           const friends = bonds.filter((x) => warmBond(x.word)).slice(0, 3).map((x) => x.other);
           const foes = bonds.filter((x) => coldBond(x.word)).slice(0, 2).map((x) => x.other);
           return { ...(friends.length ? { friends } : {}), ...(foes.length ? { at_odds_with: foes } : {}) };
@@ -3497,8 +3497,13 @@ export const CHAT_KEEP_DAYS = 30;
 async function chatPlayer(c: { req: { header: (n: string) => string | undefined } }) {
   const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim();
   if (!key) return null;
+  // Stamp last_seen only if nobody else holds the row: a game call in progress has it locked, and a chat poll
+  // that waits on it ties up a connection the game call may need. Missing one stamp costs nothing.
   const r = await pool.query<{ id: string; name: string; level: number; role: string; is_test: boolean; admin: boolean; banned_at: string | null; pos_x: number | null; pos_y: number | null }>(
-    "update players set last_seen = now() where api_key_hash = $1 and not trial returning id, name, level, role, is_test, admin, banned_at, pos_x, pos_y", [hash(key)]);
+    `with me as (select id, name, level, role, is_test, admin, banned_at, pos_x, pos_y from players where api_key_hash = $1 and not trial),
+     free as (select p.id from players p join me on me.id = p.id for update of p skip locked),
+     stamp as (update players p set last_seen = now() from free where p.id = free.id)
+     select * from me`, [hash(key)]);
   return r.rows[0] ?? null;
 }
 

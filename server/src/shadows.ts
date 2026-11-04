@@ -146,8 +146,8 @@ export async function recentTrouble(c: pg.PoolClient | pg.Pool, town: string, da
 }
 
 /** Whispers between two townsfolk: days since each, for the bond between them. */
-export async function whispersBetween(name: string, day: string): Promise<Map<string, number[]>> {
-  const r = await pool.query<{ a: string; b: string; ago: number }>(
+export async function whispersBetween(name: string, day: string, c: pg.PoolClient | pg.Pool = pool): Promise<Map<string, number[]>> {
+  const r = await c.query<{ a: string; b: string; ago: number }>(
     `select detail->>'a' as a, detail->>'b' as b, ($2::date - day) as ago from shadow_deeds
      where deed = 'sour' and (detail->>'a' = $1 or detail->>'b' = $1) and day > $2::date - $3::int`, [name, day, SOUR.days]);
   const out = new Map<string, number[]>();
