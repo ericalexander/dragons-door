@@ -30,6 +30,13 @@
   header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 24px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
   h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4.4vw, 46px); line-height: 1; margin: 0; letter-spacing: .01em; text-wrap: balance; }
   .meta { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+  .refresh { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+  button#refresh { font: 500 12px var(--mono); letter-spacing: .04em; color: var(--ink); background: var(--paper-hi); border: 1px solid var(--ink); padding: 5px 12px; cursor: pointer; }
+  button#refresh:hover { background: var(--wax); color: var(--paper-hi); border-color: var(--wax); }
+  button#refresh:focus-visible { outline: 2px solid var(--wax); outline-offset: 2px; }
+  button#refresh[disabled] { opacity: .5; cursor: wait; }
+  .status { font-size: 13px; color: var(--ink-soft); margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--rule); background: var(--paper-hi); }
+  .status.bad { border-left-color: var(--wax); }
   .bar { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; padding-block: 14px; }
   .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); background: var(--paper-hi); }
   .seg button { font: 500 14px var(--body); color: var(--ink-soft); background: none; border: 0; padding: 7px 12px; cursor: pointer; }
@@ -68,8 +75,12 @@
 <div class="wrap">
   <header>
     <h1>Dragon's Door Atlas</h1>
-    <div class="meta" id="meta"></div>
+    <div class="refresh">
+      <div class="meta" id="meta"></div>
+      <button id="refresh" type="button" hidden>Refresh activity from the realm</button>
+    </div>
   </header>
+  <p class="status" id="status" hidden></p>
 
   <div class="bar">
     <div class="seg" role="group" aria-label="What the map shows" id="modes">
@@ -120,7 +131,7 @@ const idx = (x, y) => (y + R) * N + (x + R);
 const tile = (x, y) => { const t = WORLD.tiles[idx(x, y)]; return { x, y, terrain: T[t[0]], level: t[1], poi: t[2] === 1 ? "cave" : t[2] === 2 ? "town" : t[2] === 3 ? "shrine" : null, name: WORLD.names[t[3]] }; };
 const keyOf = (x, y) => `${x},${y}`;
 const count = (list) => { const m = new Map(); for (const [x, y, n] of list || []) m.set(keyOf(x, y), n ?? 1); return m; };
-const players = count(WORLD.activity.explored), folk = count(WORLD.activity.townsfolk), found = count(WORLD.activity.discovered);
+let players = count(WORLD.activity.explored), folk = count(WORLD.activity.townsfolk), found = count(WORLD.activity.discovered);
 const towns = WORLD.towns;
 const townAt = (x, y) => towns.find((t) => t.x === x && t.y === y);
 
@@ -285,11 +296,75 @@ $("z-in").addEventListener("click", () => zoom(4)); $("z-out").addEventListener(
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
-$("meta").textContent = `Seed: ${WORLD.seed} · ${N}×${N} tiles · activity as of ${WORLD.generated}`;
+const meta = () => { $("meta").textContent = `Seed: ${WORLD.seed} · ${N}×${N} tiles · activity as of ${WORLD.generated}`; };
+meta();
 let savedZoom = null; try { savedZoom = localStorage.getItem("atlas-cs"); } catch (e) {}
 // Fit the whole map to the box the first time; after that, keep the viewer's own zoom.
 if (!savedZoom) state.cs = Math.max(10, Math.min(28, Math.floor(($("mapbox").clientWidth - 2 * M - 2) / N)));
 describe(tile(0, 0)); legend(); places(); draw();
 requestAnimationFrame(() => scrollTo(tile(0, 0)));
 document.fonts && document.fonts.ready.then(draw);
+
+// Refresh: only the activity (who has walked where, what's been found) changes with play; the land comes from the seed and never does.
+// It runs one query through the viewer's Supabase connector, and the button only appears when the page can reach it.
+const PROJECT = "csqtlulfojpcpfwgnchx";
+const SQL = `with pl as (select id, role from players where not is_test and coalesce(trial, false) = false and banned_at is null),
+tiles as (select e.x, e.y, pl.role, count(distinct e.player_id) n from explored e join pl on pl.id = e.player_id group by 1, 2, 3)
+select json_build_object(
+  'day', (now() at time zone 'America/New_York')::date,
+  'explored', (select coalesce(json_agg(json_build_array(x, y, n) order by x, y), '[]'::json) from tiles where role = 'player'),
+  'townsfolk', (select coalesce(json_agg(json_build_array(x, y, n) order by x, y), '[]'::json) from tiles where role = 'townsfolk'),
+  'discovered', (select coalesce(json_agg(json_build_array(x, y) order by x, y), '[]'::json) from discoveries),
+  'players', (select count(*) from pl where role = 'player')
+)::text as j;`;
+function status(text, bad) { const s = $("status"); s.hidden = !text; s.textContent = text || ""; s.classList.toggle("bad", !!bad); }
+// The connector's answer comes in a few shapes (a bare string, {result: "..."}, content blocks): dig to the one JSON column.
+function rowsOf(v, depth = 0) {
+  if (depth > 8 || v == null) throw new Error("unexpected shape");
+  if (typeof v === "string") {
+    let whole; try { whole = JSON.parse(v); } catch { /* text around the rows */ }
+    if (whole !== undefined && typeof whole === "object") return rowsOf(whole, depth + 1);
+    const a = v.indexOf("["), b = v.lastIndexOf("]");
+    if (a < 0 || b < a) throw new Error("no rows");
+    return rowsOf(JSON.parse(v.slice(a, b + 1)), depth + 1);
+  }
+  if (Array.isArray(v)) {
+    if (v.length && v[0] && typeof v[0].j === "string") return JSON.parse(v[0].j);
+    if (v.length && v[0] && typeof v[0].text === "string") return rowsOf(v[0].text, depth + 1);
+    throw new Error("unexpected shape");
+  }
+  if (typeof v === "object") {
+    if (typeof v.j === "string") return JSON.parse(v.j);
+    for (const k of ["result", "structuredContent", "payload", "text", "rows", "content"]) if (v[k] != null) return rowsOf(v[k], depth + 1);
+  }
+  throw new Error("unexpected shape");
+}
+(async () => {
+  const mcp = await window.claude?.use?.("mcp");
+  if (!mcp) return;
+  const btn = $("refresh"); btn.hidden = false;
+  btn.addEventListener("click", async () => {
+    btn.disabled = true; status("Asking the realm…");
+    try {
+      const res = await mcp.callTool("Supabase", "execute_sql", { project_id: PROJECT, query: SQL }, { cache: false });
+      const a = rowsOf(res.payload ?? res);
+      if (!a || !a.day || !Array.isArray(a.explored)) throw new Error("no activity");
+      WORLD.activity = { explored: a.explored, townsfolk: a.townsfolk, discovered: a.discovered, players: a.players };
+      WORLD.generated = a.day;
+      players = count(a.explored); folk = count(a.townsfolk); found = count(a.discovered);
+      meta(); legend(); describe(state.pin || tile(0, 0)); draw();
+      status(`Refreshed: activity as of ${a.day}. ${a.explored.length} tiles walked by players, ${a.discovered.length} first finds.`);
+    } catch (e) {
+      const code = e?.code;
+      const msg = code === "needs_reauth" ? "Supabase needs reconnecting in claude.ai Settings → Connectors."
+        : code === "server_not_connected" || code === "selection_required" ? "Add or choose the Supabase connector in claude.ai Settings → Connectors, then try again."
+        : code === "not_in_manifest" || code === "approval_required" || code === "consent_required" ? "This page wasn't allowed to use Supabase. Allow it from the page's Permissions menu and try again."
+        : code === "blocked_by_policy" ? "Your organization doesn't allow this page to use Supabase."
+        : code === "tool_error" ? "The query failed: " + (e.message || "").slice(0, 200)
+        : code === "server_unavailable" || code === "rate_limited" ? "Supabase didn't answer. Wait a moment and try again."
+        : code ? `Couldn't refresh (${code}).` : "Couldn't read the realm's answer: " + (e.message || e);
+      status(msg, true);
+    } finally { btn.disabled = false; }
+  });
+})();
 </script>
