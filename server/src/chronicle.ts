@@ -54,7 +54,10 @@ async function gather(day: string): Promise<DayFacts> {
   let dragon = true;
   try { dragon = (await realmSettings(c)).dragonAlive; } finally { c.release(); }
   const prev = (await pool.query<{ body: string }>("select body from chronicle where day = $1", [addDays(day, -1)])).rows[0]?.body ?? null;
-  return { day, number, news: news.map((n) => ({ ...n, line: newsLine(n) })), tavern, goals, top, dragon_alive: dragon, previous: prev };
+  return { day, number, news: news.map((n) => n.kind === "auction_sale"
+    // A sale is news; its price isn't.
+    ? { ...n, detail: { item: n.detail.item }, line: `${n.actor} sold ${n.detail.item} at auction to ${n.target}.` }
+    : { ...n, line: newsLine(n) }), tavern, goals, top, dragon_alive: dragon, previous: prev };
 }
 
 // ---------- templates ----------

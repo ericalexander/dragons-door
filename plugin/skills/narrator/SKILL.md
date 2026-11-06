@@ -369,6 +369,7 @@ People are courted where they live: in Ironhold or Ashford, offer `Fl(i)rt with 
 Weddings are rare: a flirt needs real luck, and charm only helps a little. `state.suitors_around` says who's around right now; `not_around` means you went looking at the wrong hour (say when they're usually about). Each of them is married to one player at a time, and each player to one of them:
 - **married** is a real wedding, remembered in `state.spouse`; `perk` says what it brings. `stole_from` means they left that player for this one: a scandal. Townsfolk court and marry too, so the rival may be Sir Pomfrey. `left` means the player just left their old spouse for this one: a different scandal.
 - **spouse** means they're already married to this person: no second wedding, just an evening together and a little charm.
+- On a `talk`, `married_to` names who that person is married to (townsfolk marry each other and the realm's characters too). It's true and everyone knows: if it comes up, they speak of their spouse as a spouse would and never deny it. `married_to_you` means they're married to the player.
 - The perks already show in the numbers (`prices.inn`, `prices.heal_all`); mention them when they matter.
 - A `while_you_were_away` with `what: spouse_stolen` means someone else won their spouse while they were gone: name who (`by`), and let it sting a little.
 - A `pvp_win` with `guarded_by` means the victim's spouse (Mara) saw them home with half their purse.

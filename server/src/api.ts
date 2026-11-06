@@ -2952,10 +2952,15 @@ api.post("/talk", async (c) => {
     }
     const remembers = await recall(ctx, who.id, who.name);
     await remember(ctx, who.name, again, body.said);
+    // Who they're married to, if anyone: either side of the marriage may hold the link. Everyone in town knows.
+    const spouse = (await ctx.c.query<{ name: string }>(
+      `select s.name from players me join players s on s.id = me.spouse_id where me.id = $1
+       union select p.name from players p where p.spouse_id = $1 limit 1`, [who.id])).rows[0]?.name ?? null;
     // What's gone wrong lately, for them to grumble about. Nobody knows who's behind it.
     const trouble = again ? [] : await recentTrouble(ctx.c, inWild(ctx.p) ? "" : townAt(ctx.p.pos_x, ctx.p.pos_y) ?? "brightwater", ctx.day);
     ctx.events.push({
       kind: "talk", name: who.name, where, again, ...looksOf(who.name), feels: stand.word,
+      ...(spouse ? (spouse === ctx.p.name ? { married_to_you: true } : { married_to: spouse }) : {}),
       ...(remembers ? { remembers } : { first_meeting: true }),
       ...(who.role === "townsfolk" ? {
         townsfolk: true, class: who.class, level: who.level,
@@ -2978,7 +2983,7 @@ api.post("/talk", async (c) => {
     const pastHint = !past ? "" : past.piece === "secret"
       ? " They also tell you their secret (past.told), in their own words: it costs them something, they lower their voice, and it's plainly not for repeating."
       : ` Somewhere in it they let you in on a piece of their past (past.told), in their own words, only as much as fits the moment.`;
-    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind. How they feel about the player (feels: ${stand.word}): ${HOW[stand.word]} Show it in how they act, never as a word or a number.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${trouble.length ? " If it fits, they mention what's gone wrong lately (trouble) the way anyone would: grumbling, guessing, maybe suspecting someone. Nobody knows who's behind it, so never say." : ""}${again ? " You've already talked today; keep it brief." : ""}${remembers ? " They remember the player (remembers): at most one callback, only if it fits, as they'd naturally bring it up; never list it." : ""}`;
+    ctx.hint = `Play ${who.name} in their own voice: a short exchange, in character, about whatever's on their mind. How they feel about the player (feels: ${stand.word}): ${HOW[stand.word]} Show it in how they act, never as a word or a number.${gossip ? " Somewhere in it they let slip the gossip, as an aside, not a quest; it's now marked on the player's map as a place they've heard of." : ""}${pastHint}${spouse && spouse !== ctx.p.name ? ` They're married to ${spouse} (married_to): it's true and the whole town knows; if it comes up, they speak of ${spouse} as a spouse would, never deny it.` : ""}${trouble.length ? " If it fits, they mention what's gone wrong lately (trouble) the way anyone would: grumbling, guessing, maybe suspecting someone. Nobody knows who's behind it, so never say." : ""}${again ? " You've already talked today; keep it brief." : ""}${remembers ? " They remember the player (remembers): at most one callback, only if it fits, as they'd naturally bring it up; never list it." : ""}`;
     const before = ctx.hint;
     // Talking can move a quest along, or a townsperson might ask a favor.
     await questTriggers(ctx, { talk: { name: who.name, townsfolk: who.role === "townsfolk" } });
